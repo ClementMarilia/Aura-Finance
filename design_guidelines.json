@@ -1,0 +1,116 @@
+{
+  "theme_archetype": "1 (Organic & Earthy)",
+  "theme_mode": "LIGHT",
+  "domain": "Finance, Personal & Shared Financial Control",
+  "typography": {
+    "headings": {
+      "font_family": "Outfit",
+      "weight_strategy": "Medium to Bold",
+      "tracking": "tracking-tight",
+      "forbidden": [
+        "Inter",
+        "Roboto",
+        "Open Sans"
+      ]
+    },
+    "body": {
+      "font_family": "IBM Plex Sans",
+      "weight_strategy": "Regular",
+      "tracking": "tracking-normal"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl",
+      "h2": "text-2xl sm:text-3xl",
+      "h3": "text-xl sm:text-2xl",
+      "h4": "text-lg sm:text-xl",
+      "body": "text-base",
+      "small": "text-sm"
+    }
+  },
+  "colors": {
+    "background": "#F9F8F6",
+    "surface": "#FFFFFF",
+    "surface_muted": "#F1EFE7",
+    "primary": "#1E3F33",
+    "primary_hover": "#2C5C4A",
+    "secondary": "#D96C5B",
+    "secondary_hover": "#C25848",
+    "text_main": "#1A1C1A",
+    "text_muted": "#6B7068",
+    "border": "#E5E4E0",
+    "status": {
+      "success": "#2C7A51",
+      "warning": "#E5A83B",
+      "danger": "#D9453B",
+      "info": "#3B82F6"
+    },
+    "chart_palette": [
+      "#1E3F33",
+      "#D96C5B",
+      "#E5A83B",
+      "#7EA193",
+      "#C7BCA1"
+    ]
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous Spacing, Calm UI. No walls of data.",
+    "container_padding": "p-6 md:p-8",
+    "grid_strategy": "Control Room Grid for Dashboard (grid-cols-1 md:grid-cols-3 lg:grid-cols-4) with gap-6.",
+    "alignment": "Left-align for numbers, tables, and dense data. Center only for empty states or hero headers."
+  },
+  "components": {
+    "cards": {
+      "style": "Flat, solid background, 1px border (border-[#E5E4E0]), rounded-2xl. No heavy drop shadows.",
+      "hover_state": "Slight lift (-translate-y-1) and subtle shadow (shadow-md) for interactive cards."
+    },
+    "buttons": {
+      "primary": "Solid #1E3F33 background, white text, rounded-xl.",
+      "secondary": "Outline border-[#E5E4E0], text-[#1A1C1A], hover:bg-[#F1EFE7]",
+      "interaction": "Scale down slightly on active (active:scale-95)."
+    },
+    "inputs_and_forms": {
+      "style": "Shadcn defaults customized with rounded-lg, border-[#E5E4E0], focus:ring-2 focus:ring-[#1E3F33].",
+      "labels": "text-sm font-medium text-[#1A1C1A] mb-1.5"
+    },
+    "tables": {
+      "style": "Clean, row borders only (border-b), ample cell padding (py-3 px-4). Status pills for 'Pago/Pendente'."
+    },
+    "navigation": {
+      "sidebar": "Left sidebar on desktop, bottom tab bar on mobile. Active states indicated by #1E3F33 text and background tint."
+    }
+  },
+  "motion_and_interaction": {
+    "transitions": "transition-all duration-200 ease-in-out",
+    "loading": "Skeleton loaders (animate-pulse) with #F1EFE7 background.",
+    "modals": "Fade in with scale (opacity-0 scale-95 to opacity-100 scale-100)."
+  },
+  "icons_and_assets": {
+    "icon_library": "lucide-react",
+    "icon_style": "Outline, stroke-width 2, sizes 16px to 24px."
+  },
+  "media_and_images": {
+    "login_hero": {
+      "url": "https://images.pexels.com/photos/3184178/pexels-photo-3184178.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Friends dining and sharing together, used for the login/registration split-screen layout to convey shared expenses and trust."
+    },
+    "texture_background": {
+      "url": "https://images.pexels.com/photos/10487257/pexels-photo-10487257.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Abstract sand texture used sparingly with low opacity (e.g., 5%) as a background layer for onboarding screens to add tactile warmth."
+    }
+  },
+  "specific_instructions_for_agent": [
+    "Language MUST be Portuguese (pt-BR).",
+    "Default currency MUST be EUR (€).",
+    "Dashboard must lead with a Single-Metric Focus (e.g., 'Saldo Atual') in the top-left quadrant before showing the 50/20/10/10/10 breakdown or charts.",
+    "Implement the 50/20/10/10/10 budget rule using visual progress bars with the chart_palette colors.",
+    "For shared groups (Casa, Viagem), use the secondary color (#D96C5B) or a distinct palette color to differentiate from personal finances.",
+    "All interactive elements MUST have data-testid attributes formatted in kebab-case (e.g., data-testid='login-submit-button').",
+    "Never use transparent backgrounds over images without a backdrop-blur and a tinted overlay.",
+    "Avoid glassmorphism. Financial apps require solid, trustworthy surfaces.",
+    "Use Shadcn UI for all complex interactive elements (Select, Dialog, Tabs, Calendar) and recharts for visualizations.",
+    "Follow 'Mobile First' strictly. Ensure tables can scroll horizontally on mobile.",
+    "CRITICAL: Generate `.js` and `.jsx` files only. Do not use `.tsx` or TypeScript.",
+    "CRITICAL: Always explicitely set hover text colors when setting hover background colors to maintain accessibility.",
+    "Do not use walls of data; heavily employ progressive disclosure."
+  ]
+}
