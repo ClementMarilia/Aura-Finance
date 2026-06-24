@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [insights, setInsights] = useState([]);
   const [projection, setProjection] = useState(null);
+  const [accounts, setAccounts] = useState([]);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() + 1 };
@@ -30,6 +31,7 @@ export default function Dashboard() {
   useEffect(() => {
     api.get("/insights").then(r => setInsights(r.data || [])).catch(() => {});
     api.get("/reports/projection", { params: { months: 6 } }).then(r => setProjection(r.data)).catch(() => {});
+    api.get("/accounts").then(r => setAccounts(r.data || [])).catch(() => {});
   }, []);
 
   const curr = user?.currency || "EUR";
@@ -98,6 +100,27 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* Account balances */}
+      {accounts.length > 0 && (
+        <div data-testid="account-balances">
+          <div className="flex items-center gap-2 mb-3">
+            <Wallet size={18} className="text-[#1E3F33]" />
+            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Minhas contas</h3>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {accounts.map(a => (
+              <div key={a.id} className="card-soft" data-testid={`account-card-${a.id}`}>
+                <div className="text-sm text-[#6B7068]">{a.name}</div>
+                <div className={`text-xl font-semibold mt-1 ${a.balance >= 0 ? "text-[#1E3F33]" : "text-rose-600"}`}
+                  style={{ fontFamily: "Outfit" }}>
+                  {fmtMoney(a.balance, curr)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

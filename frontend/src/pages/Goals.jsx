@@ -5,33 +5,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Target, Plus, Pencil, Trash2, PiggyBank } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
-const emptyForm = { title: "", target_amount: "", current_amount: "", deadline: "", color: "#1E3F33" };
+const emptyForm = { title: "", target_amount: "", current_amount: "", deadline: "", color: "#1E3F33", account_id: "" };
 
 export default function Goals() {
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
   const [goals, setGoals] = useState([]);
+  const [accs, setAccs] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [contribFor, setContribFor] = useState(null);
   const [contribAmt, setContribAmt] = useState("");
+  const [contribFrom, setContribFrom] = useState("");
 
   const load = () => api.get("/goals").then(r => setGoals(r.data || []));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.get("/accounts").then(r => setAccs(r.data || [])); }, []);
 
   const openNew = () => { setEditing(null); setForm(emptyForm); setOpen(true); };
   const openEdit = (g) => {
     setEditing(g);
     setForm({ title: g.title, target_amount: g.target_amount, current_amount: g.current_amount,
-      deadline: g.deadline || "", color: g.color || "#1E3F33" });
+      deadline: g.deadline || "", color: g.color || "#1E3F33", account_id: g.account_id || "" });
     setOpen(true);
   };
 
@@ -43,6 +48,7 @@ export default function Goals() {
       current_amount: parseFloat(form.current_amount) || 0,
       deadline: form.deadline || null,
       color: form.color,
+      account_id: form.account_id || null,
     };
     try {
       if (editing) { await api.put(`/goals/${editing.id}`, payload); toast.success("Meta atualizada"); }
@@ -60,15 +66,20 @@ export default function Goals() {
     load();
   };
 
+  const openContribute = (g) => { setContribFor(g); setContribAmt(""); setContribFrom(""); };
+
   const contribute = async (e) => {
     e.preventDefault();
     const amount = parseFloat(contribAmt);
     if (!amount || amount <= 0) return;
     try {
-      await api.post(`/goals/${contribFor.id}/contribute`, { amount });
-      toast.success(`${fmtMoney(amount, curr)} adicionado à meta`);
+      await api.post(`/goals/${contribFor.id}/contribute`, {
+        amount, from_account_id: contribFrom || null,
+      });
+      toast.success(`${fmtMoney(amount, curr)} adicionado à meta${contribFrom ? " (lançamento criado)" : ""}`);
       setContribFor(null);
       setContribAmt("");
+      setContribFrom("");
       load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
@@ -126,7 +137,7 @@ export default function Goals() {
               </div>
               <div className="mt-1.5 flex items-center justify-between">
                 <span className={`text-xs font-medium ${done ? "text-emerald-600" : "text-[#6B7068]"}`}>{done ? "Concluída! 🎉" : `${pct}%`}</span>
-                <button onClick={() => { setContribFor(g); setContribAmt(""); }} data-testid={`goal-contribute-${g.id}`}
+                <button onClick={() => openContribute(g)} data-testid={`goal-contribute-${g.id}`}
                   className="text-xs text-[#1E3F33] hover:bg-[#F1EFE7] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
                   <PiggyBank size={13} /> Aportar
                 </button>
@@ -172,6 +183,17 @@ export default function Goals() {
                   onChange={e => setForm({ ...form, color: e.target.value })} />
               </div>
             </div>
+            <div>
+              <Label>Conta vinculada (opcional)</Label>
+              <Select value={form.account_id || "none"} onValueChange={(v) => setForm({ ...form, account_id: v === "none" ? "" : v })}>
+                <SelectTrigger data-testid="goal-account-select"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhuma</SelectItem>
+                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-[#6B7068] mt-1">Aportes podem virar uma transferência para esta conta.</p>
+            </div>
             <DialogFooter>
               <Button type="submit" data-testid="goal-save-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Salvar</Button>
             </DialogFooter>
@@ -190,6 +212,21 @@ export default function Goals() {
               <Label>Valor do aporte</Label>
               <Input type="number" step="0.01" autoFocus value={contribAmt} required data-testid="goal-contrib-input"
                 onChange={e => setContribAmt(e.target.value)} />
+            </div>
+            <div>
+              <Label>Debitar da conta (opcional)</Label>
+              <Select value={contribFrom || "none"} onValueChange={(v) => setContribFrom(v === "none" ? "" : v)}>
+                <SelectTrigger data-testid="goal-contrib-account"><SelectValue placeholder="Não criar lançamento" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Não criar lançamento</SelectItem>
+                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-[#6B7068] mt-1">
+                {contribFrom && contribFor?.account_id && contribFrom !== contribFor?.account_id
+                  ? "Cria uma transferência para a conta vinculada."
+                  : contribFrom ? "Cria uma despesa nesta conta." : "Apenas registra o progresso da meta."}
+              </p>
             </div>
             <DialogFooter>
               <Button type="submit" data-testid="goal-contrib-save" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Adicionar</Button>

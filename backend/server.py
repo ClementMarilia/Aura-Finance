@@ -439,7 +439,7 @@ async def list_transactions(
     user=Depends(get_current_user),
     year: Optional[int] = None, month: Optional[int] = None,
     category_id: Optional[str] = None, status: Optional[str] = None,
-    type: Optional[str] = None,
+    type: Optional[str] = None, account_id: Optional[str] = None,
 ):
     await materialize_recurrences(user["id"])
     q = {"user_id": user["id"]}
@@ -452,6 +452,12 @@ async def list_transactions(
         q["status"] = status
     if type:
         q["type"] = type
+    if account_id:
+        q["$or"] = [
+            {"account_id": account_id},
+            {"from_account_id": account_id},
+            {"to_account_id": account_id},
+        ]
     return await db.transactions.find(q, {"_id": 0}).sort("date", -1).to_list(2000)
 
 
@@ -1561,10 +1567,12 @@ class GoalIn(BaseModel):
     current_amount: float = 0.0
     deadline: Optional[str] = None
     color: str = "#1E3F33"
+    account_id: Optional[str] = None
 
 
 class ContributeIn(BaseModel):
     amount: float
+    from_account_id: Optional[str] = None
 
 
 @api.get("/goals")
@@ -1597,6 +1605,31 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
     goal = await db.goals.find_one({"id": gid, "user_id": user["id"]}, {"_id": 0})
     if not goal:
         raise HTTPException(404, "Meta não encontrada")
+
+    # Optionally create a real transaction so balances stay coherent
+    if body.from_account_id:
+        src = await db.accounts.find_one({"id": body.from_account_id, "user_id": user["id"]}, {"_id": 0})
+        if not src:
+            raise HTTPException(404, "Conta de origem não encontrada")
+        linked = goal.get("account_id")
+        if linked and linked != body.from_account_id:
+            dest = await db.accounts.find_one({"id": linked, "user_id": user["id"]}, {"_id": 0})
+            if dest:
+                tx = {"type": "transfer", "from_account_id": body.from_account_id,
+                      "to_account_id": linked, "account_id": None, "category_id": None}
+            else:
+                tx = {"type": "expense", "account_id": body.from_account_id,
+                      "from_account_id": None, "to_account_id": None, "category_id": None}
+        else:
+            tx = {"type": "expense", "account_id": body.from_account_id,
+                  "from_account_id": None, "to_account_id": None, "category_id": None}
+        await db.transactions.insert_one({
+            "id": new_id(), "user_id": user["id"], "date": now_iso()[:10],
+            "amount": body.amount, "payment_method": None,
+            "description": f"Aporte: {goal['title']}", "notes": "(aporte meta)",
+            "status": "paid", "goal_id": gid, "created_at": now_iso(), **tx,
+        })
+
     new_amt = round(goal.get("current_amount", 0) + body.amount, 2)
     await db.goals.update_one({"id": gid}, {"$set": {"current_amount": new_amt}})
     goal["current_amount"] = new_amt

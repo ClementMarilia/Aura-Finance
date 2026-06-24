@@ -23,7 +23,7 @@ export default function Transactions() {
   const [cats, setCats] = useState([]);
   const [accs, setAccs] = useState([]);
   const now = new Date();
-  const [filter, setFilter] = useState({ status: "", type: "", category_id: "", year: "", month: "" });
+  const [filter, setFilter] = useState({ status: "", type: "", category_id: "", year: "", month: "", account_id: "" });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
@@ -58,7 +58,7 @@ export default function Transactions() {
     api.get("/categories").then(r => setCats(r.data));
     api.get("/accounts").then(r => setAccs(r.data));
   }, []);
-  useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id, filter.year, filter.month]);
+  useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id, filter.year, filter.month, filter.account_id]);
 
   const openEdit = (t) => {
     setEditing(t);
@@ -298,6 +298,11 @@ export default function Transactions() {
             data-testid="filter-year" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
             <option value="">Todos os anos</option>
             {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select value={filter.account_id} onChange={e => setFilter({ ...filter, account_id: e.target.value })}
+            data-testid="filter-account" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
+            <option value="">Todas as contas</option>
+            {accs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
       </div>
