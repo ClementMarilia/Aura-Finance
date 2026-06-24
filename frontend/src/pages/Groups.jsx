@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,6 +24,7 @@ export default function Groups() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", member_emails: "" });
   const [addEmail, setAddEmail] = useState({});
+  const [confirmDel, setConfirmDel] = useState(null);
 
   const load = () => api.get("/groups").then(r => setList(r.data));
   useEffect(() => { load(); }, []);
@@ -50,7 +52,18 @@ export default function Groups() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const remove = async (gid) => { if (window.confirm("Excluir grupo?")) { try { await api.delete(`/groups/${gid}`); load(); } catch (err) { toast.error(formatApiError(err)); } } };
+  const remove = async () => {
+    if (!confirmDel) return;
+    try {
+      await api.delete(`/groups/${confirmDel.id}`);
+      setConfirmDel(null);
+      toast.success("Grupo excluído");
+      load();
+    } catch (err) {
+      setConfirmDel(null);
+      toast.error(formatApiError(err));
+    }
+  };
 
   return (
     <div className="space-y-6" data-testid="groups-page">
@@ -93,7 +106,7 @@ export default function Groups() {
                 <div className="text-xl font-semibold" style={{ fontFamily: "Outfit" }}>{g.name}</div>
                 <div className="text-sm text-[#6B7068] mt-1">{g.description || "—"}</div>
               </div>
-              <button onClick={() => remove(g.id)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`group-delete-${g.id}`}>
+              <button onClick={() => setConfirmDel(g)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`group-delete-${g.id}`}>
                 <Trash2 size={16} />
               </button>
             </div>
@@ -119,6 +132,15 @@ export default function Groups() {
           </div>
         ))}
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDel}
+        onOpenChange={(v) => !v && setConfirmDel(null)}
+        title="Excluir grupo?"
+        description={confirmDel ? `"${confirmDel.name}" será removido. As despesas vinculadas a este grupo permanecem visíveis aos participantes.` : ""}
+        onConfirm={remove}
+        testId="group-confirm-delete"
+      />
     </div>
   );
 }

@@ -5,10 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 export default function Settings() {
   const [cats, setCats] = useState([]);
   const [form, setForm] = useState({ name: "", color: "#1E3F33" });
+  const [confirmDel, setConfirmDel] = useState(null);
 
   const load = () => api.get("/categories").then(r => setCats(r.data));
   useEffect(() => { load(); }, []);
@@ -22,9 +24,12 @@ export default function Settings() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const remove = async (cid) => {
-    if (!window.confirm("Excluir categoria?")) return;
-    await api.delete(`/categories/${cid}`); load();
+  const remove = async () => {
+    if (!confirmDel) return;
+    await api.delete(`/categories/${confirmDel.id}`);
+    setConfirmDel(null);
+    toast.success("Categoria excluída");
+    load();
   };
 
   return (
@@ -57,13 +62,22 @@ export default function Settings() {
                 <span>{c.name}</span>
                 {c.is_default && <span className="text-xs text-[#6B7068]">(padrão)</span>}
               </div>
-              <button onClick={() => remove(c.id)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`cat-delete-${c.id}`}>
+              <button onClick={() => setConfirmDel(c)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`cat-delete-${c.id}`}>
                 <Trash2 size={14} />
               </button>
             </div>
           ))}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDel}
+        onOpenChange={(v) => !v && setConfirmDel(null)}
+        title="Excluir categoria?"
+        description={confirmDel ? `"${confirmDel.name}" será removida. Lançamentos existentes não serão afetados.` : ""}
+        onConfirm={remove}
+        testId="cat-confirm-delete"
+      />
     </div>
   );
 }

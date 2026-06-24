@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Trash2, UserPlus, X, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
@@ -213,20 +214,14 @@ export default function SharedExpenses() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
-        <DialogContent className="max-w-md" data-testid="confirm-delete-dialog">
-          <DialogHeader><DialogTitle>Excluir despesa?</DialogTitle></DialogHeader>
-          <p className="text-sm text-[#6B7068]">
-            Tem certeza que deseja excluir a despesa "{confirmDelete?.title}"? Esta ação não pode ser desfeita.
-          </p>
-          <DialogFooter className="flex gap-2 sm:justify-end">
-            <Button type="button" onClick={() => setConfirmDelete(null)} data-testid="confirm-delete-cancel"
-              className="bg-white border border-[#E5E4E0] text-[#1A1C1A] hover:bg-[#F1EFE7] rounded-xl">Cancelar</Button>
-            <Button type="button" onClick={doDelete} data-testid="confirm-delete-confirm"
-              className="bg-[#D9453B] hover:bg-[#B83A30] text-white rounded-xl">Excluir</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(v) => !v && setConfirmDelete(null)}
+        title="Excluir despesa?"
+        description={confirmDelete ? `"${confirmDelete.title}" - ${fmtMoney(confirmDelete.amount, curr)}. Esta ação não pode ser desfeita.` : ""}
+        onConfirm={doDelete}
+        testId="shared-confirm-delete"
+      />
 
       <div className="space-y-4">
         {list.length === 0 && <div className="card-soft text-center text-[#6B7068]">Nenhuma despesa compartilhada</div>}

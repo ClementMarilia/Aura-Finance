@@ -15,6 +15,7 @@ export default function Installments() {
   const [list, setList] = useState([]);
   const [cats, setCats] = useState([]);
   const [open, setOpen] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(null);
   const [form, setForm] = useState({
     description: "", total_amount: "", installments: 1,
     first_date: new Date().toISOString().slice(0, 10), category_id: "", payment_method: "",
@@ -38,9 +39,12 @@ export default function Installments() {
   };
 
   const togglePay = async (iid) => { await api.post(`/installments/${iid}/pay`); load(); };
-  const removePurchase = async (pid) => {
-    if (!window.confirm("Excluir parcelamento e todas as parcelas?")) return;
-    await api.delete(`/installments/purchases/${pid}`); load();
+  const removePurchase = async () => {
+    if (!confirmDel) return;
+    await api.delete(`/installments/purchases/${confirmDel.id}`);
+    setConfirmDel(null);
+    toast.success("Parcelamento excluído");
+    load();
   };
 
   return (
@@ -101,7 +105,7 @@ export default function Installments() {
                     {p.installments}x · {fmtMoney(p.total_amount, curr)} · Pagas: {paid}/{p.installments}
                   </div>
                 </div>
-                <button onClick={() => removePurchase(p.id)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`purchase-delete-${p.id}`}>
+                <button onClick={() => setConfirmDel(p)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`purchase-delete-${p.id}`}>
                   <Trash2 size={18} />
                 </button>
               </div>

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,6 +23,7 @@ export default function Transactions() {
   const [filter, setFilter] = useState({ status: "", type: "", category_id: "" });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(defaultForm());
+  const [confirmDel, setConfirmDel] = useState(null);
 
   function defaultForm() {
     return {
@@ -63,9 +65,11 @@ export default function Transactions() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const remove = async (id) => {
-    if (!window.confirm("Excluir lançamento?")) return;
-    await api.delete(`/transactions/${id}`);
+  const remove = async () => {
+    if (!confirmDel) return;
+    await api.delete(`/transactions/${confirmDel.id}`);
+    setConfirmDel(null);
+    toast.success("Lançamento excluído");
     load();
   };
 
@@ -217,7 +221,7 @@ export default function Transactions() {
                     {t.type === "expense" ? "-" : t.type === "income" ? "+" : ""}{fmtMoney(t.amount, curr)}
                   </td>
                   <td className="py-3 px-4">
-                    <button onClick={() => remove(t.id)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`tx-delete-${t.id}`}>
+                    <button onClick={() => setConfirmDel(t)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`tx-delete-${t.id}`}>
                       <Trash2 size={16} />
                     </button>
                   </td>
@@ -227,6 +231,15 @@ export default function Transactions() {
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDel}
+        onOpenChange={(v) => !v && setConfirmDel(null)}
+        title="Excluir lançamento?"
+        description={confirmDel ? `"${confirmDel.description || "Sem descrição"}" - ${fmtMoney(confirmDel.amount, curr)}. Esta ação não pode ser desfeita.` : ""}
+        onConfirm={remove}
+        testId="tx-confirm-delete"
+      />
     </div>
   );
 }

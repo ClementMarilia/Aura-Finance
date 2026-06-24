@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -13,6 +14,7 @@ export default function Receivables() {
   const curr = user?.currency || "EUR";
   const [list, setList] = useState([]);
   const [open, setOpen] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(null);
   const [form, setForm] = useState({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "" });
 
   const load = () => api.get("/receivables").then(r => setList(r.data));
@@ -29,7 +31,13 @@ export default function Receivables() {
   };
 
   const receive = async (id) => { await api.post(`/receivables/${id}/receive`); load(); };
-  const remove = async (id) => { if (window.confirm("Excluir?")) { await api.delete(`/receivables/${id}`); load(); } };
+  const remove = async () => {
+    if (!confirmDel) return;
+    await api.delete(`/receivables/${confirmDel.id}`);
+    setConfirmDel(null);
+    toast.success("Conta excluída");
+    load();
+  };
 
   return (
     <div className="space-y-6" data-testid="receivables-page">
@@ -96,7 +104,7 @@ export default function Receivables() {
                   <button onClick={() => receive(r.id)} className="text-emerald-600 hover:text-emerald-800" data-testid={`rec-receive-${r.id}`}>
                     <Check size={16} />
                   </button>
-                  <button onClick={() => remove(r.id)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`rec-delete-${r.id}`}>
+                  <button onClick={() => setConfirmDel(r)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`rec-delete-${r.id}`}>
                     <Trash2 size={16} />
                   </button>
                 </td>
@@ -105,6 +113,15 @@ export default function Receivables() {
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDel}
+        onOpenChange={(v) => !v && setConfirmDel(null)}
+        title="Excluir conta a receber?"
+        description={confirmDel ? `"${confirmDel.person}" - ${fmtMoney(confirmDel.amount, curr)}. Esta ação não pode ser desfeita.` : ""}
+        onConfirm={remove}
+        testId="rec-confirm-delete"
+      />
     </div>
   );
 }
