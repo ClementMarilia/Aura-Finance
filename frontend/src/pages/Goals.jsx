@@ -10,7 +10,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Target, Plus, Pencil, Trash2, PiggyBank } from "lucide-react";
+import { Target, Plus, Pencil, Trash2, PiggyBank, Banknote } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
@@ -28,6 +28,9 @@ export default function Goals() {
   const [contribFor, setContribFor] = useState(null);
   const [contribAmt, setContribAmt] = useState("");
   const [contribFrom, setContribFrom] = useState("");
+  const [withdrawFor, setWithdrawFor] = useState(null);
+  const [withdrawAmt, setWithdrawAmt] = useState("");
+  const [withdrawTo, setWithdrawTo] = useState("");
 
   const load = () => api.get("/goals").then(r => setGoals(r.data || []));
   useEffect(() => { load(); api.get("/accounts").then(r => setAccs(r.data || [])); }, []);
@@ -80,6 +83,24 @@ export default function Goals() {
       setContribFor(null);
       setContribAmt("");
       setContribFrom("");
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const openWithdraw = (g) => { setWithdrawFor(g); setWithdrawAmt(""); setWithdrawTo(""); };
+
+  const withdraw = async (e) => {
+    e.preventDefault();
+    const amount = parseFloat(withdrawAmt);
+    if (!amount || amount <= 0) return;
+    try {
+      await api.post(`/goals/${withdrawFor.id}/withdraw`, {
+        amount, to_account_id: withdrawTo || null,
+      });
+      toast.success(`${fmtMoney(amount, curr)} resgatado da meta${withdrawTo ? " (lançamento criado)" : ""}`);
+      setWithdrawFor(null);
+      setWithdrawAmt("");
+      setWithdrawTo("");
       load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
@@ -137,10 +158,18 @@ export default function Goals() {
               </div>
               <div className="mt-1.5 flex items-center justify-between">
                 <span className={`text-xs font-medium ${done ? "text-emerald-600" : "text-[#6B7068]"}`}>{done ? "Concluída! 🎉" : `${pct}%`}</span>
-                <button onClick={() => openContribute(g)} data-testid={`goal-contribute-${g.id}`}
-                  className="text-xs text-[#1E3F33] hover:bg-[#F1EFE7] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
-                  <PiggyBank size={13} /> Aportar
-                </button>
+                <div className="flex items-center gap-1">
+                  {g.current_amount > 0 && (
+                    <button onClick={() => openWithdraw(g)} data-testid={`goal-withdraw-${g.id}`}
+                      className="text-xs text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1E3F33] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
+                      <Banknote size={13} /> Resgatar
+                    </button>
+                  )}
+                  <button onClick={() => openContribute(g)} data-testid={`goal-contribute-${g.id}`}
+                    className="text-xs text-[#1E3F33] hover:bg-[#F1EFE7] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
+                    <PiggyBank size={13} /> Aportar
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -230,6 +259,41 @@ export default function Goals() {
             </div>
             <DialogFooter>
               <Button type="submit" data-testid="goal-contrib-save" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Adicionar</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Withdraw dialog */}
+      <Dialog open={!!withdrawFor} onOpenChange={(v) => !v && setWithdrawFor(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "Outfit" }}>Resgatar de "{withdrawFor?.title}"</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={withdraw} className="space-y-3">
+            <div>
+              <Label>Valor do resgate</Label>
+              <Input type="number" step="0.01" autoFocus value={withdrawAmt} required data-testid="goal-withdraw-input"
+                onChange={e => setWithdrawAmt(e.target.value)} />
+              <p className="text-xs text-[#6B7068] mt-1">Disponível: {fmtMoney(withdrawFor?.current_amount || 0, curr)}</p>
+            </div>
+            <div>
+              <Label>Creditar na conta (opcional)</Label>
+              <Select value={withdrawTo || "none"} onValueChange={(v) => setWithdrawTo(v === "none" ? "" : v)}>
+                <SelectTrigger data-testid="goal-withdraw-account"><SelectValue placeholder="Não criar lançamento" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Não criar lançamento</SelectItem>
+                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-[#6B7068] mt-1">
+                {withdrawTo && withdrawFor?.account_id && withdrawTo !== withdrawFor?.account_id
+                  ? "Cria uma transferência da conta vinculada de volta."
+                  : withdrawTo ? "Cria uma receita nesta conta." : "Apenas reduz o progresso da meta."}
+              </p>
+            </div>
+            <DialogFooter>
+              <Button type="submit" data-testid="goal-withdraw-save" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Resgatar</Button>
             </DialogFooter>
           </form>
         </DialogContent>

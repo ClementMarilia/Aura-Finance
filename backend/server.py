@@ -1636,6 +1636,52 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
     return goal
 
 
+class WithdrawIn(BaseModel):
+    amount: float
+    to_account_id: Optional[str] = None
+
+
+@api.post("/goals/{gid}/withdraw")
+async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_user)):
+    if body.amount <= 0:
+        raise HTTPException(400, "O valor do resgate deve ser maior que zero")
+    goal = await db.goals.find_one({"id": gid, "user_id": user["id"]}, {"_id": 0})
+    if not goal:
+        raise HTTPException(404, "Meta não encontrada")
+    current = goal.get("current_amount", 0)
+    if body.amount > current:
+        raise HTTPException(400, "Valor maior que o saldo da meta")
+
+    # Optionally return the money to an account via a real transaction
+    if body.to_account_id:
+        dest = await db.accounts.find_one({"id": body.to_account_id, "user_id": user["id"]}, {"_id": 0})
+        if not dest:
+            raise HTTPException(404, "Conta de destino não encontrada")
+        linked = goal.get("account_id")
+        if linked and linked != body.to_account_id:
+            src = await db.accounts.find_one({"id": linked, "user_id": user["id"]}, {"_id": 0})
+            if src:
+                tx = {"type": "transfer", "from_account_id": linked,
+                      "to_account_id": body.to_account_id, "account_id": None, "category_id": None}
+            else:
+                tx = {"type": "income", "account_id": body.to_account_id,
+                      "from_account_id": None, "to_account_id": None, "category_id": None}
+        else:
+            tx = {"type": "income", "account_id": body.to_account_id,
+                  "from_account_id": None, "to_account_id": None, "category_id": None}
+        await db.transactions.insert_one({
+            "id": new_id(), "user_id": user["id"], "date": now_iso()[:10],
+            "amount": body.amount, "payment_method": None,
+            "description": f"Resgate: {goal['title']}", "notes": "(resgate meta)",
+            "status": "paid", "goal_id": gid, "created_at": now_iso(), **tx,
+        })
+
+    new_amt = round(current - body.amount, 2)
+    await db.goals.update_one({"id": gid}, {"$set": {"current_amount": new_amt}})
+    goal["current_amount"] = new_amt
+    return goal
+
+
 @api.delete("/goals/{gid}")
 async def delete_goal(gid: str, user=Depends(get_current_user)):
     await db.goals.delete_one({"id": gid, "user_id": user["id"]})

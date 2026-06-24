@@ -40,9 +40,10 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 
 ## Enhancements — Coerência saldo/metas (2026-06-24)
 - ✅ Aportes de Metas podem gerar lançamento real: meta com conta vinculada (account_id) + aporte com from_account_id cria transferência (conta vinculada) ou despesa; mantém saldo coerente
+- ✅ Resgate de Metas (POST /goals/{id}/withdraw): aporte negativo controlado (não passa do saldo da meta); com to_account_id devolve via transferência (da conta vinculada) ou receita — UI com botão "Resgatar" e diálogo
 - ✅ Painel: cards "Minhas contas" com saldo por conta
 - ✅ Lançamentos: filtro por conta (GET /transactions?account_id= cobre account_id/from/to)
-- Validado via curl (transfer 200: Corrente 2000→1800, Reserva 0→200) e smoke test UI
+- Validado via curl (aporte 300 + resgate 100 → saldos coerentes 1800/200; resgate>saldo=400) e smoke test UI
 
 ## Onda 5 — Lançamentos avançados (2026-06-24)
 - ✅ Filtro temporal mês/ano em Lançamentos (params year+month em GET /transactions)
