@@ -421,6 +421,26 @@ async def create_purchase(payload: InstallmentPurchaseIn, user=Depends(get_curre
     return purchase
 
 
+class InstallmentPurchaseUpdateIn(BaseModel):
+    description: Optional[str] = None
+    category_id: Optional[str] = None
+    payment_method: Optional[str] = None
+
+
+@api.put("/installments/purchases/{pid}")
+async def update_purchase(pid: str, payload: InstallmentPurchaseUpdateIn, user=Depends(get_current_user)):
+    upd = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    if not upd:
+        return {"ok": True}
+    res = await db.installment_purchases.update_one(
+        {"id": pid, "user_id": user["id"]},
+        {"$set": upd},
+    )
+    if not res.matched_count:
+        raise HTTPException(404, "Não encontrado")
+    return {"ok": True}
+
+
 @api.post("/installments/{iid}/pay")
 async def mark_installment(iid: str, user=Depends(get_current_user)):
     inst = await db.installments.find_one({"id": iid, "user_id": user["id"]})
@@ -454,6 +474,17 @@ async def create_receivable(payload: ReceivableIn, user=Depends(get_current_user
     await db.receivables.insert_one(doc)
     doc.pop("_id", None)
     return doc
+
+
+@api.put("/receivables/{rid}")
+async def update_receivable(rid: str, payload: ReceivableIn, user=Depends(get_current_user)):
+    res = await db.receivables.update_one(
+        {"id": rid, "user_id": user["id"]},
+        {"$set": payload.model_dump()},
+    )
+    if not res.matched_count:
+        raise HTTPException(404, "Não encontrado")
+    return {"ok": True}
 
 
 @api.post("/receivables/{rid}/receive")

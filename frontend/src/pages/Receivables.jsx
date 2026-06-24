@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Check, Trash2 } from "lucide-react";
+import { Plus, Check, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Receivables() {
@@ -14,18 +14,37 @@ export default function Receivables() {
   const curr = user?.currency || "EUR";
   const [list, setList] = useState([]);
   const [open, setOpen] = useState(false);
-  const [confirmDel, setConfirmDel] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "" });
+  const [confirmDel, setConfirmDel] = useState(null);
 
   const load = () => api.get("/receivables").then(r => setList(r.data));
   useEffect(() => { load(); }, []);
 
+  const openNew = () => {
+    setEditing(null);
+    setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "" });
+    setOpen(true);
+  };
+  const openEdit = (r) => {
+    setEditing(r);
+    setForm({ person: r.person, amount: String(r.amount), due_date: r.due_date, description: r.description || "" });
+    setOpen(true);
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/receivables", { ...form, amount: parseFloat(form.amount) });
-      toast.success("Conta a receber criada");
-      setOpen(false); setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "" });
+      const body = { ...form, amount: parseFloat(form.amount) };
+      if (editing) {
+        await api.put(`/receivables/${editing.id}`, body);
+        toast.success("Atualizado");
+      } else {
+        await api.post("/receivables", body);
+        toast.success("Conta a receber criada");
+      }
+      setOpen(false); setEditing(null);
+      setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "" });
       load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
@@ -46,14 +65,14 @@ export default function Receivables() {
           <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Contas a Receber</h1>
           <p className="text-[#6B7068]">Valores que você tem a receber</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>
-            <Button data-testid="new-receivable-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+            <Button onClick={openNew} data-testid="new-receivable-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
               <Plus size={16} className="mr-1" /> Nova conta a receber
             </Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>Nova conta a receber</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{editing ? "Editar conta a receber" : "Nova conta a receber"}</DialogTitle></DialogHeader>
             <form onSubmit={submit} className="space-y-3">
               <div><Label>Pessoa / Empresa</Label>
                 <Input value={form.person} required data-testid="rec-person-input"
@@ -69,7 +88,9 @@ export default function Receivables() {
               <div><Label>Descrição</Label>
                 <Input value={form.description} data-testid="rec-description-input"
                   onChange={e => setForm({ ...form, description: e.target.value })} /></div>
-              <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="rec-submit-button">Salvar</Button>
+              <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="rec-submit-button">
+                {editing ? "Salvar alterações" : "Salvar"}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -100,11 +121,14 @@ export default function Receivables() {
                   </span>
                 </td>
                 <td className="py-3 px-4 text-right font-semibold">{fmtMoney(r.amount, curr)}</td>
-                <td className="py-3 px-4 flex gap-2 justify-end">
-                  <button onClick={() => receive(r.id)} className="text-emerald-600 hover:text-emerald-800" data-testid={`rec-receive-${r.id}`}>
+                <td className="py-3 px-4 flex gap-1 justify-end">
+                  <button onClick={() => receive(r.id)} className="text-emerald-600 hover:text-emerald-800 p-1" data-testid={`rec-receive-${r.id}`} title="Marcar como recebido">
                     <Check size={16} />
                   </button>
-                  <button onClick={() => setConfirmDel(r)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`rec-delete-${r.id}`}>
+                  <button onClick={() => openEdit(r)} className="text-[#6B7068] hover:text-[#1E3F33] p-1" data-testid={`rec-edit-${r.id}`} title="Editar">
+                    <Pencil size={16} />
+                  </button>
+                  <button onClick={() => setConfirmDel(r)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`rec-delete-${r.id}`} title="Excluir">
                     <Trash2 size={16} />
                   </button>
                 </td>

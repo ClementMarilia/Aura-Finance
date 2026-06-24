@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Check, Trash2 } from "lucide-react";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { Plus, Check, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Installments() {
@@ -15,7 +16,9 @@ export default function Installments() {
   const [list, setList] = useState([]);
   const [cats, setCats] = useState([]);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [editForm, setEditForm] = useState({ description: "", category_id: "", payment_method: "" });
   const [form, setForm] = useState({
     description: "", total_amount: "", installments: 1,
     first_date: new Date().toISOString().slice(0, 10), category_id: "", payment_method: "",
@@ -35,6 +38,28 @@ export default function Installments() {
       });
       toast.success("Parcelamento criado");
       setOpen(false); load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const openEdit = (p) => {
+    setEditing(p);
+    setEditForm({
+      description: p.description,
+      category_id: p.category_id || "",
+      payment_method: p.payment_method || "",
+    });
+  };
+
+  const submitEdit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.put(`/installments/purchases/${editing.id}`, {
+        description: editForm.description,
+        category_id: editForm.category_id || null,
+        payment_method: editForm.payment_method,
+      });
+      toast.success("Atualizado");
+      setEditing(null); load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
@@ -105,9 +130,14 @@ export default function Installments() {
                     {p.installments}x · {fmtMoney(p.total_amount, curr)} · Pagas: {paid}/{p.installments}
                   </div>
                 </div>
-                <button onClick={() => setConfirmDel(p)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`purchase-delete-${p.id}`}>
-                  <Trash2 size={18} />
-                </button>
+                <div className="flex gap-1">
+                  <button onClick={() => openEdit(p)} className="text-[#6B7068] hover:text-[#1E3F33] p-2 rounded-lg border border-[#E5E4E0]" data-testid={`purchase-edit-${p.id}`} title="Editar">
+                    <Pencil size={16} />
+                  </button>
+                  <button onClick={() => setConfirmDel(p)} className="text-[#6B7068] hover:text-[#D9453B] p-2 rounded-lg border border-[#E5E4E0]" data-testid={`purchase-delete-${p.id}`} title="Excluir">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
                 {p.installments_list.map(i => (
@@ -130,6 +160,38 @@ export default function Installments() {
           );
         })}
       </div>
+
+      <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Editar parcelamento</DialogTitle></DialogHeader>
+          <form onSubmit={submitEdit} className="space-y-3">
+            <div><Label>Descrição</Label>
+              <Input value={editForm.description} required data-testid="purchase-edit-description"
+                onChange={e => setEditForm({ ...editForm, description: e.target.value })} /></div>
+            <div><Label>Forma de pagamento</Label>
+              <Input value={editForm.payment_method} data-testid="purchase-edit-payment"
+                onChange={e => setEditForm({ ...editForm, payment_method: e.target.value })} /></div>
+            <div><Label>Categoria</Label>
+              <Select value={editForm.category_id} onValueChange={v => setEditForm({ ...editForm, category_id: v })}>
+                <SelectTrigger data-testid="purchase-edit-category"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  {cats.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select></div>
+            <p className="text-xs text-[#6B7068]">Para alterar valor total ou número de parcelas, exclua e crie um novo parcelamento.</p>
+            <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="purchase-edit-submit">Salvar alterações</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={!!confirmDel}
+        onOpenChange={(v) => !v && setConfirmDel(null)}
+        title="Excluir parcelamento?"
+        description={confirmDel ? `"${confirmDel.description}" e todas as ${confirmDel.installments} parcelas serão removidas. Esta ação não pode ser desfeita.` : ""}
+        onConfirm={removePurchase}
+        testId="purchase-confirm-delete"
+      />
     </div>
   );
 }

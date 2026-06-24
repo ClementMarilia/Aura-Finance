@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_LABEL = { paid: "Pago", pending: "Pendente", cancelled: "Cancelado" };
@@ -22,6 +22,7 @@ export default function Transactions() {
   const [accs, setAccs] = useState([]);
   const [filter, setFilter] = useState({ status: "", type: "", category_id: "" });
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
   const [confirmDel, setConfirmDel] = useState(null);
 
@@ -51,17 +52,36 @@ export default function Transactions() {
   }, []);
   useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id]);
 
+  const openEdit = (t) => {
+    setEditing(t);
+    setForm({
+      type: t.type, date: t.date, amount: String(t.amount),
+      category_id: t.category_id || "", account_id: t.account_id || "",
+      payment_method: t.payment_method || "", description: t.description || "",
+      notes: t.notes || "", status: t.status,
+    });
+    setOpen(true);
+  };
+
+  const openNew = () => { setEditing(null); setForm(defaultForm()); setOpen(true); };
+
   const submit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/transactions", {
+      const body = {
         ...form,
         amount: parseFloat(form.amount),
         category_id: form.category_id || null,
         account_id: form.account_id || null,
-      });
-      toast.success("Lançamento criado");
-      setOpen(false); setForm(defaultForm()); load();
+      };
+      if (editing) {
+        await api.put(`/transactions/${editing.id}`, body);
+        toast.success("Lançamento atualizado");
+      } else {
+        await api.post("/transactions", body);
+        toast.success("Lançamento criado");
+      }
+      setOpen(false); setEditing(null); setForm(defaultForm()); load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
@@ -80,14 +100,14 @@ export default function Transactions() {
           <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Lançamentos</h1>
           <p className="text-[#6B7068]">Receitas, despesas e transferências</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>
-            <Button data-testid="new-transaction-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+            <Button onClick={openNew} data-testid="new-transaction-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
               <Plus size={16} className="mr-1" /> Novo lançamento
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg" data-testid="new-transaction-dialog">
-            <DialogHeader><DialogTitle>Novo lançamento</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{editing ? "Editar lançamento" : "Novo lançamento"}</DialogTitle></DialogHeader>
             <form onSubmit={submit} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -153,7 +173,9 @@ export default function Transactions() {
                   <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} data-testid="tx-notes-input" />
                 </div>
               </div>
-              <Button type="submit" data-testid="tx-submit-button" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Salvar</Button>
+              <Button type="submit" data-testid="tx-submit-button" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+                {editing ? "Salvar alterações" : "Salvar"}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -221,9 +243,14 @@ export default function Transactions() {
                     {t.type === "expense" ? "-" : t.type === "income" ? "+" : ""}{fmtMoney(t.amount, curr)}
                   </td>
                   <td className="py-3 px-4">
-                    <button onClick={() => setConfirmDel(t)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`tx-delete-${t.id}`}>
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => openEdit(t)} className="text-[#6B7068] hover:text-[#1E3F33] p-1" data-testid={`tx-edit-${t.id}`} title="Editar">
+                        <Pencil size={16} />
+                      </button>
+                      <button onClick={() => setConfirmDel(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-delete-${t.id}`} title="Excluir">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
