@@ -23,8 +23,7 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - Categorias padrão + personalizadas
 - Relatórios anuais
 
-## What's Implemented (2026-02)
-- ✅ Auth completo: register, login, /me, profile update, change-password
+## What's Implemented (2026-02)- ✅ Auth completo: register, login, /me, profile update, change-password
 - ✅ Categories CRUD + 11 categorias padrão seedadas por usuário
 - ✅ Accounts (conta principal seedada automaticamente)
 - ✅ Transactions CRUD com filtros (mês, ano, tipo, status, categoria)
@@ -38,6 +37,14 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ Profile + Settings (gerenciar categorias)
 - ✅ Layout responsivo: sidebar desktop + bottom nav mobile
 - ✅ Seed 3 usuários demo + grupo Casa + despesa Mercado 222€
+
+## Onda 2.5 + Onda 3 (2026-06-24)
+- ✅ /acertos: botão "Cutucar" (nudge) nos cards + botão "Quitar tudo" + aba "Histórico" (GET /settlements/history)
+- ✅ Página dedicada /notificacoes (filtro todas/não lidas, marcar lida, excluir, marcar todas)
+- ✅ Preferências de notificação por tipo em /configuracoes (mute) — GET/PUT /notifications/preferences
+- ✅ WebSocket /api/ws/notifications (auth via token query) — push em tempo real, substitui polling 30s (fallback 60s); ConnectionManager broadcast em push_notification, respeita mute
+- ✅ DELETE /notifications/{nid}
+- ⏭️ E-mail (Resend/SendGrid) ADIADO por escolha do usuário ("Decidir depois")
 
 ## Backlog (P1/P2)
 - P1: Min length validation em senha (atualmente 4)

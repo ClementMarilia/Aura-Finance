@@ -17,6 +17,7 @@ import Settlements from "@/pages/Settlements";
 import Reports from "@/pages/Reports";
 import Profile from "@/pages/Profile";
 import Settings from "@/pages/Settings";
+import Notifications from "@/pages/Notifications";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -53,6 +54,7 @@ function App() {
             <Route path="relatorios" element={<Reports />} />
             <Route path="perfil" element={<Profile />} />
             <Route path="configuracoes" element={<Settings />} />
+            <Route path="notificacoes" element={<Notifications />} />
           </Route>
         </Routes>
       </BrowserRouter>

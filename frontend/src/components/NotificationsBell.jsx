@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { Bell, Check, CheckCheck } from "lucide-react";
+import { toast } from "sonner";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
@@ -21,6 +22,8 @@ export default function NotificationsBell() {
   const [items, setItems] = useState([]);
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
+  const wsRef = useRef(null);
+  const reconnectRef = useRef(null);
 
   const loadCount = () => {
     api.get("/notifications/unread-count")
@@ -33,8 +36,42 @@ export default function NotificationsBell() {
 
   useEffect(() => {
     loadCount();
-    const id = setInterval(loadCount, 30000);
-    return () => clearInterval(id);
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    const base = process.env.REACT_APP_BACKEND_URL || "";
+    const wsUrl = `${base.replace(/^http/, "ws")}/api/ws/notifications?token=${token}`;
+
+    let closed = false;
+    const connect = () => {
+      if (closed) return;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (typeof data.unread === "number") setCount(data.unread);
+          if (data.event === "notification" && data.notification) {
+            toast(data.notification.title, { description: data.notification.message });
+            setItems(prev => [data.notification, ...prev].slice(0, 30));
+          }
+        } catch { /* ignore */ }
+      };
+      ws.onclose = () => {
+        if (closed) return;
+        reconnectRef.current = setTimeout(connect, 5000);
+      };
+      ws.onerror = () => { try { ws.close(); } catch { /* ignore */ } };
+    };
+    connect();
+
+    // lightweight fallback poll in case WS drops
+    const poll = setInterval(loadCount, 60000);
+    return () => {
+      closed = true;
+      clearInterval(poll);
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
+      if (wsRef.current) try { wsRef.current.close(); } catch { /* ignore */ }
+    };
   }, []);
 
   const onOpenChange = (v) => {
@@ -115,6 +152,15 @@ export default function NotificationsBell() {
               </div>
             </button>
           ))}
+        </div>
+        <div className="p-2 border-t border-[#E5E4E0]">
+          <button
+            onClick={() => { setOpen(false); navigate("/notificacoes"); }}
+            data-testid="notifications-see-all"
+            className="w-full text-center text-sm text-[#1E3F33] hover:bg-[#F1EFE7] rounded-lg py-2 font-medium"
+          >
+            Ver todas
+          </button>
         </div>
       </PopoverContent>
     </Popover>

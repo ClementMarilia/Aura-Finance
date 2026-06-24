@@ -3,18 +3,39 @@ import api, { formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Trash2, Plus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
+
+const NOTIF_LABELS = {
+  shared_expense_added: { title: "Despesas compartilhadas", desc: "Quando você é adicionado a uma nova despesa." },
+  settlement_paid: { title: "Acertos recebidos", desc: "Quando alguém marca um valor como pago a você." },
+  nudge: { title: "Lembretes (cutucadas)", desc: "Quando alguém te lembra de uma dívida pendente." },
+  group_added: { title: "Grupos", desc: "Quando você é adicionado a um grupo." },
+};
 
 export default function Settings() {
   const [cats, setCats] = useState([]);
   const [form, setForm] = useState({ name: "", color: "#1E3F33" });
   const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [prefs, setPrefs] = useState(null);
 
   const load = () => api.get("/categories").then(r => setCats(r.data));
-  useEffect(() => { load(); }, []);
+  const loadPrefs = () => api.get("/notifications/preferences").then(r => setPrefs(r.data));
+  useEffect(() => { load(); loadPrefs(); }, []);
+
+  const togglePref = async (key, value) => {
+    const next = { ...prefs, [key]: value };
+    setPrefs(next);
+    try {
+      await api.put("/notifications/preferences", { prefs: next });
+    } catch (err) {
+      toast.error(formatApiError(err));
+      loadPrefs();
+    }
+  };
 
   const add = async (e) => {
     e.preventDefault();
@@ -43,6 +64,27 @@ export default function Settings() {
   return (
     <div className="space-y-6 max-w-2xl" data-testid="settings-page">
       <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Configurações</h1>
+
+      <div className="card-soft" data-testid="notif-prefs-section">
+        <h3 className="text-lg font-semibold mb-1" style={{ fontFamily: "Outfit" }}>Notificações</h3>
+        <p className="text-sm text-[#6B7068] mb-4">Escolha quais alertas você quer receber.</p>
+        <div className="space-y-3">
+          {Object.entries(NOTIF_LABELS).map(([key, { title, desc }]) => (
+            <div key={key} className="flex items-center justify-between gap-4 p-3 border border-[#E5E4E0] rounded-xl">
+              <div>
+                <div className="text-sm font-medium text-[#1A1C1A]">{title}</div>
+                <div className="text-xs text-[#6B7068]">{desc}</div>
+              </div>
+              <Switch
+                data-testid={`notif-pref-${key}`}
+                className="data-[state=checked]:bg-[#1E3F33] data-[state=unchecked]:bg-[#D6D3CA]"
+                checked={prefs ? prefs[key] !== false : true}
+                onCheckedChange={(v) => togglePref(key, v)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div className="card-soft">
         <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: "Outfit" }}>Categorias</h3>

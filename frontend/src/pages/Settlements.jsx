@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import api, { fmtMoney, fmtDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Check } from "lucide-react";
+import { Check, Bell, History as HistoryIcon } from "lucide-react";
 import { toast } from "sonner";
 
 function Initials({ name, color, size = 32 }) {
@@ -18,14 +18,17 @@ export default function Settlements() {
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
   const [data, setData] = useState({ rows: [], summary: [] });
+  const [history, setHistory] = useState([]);
+  const [tab, setTab] = useState("open");
 
   const load = () => api.get("/settlements").then(r => setData(r.data));
-  useEffect(() => { load(); }, []);
+  const loadHistory = () => api.get("/settlements/history").then(r => setHistory(r.data));
+  useEffect(() => { load(); loadHistory(); }, []);
 
   const nudge = async (uid, name) => {
     try {
       const r = await api.post(`/settlements/nudge/${uid}`);
-      toast.success(`Lembrete enviado para ${name} (${r.data.amount}€)`);
+      toast.success(`Lembrete enviado para ${name} (${fmtMoney(r.data.amount, curr)})`);
     } catch (err) { toast.error(err?.response?.data?.detail || "Erro"); }
   };
 
@@ -34,12 +37,14 @@ export default function Settlements() {
     const r = await api.post(`/settlements/settle-between/${otherUserId}`);
     toast.success(`${r.data.expenses_updated} despesa(s) quitada(s)`);
     load();
+    loadHistory();
   };
 
   const markPaid = async (row) => {
     await api.post(`/shared-expenses/${row.expense_id}/settle/${row.debtor_id}`);
     toast.success("Acerto registrado");
     load();
+    loadHistory();
   };
 
   return (
@@ -49,102 +54,168 @@ export default function Settlements() {
         <p className="text-[#6B7068]">Quem deve pagar, para quem, e quanto</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {data.summary.length === 0 && <div className="card-soft md:col-span-3 text-center text-[#6B7068]">Tudo certo! Sem acertos pendentes.</div>}
-        {data.summary.map((s, i) => (
-          <div key={i} className="card-soft" data-testid={`summary-${s.user?.id}`}>
-            <div className="flex items-center gap-3">
-              <Initials name={s.user?.name} color={s.user?.avatar_color} size={40} />
-              <div>
-                <div className="font-medium">{s.user?.name}</div>
-                <div className="text-xs text-[#6B7068]">{s.user?.email}</div>
-              </div>
-            </div>
-            <div className="mt-4">
-              {s.net > 0 ? (
-                <>
-                  <div className="text-sm text-[#6B7068]">Te deve</div>
-                  <div className="text-2xl font-semibold text-emerald-600" style={{ fontFamily: "Outfit" }}>{fmtMoney(s.net, curr)}</div>
-                </>
-              ) : (
-                <>
-                  <div className="text-sm text-[#6B7068]">Você deve</div>
-                  <div className="text-2xl font-semibold text-rose-600" style={{ fontFamily: "Outfit" }}>{fmtMoney(Math.abs(s.net), curr)}</div>
-                </>
-              )}
-            </div>
-          </div>
-        ))}
+      <div className="flex gap-2 border-b border-[#E5E4E0]">
+        <button onClick={() => setTab("open")} data-testid="tab-open"
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "open" ? "border-[#1E3F33] text-[#1E3F33]" : "border-transparent text-[#6B7068] hover:text-[#1E3F33]"}`}>
+          <Check size={16} /> Pendentes
+        </button>
+        <button onClick={() => setTab("history")} data-testid="tab-history"
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "history" ? "border-[#1E3F33] text-[#1E3F33]" : "border-transparent text-[#6B7068] hover:text-[#1E3F33]"}`}>
+          <HistoryIcon size={16} /> Histórico
+        </button>
       </div>
 
-      <div className="card-soft">
-        <h3 className="text-lg font-semibold mb-3" style={{ fontFamily: "Outfit" }}>Acertos simplificados</h3>
-        <p className="text-xs text-[#6B7068] mb-4">Cálculo otimizado: menor número possível de transferências para zerar todas as dívidas.</p>
-        {(!data.transfers || data.transfers.length === 0) && (
-          <div className="text-sm text-[#6B7068] py-4 text-center">Nenhum acerto pendente.</div>
-        )}
-        <div className="space-y-2">
-          {(data.transfers || []).map((t, i) => (
-            <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-[#F1EFE7]" data-testid={`transfer-${i}`}>
-              <div className="flex items-center gap-3 text-sm">
-                <Initials name={t.debtor?.name} color={t.debtor?.avatar_color} size={28} />
-                <span className="font-medium">{t.debtor?.name}</span>
-                <span className="text-[#6B7068]">paga</span>
-                <span className="font-semibold text-[#1E3F33]">{fmtMoney(t.amount, curr)}</span>
-                <span className="text-[#6B7068]">para</span>
-                <Initials name={t.creditor?.name} color={t.creditor?.avatar_color} size={28} />
-                <span className="font-medium">{t.creditor?.name}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="card-soft overflow-x-auto p-0">
-        <h3 className="text-lg font-semibold p-4 pb-2" style={{ fontFamily: "Outfit" }}>Lançamentos pendentes</h3>
-        <table className="w-full text-sm">
-          <thead className="bg-[#F1EFE7] text-[#6B7068]">
-            <tr>
-              <th className="text-left py-3 px-4">Devedor</th>
-              <th className="text-left py-3 px-4">Para</th>
-              <th className="text-left py-3 px-4">Despesa</th>
-              <th className="text-left py-3 px-4">Data</th>
-              <th className="text-right py-3 px-4">Valor</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.rows.length === 0 && <tr><td colSpan={6} className="text-center py-12 text-[#6B7068]">Nenhum acerto pendente</td></tr>}
-            {data.rows.map((r, i) => (
-              <tr key={i} className="border-b border-[#E5E4E0]" data-testid={`row-settlement-${i}`}>
-                <td className="py-3 px-4">
-                  <div className="flex items-center gap-2">
-                    <Initials name={r.debtor?.name} color={r.debtor?.avatar_color} size={24} />
-                    <span>{r.debtor?.name}</span>
+      {tab === "open" && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {data.summary.length === 0 && <div className="card-soft md:col-span-3 text-center text-[#6B7068]">Tudo certo! Sem acertos pendentes.</div>}
+            {data.summary.map((s, i) => (
+              <div key={i} className="card-soft" data-testid={`summary-${s.user?.id}`}>
+                <div className="flex items-center gap-3">
+                  <Initials name={s.user?.name} color={s.user?.avatar_color} size={40} />
+                  <div>
+                    <div className="font-medium">{s.user?.name}</div>
+                    <div className="text-xs text-[#6B7068]">{s.user?.email}</div>
                   </div>
-                </td>
-                <td className="py-3 px-4">
-                  <div className="flex items-center gap-2">
-                    <Initials name={r.creditor?.name} color={r.creditor?.avatar_color} size={24} />
-                    <span>{r.creditor?.name}</span>
-                  </div>
-                </td>
-                <td className="py-3 px-4">{r.title}</td>
-                <td className="py-3 px-4">{fmtDate(r.date)}</td>
-                <td className="py-3 px-4 text-right font-semibold">{fmtMoney(r.amount, curr)}</td>
-                <td className="py-3 px-4">
-                  {(r.debtor_id === user.id || r.creditor_id === user.id) && (
-                    <button onClick={() => markPaid(r)} data-testid={`mark-paid-${i}`}
-                      className="px-3 py-1.5 rounded-lg text-xs bg-[#1E3F33] text-white hover:bg-[#2C5C4A] flex items-center gap-1">
-                      <Check size={12} /> Marcar pago
+                </div>
+                <div className="mt-4">
+                  {s.net > 0 ? (
+                    <>
+                      <div className="text-sm text-[#6B7068]">Te deve</div>
+                      <div className="text-2xl font-semibold text-emerald-600" style={{ fontFamily: "Outfit" }}>{fmtMoney(s.net, curr)}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-sm text-[#6B7068]">Você deve</div>
+                      <div className="text-2xl font-semibold text-rose-600" style={{ fontFamily: "Outfit" }}>{fmtMoney(Math.abs(s.net), curr)}</div>
+                    </>
+                  )}
+                </div>
+                <div className="mt-4 flex gap-2">
+                  {s.net > 0 && (
+                    <button onClick={() => nudge(s.user?.id, s.user?.name)} data-testid={`nudge-${s.user?.id}`}
+                      className="flex-1 px-3 py-1.5 rounded-lg text-xs border border-[#1E3F33] text-[#1E3F33] hover:bg-[#1E3F33] hover:text-white flex items-center justify-center gap-1 transition-colors">
+                      <Bell size={12} /> Cutucar
                     </button>
                   )}
-                </td>
-              </tr>
+                  <button onClick={() => settleAll(s.user?.id, s.user?.name)} data-testid={`settle-all-${s.user?.id}`}
+                    className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-[#1E3F33] text-white hover:bg-[#2C5C4A] flex items-center justify-center gap-1 transition-colors">
+                    <Check size={12} /> Quitar tudo
+                  </button>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
+
+          <div className="card-soft">
+            <h3 className="text-lg font-semibold mb-3" style={{ fontFamily: "Outfit" }}>Acertos simplificados</h3>
+            <p className="text-xs text-[#6B7068] mb-4">Cálculo otimizado: menor número possível de transferências para zerar todas as dívidas.</p>
+            {(!data.transfers || data.transfers.length === 0) && (
+              <div className="text-sm text-[#6B7068] py-4 text-center">Nenhum acerto pendente.</div>
+            )}
+            <div className="space-y-2">
+              {(data.transfers || []).map((t, i) => (
+                <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-[#F1EFE7]" data-testid={`transfer-${i}`}>
+                  <div className="flex items-center gap-3 text-sm">
+                    <Initials name={t.debtor?.name} color={t.debtor?.avatar_color} size={28} />
+                    <span className="font-medium">{t.debtor?.name}</span>
+                    <span className="text-[#6B7068]">paga</span>
+                    <span className="font-semibold text-[#1E3F33]">{fmtMoney(t.amount, curr)}</span>
+                    <span className="text-[#6B7068]">para</span>
+                    <Initials name={t.creditor?.name} color={t.creditor?.avatar_color} size={28} />
+                    <span className="font-medium">{t.creditor?.name}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card-soft overflow-x-auto p-0">
+            <h3 className="text-lg font-semibold p-4 pb-2" style={{ fontFamily: "Outfit" }}>Lançamentos pendentes</h3>
+            <table className="w-full text-sm">
+              <thead className="bg-[#F1EFE7] text-[#6B7068]">
+                <tr>
+                  <th className="text-left py-3 px-4">Devedor</th>
+                  <th className="text-left py-3 px-4">Para</th>
+                  <th className="text-left py-3 px-4">Despesa</th>
+                  <th className="text-left py-3 px-4">Data</th>
+                  <th className="text-right py-3 px-4">Valor</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.length === 0 && <tr><td colSpan={6} className="text-center py-12 text-[#6B7068]">Nenhum acerto pendente</td></tr>}
+                {data.rows.map((r, i) => (
+                  <tr key={i} className="border-b border-[#E5E4E0]" data-testid={`row-settlement-${i}`}>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <Initials name={r.debtor?.name} color={r.debtor?.avatar_color} size={24} />
+                        <span>{r.debtor?.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <Initials name={r.creditor?.name} color={r.creditor?.avatar_color} size={24} />
+                        <span>{r.creditor?.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">{r.title}</td>
+                    <td className="py-3 px-4">{fmtDate(r.date)}</td>
+                    <td className="py-3 px-4 text-right font-semibold">{fmtMoney(r.amount, curr)}</td>
+                    <td className="py-3 px-4">
+                      {(r.debtor_id === user.id || r.creditor_id === user.id) && (
+                        <button onClick={() => markPaid(r)} data-testid={`mark-paid-${i}`}
+                          className="px-3 py-1.5 rounded-lg text-xs bg-[#1E3F33] text-white hover:bg-[#2C5C4A] flex items-center gap-1">
+                          <Check size={12} /> Marcar pago
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {tab === "history" && (
+        <div className="card-soft overflow-x-auto p-0" data-testid="history-section">
+          <h3 className="text-lg font-semibold p-4 pb-2" style={{ fontFamily: "Outfit" }}>Histórico de acertos</h3>
+          <table className="w-full text-sm">
+            <thead className="bg-[#F1EFE7] text-[#6B7068]">
+              <tr>
+                <th className="text-left py-3 px-4">De</th>
+                <th className="text-left py-3 px-4">Para</th>
+                <th className="text-left py-3 px-4">Despesa</th>
+                <th className="text-left py-3 px-4">Quitado em</th>
+                <th className="text-right py-3 px-4">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.length === 0 && <tr><td colSpan={5} className="text-center py-12 text-[#6B7068]">Nenhum acerto registrado ainda</td></tr>}
+              {history.map((h, i) => (
+                <tr key={i} className="border-b border-[#E5E4E0]" data-testid={`history-row-${i}`}>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <Initials name={h.debtor?.name} color={h.debtor?.avatar_color} size={24} />
+                      <span>{h.debtor?.name}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <Initials name={h.creditor?.name} color={h.creditor?.avatar_color} size={24} />
+                      <span>{h.creditor?.name}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4">{h.expense_title || "—"}</td>
+                  <td className="py-3 px-4">{fmtDate(h.paid_at)}</td>
+                  <td className="py-3 px-4 text-right font-semibold text-emerald-600">{fmtMoney(h.amount, curr)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
-  Users, FolderOpen, Scale, FileBarChart, UserCircle, Settings, LogOut, Wallet
+  Users, FolderOpen, Scale, FileBarChart, UserCircle, Settings, LogOut, Wallet, Bell
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import NotificationsBell from "@/components/NotificationsBell";
@@ -16,6 +16,7 @@ const nav = [
   { to: "/grupos", icon: FolderOpen, label: "Grupos" },
   { to: "/acertos", icon: Scale, label: "Acertos" },
   { to: "/relatorios", icon: FileBarChart, label: "Relatórios" },
+  { to: "/notificacoes", icon: Bell, label: "Notificações" },
 ];
 
 export default function Layout() {

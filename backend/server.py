@@ -10,7 +10,7 @@ import bcrypt
 import jwt
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPBearer
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -30,6 +30,33 @@ security = HTTPBearer(auto_error=False)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("finance")
+
+
+# ---------- Realtime (WebSocket) ----------
+NOTIF_TYPES = ["shared_expense_added", "settlement_paid", "nudge", "group_added"]
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active = defaultdict(set)
+
+    def connect(self, user_id: str, ws: WebSocket):
+        self.active[user_id].add(ws)
+
+    def disconnect(self, user_id: str, ws: WebSocket):
+        self.active[user_id].discard(ws)
+        if not self.active[user_id]:
+            self.active.pop(user_id, None)
+
+    async def send(self, user_id: str, data: dict):
+        for ws in list(self.active.get(user_id, [])):
+            try:
+                await ws.send_json(data)
+            except Exception:
+                self.active[user_id].discard(ws)
+
+
+ws_manager = ConnectionManager()
 
 
 # ---------- Helpers ----------
@@ -654,11 +681,19 @@ async def push_notification(user_id: str, ntype: str, title: str, message: str,
                             link: str = "", meta: Optional[dict] = None):
     if not user_id:
         return
-    await db.notifications.insert_one({
+    u = await db.users.find_one({"id": user_id}, {"_id": 0, "notif_prefs": 1})
+    prefs = (u or {}).get("notif_prefs") or {}
+    if prefs.get(ntype) is False:
+        return
+    doc = {
         "id": new_id(), "user_id": user_id, "type": ntype,
         "title": title, "message": message, "link": link,
         "meta": meta or {}, "read": False, "created_at": now_iso(),
-    })
+    }
+    await db.notifications.insert_one(doc)
+    doc.pop("_id", None)
+    unread = await db.notifications.count_documents({"user_id": user_id, "read": False})
+    await ws_manager.send(user_id, {"event": "notification", "notification": doc, "unread": unread})
 
 
 @api.post("/shared-expenses")
@@ -770,6 +805,56 @@ async def mark_all_read(user=Depends(get_current_user)):
         {"user_id": user["id"], "read": False}, {"$set": {"read": True}}
     )
     return {"ok": True}
+
+
+@api.delete("/notifications/{nid}")
+async def delete_notification(nid: str, user=Depends(get_current_user)):
+    await db.notifications.delete_one({"id": nid, "user_id": user["id"]})
+    return {"ok": True}
+
+
+class NotifPrefsIn(BaseModel):
+    prefs: dict
+
+
+@api.get("/notifications/preferences")
+async def get_notif_prefs(user=Depends(get_current_user)):
+    u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "notif_prefs": 1})
+    prefs = (u or {}).get("notif_prefs") or {}
+    return {t: prefs.get(t, True) for t in NOTIF_TYPES}
+
+
+@api.put("/notifications/preferences")
+async def set_notif_prefs(body: NotifPrefsIn, user=Depends(get_current_user)):
+    clean = {t: bool(body.prefs.get(t, True)) for t in NOTIF_TYPES}
+    await db.users.update_one({"id": user["id"]}, {"$set": {"notif_prefs": clean}})
+    return clean
+
+
+@app.websocket("/api/ws/notifications")
+async def ws_notifications(websocket: WebSocket):
+    token = websocket.query_params.get("token")
+    user_id = None
+    if token:
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            user_id = payload.get("sub")
+        except Exception:
+            user_id = None
+    if not user_id:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    ws_manager.connect(user_id, websocket)
+    try:
+        unread = await db.notifications.count_documents({"user_id": user_id, "read": False})
+        await websocket.send_json({"event": "init", "unread": unread})
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(user_id, websocket)
+    except Exception:
+        ws_manager.disconnect(user_id, websocket)
 
 
 @api.put("/shared-expenses/{sid}")
