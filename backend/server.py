@@ -1179,19 +1179,193 @@ async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, 
 
 @api.get("/reports/annual")
 async def annual_report(year: int, user=Depends(get_current_user)):
-    months = []
-    for m in range(1, 13):
-        s, e = month_range(year, m)
-        txs = await db.transactions.find(
-            {"user_id": user["id"], "date": {"$gte": s[:10], "$lt": e[:10]},
-             "status": {"$ne": "cancelled"}},
-            {"_id": 0},
-        ).to_list(5000)
-        inc = sum(t["amount"] for t in txs if t["type"] == "income")
-        exp = sum(t["amount"] for t in txs if t["type"] == "expense")
-        months.append({"month": m, "income": round(inc, 2),
-                       "expense": round(exp, 2), "balance": round(inc - exp, 2)})
-    return {"year": year, "months": months}
+    async def year_months(yr):
+        out = []
+        for m in range(1, 13):
+            s, e = month_range(yr, m)
+            txs = await db.transactions.find(
+                {"user_id": user["id"], "date": {"$gte": s[:10], "$lt": e[:10]},
+                 "status": {"$ne": "cancelled"}},
+                {"_id": 0},
+            ).to_list(5000)
+            inc = sum(t["amount"] for t in txs if t["type"] == "income")
+            exp = sum(t["amount"] for t in txs if t["type"] == "expense")
+            out.append({"month": m, "income": round(inc, 2),
+                        "expense": round(exp, 2), "balance": round(inc - exp, 2)})
+        return out
+
+    months = await year_months(year)
+    prev_months = await year_months(year - 1)
+    tot = lambda arr, k: round(sum(x[k] for x in arr), 2)
+    return {
+        "year": year,
+        "months": months,
+        "prev_year": year - 1,
+        "prev_months": prev_months,
+        "totals": {"income": tot(months, "income"), "expense": tot(months, "expense"),
+                   "balance": tot(months, "balance")},
+        "prev_totals": {"income": tot(prev_months, "income"), "expense": tot(prev_months, "expense"),
+                        "balance": tot(prev_months, "balance")},
+    }
+
+
+async def _month_net(uid, yy, mm):
+    s, e = month_range(yy, mm)
+    txs = await db.transactions.find(
+        {"user_id": uid, "date": {"$gte": s[:10], "$lt": e[:10]},
+         "status": {"$ne": "cancelled"}}, {"_id": 0, "amount": 1, "type": 1},
+    ).to_list(5000)
+    inc = sum(t["amount"] for t in txs if t["type"] == "income")
+    exp = sum(t["amount"] for t in txs if t["type"] == "expense")
+    return round(inc, 2), round(exp, 2)
+
+
+@api.get("/reports/projection")
+async def projection(months: int = 6, user=Depends(get_current_user)):
+    months = max(1, min(months, 12))
+    now = datetime.now(timezone.utc)
+    all_txs = await db.transactions.find(
+        {"user_id": user["id"], "status": {"$ne": "cancelled"}},
+        {"_id": 0, "amount": 1, "type": 1},
+    ).to_list(20000)
+    current_balance = round(
+        sum(t["amount"] for t in all_txs if t["type"] == "income")
+        - sum(t["amount"] for t in all_txs if t["type"] == "expense"), 2)
+    nets = []
+    for i in range(5, -1, -1):
+        mm, yy = now.month - i, now.year
+        while mm <= 0:
+            mm += 12
+            yy -= 1
+        inc, exp = await _month_net(user["id"], yy, mm)
+        nets.append(inc - exp)
+    avg = round(sum(nets) / len(nets), 2) if nets else 0.0
+    series = []
+    bal = current_balance
+    mm, yy = now.month, now.year
+    for _ in range(months):
+        mm += 1
+        if mm > 12:
+            mm = 1
+            yy += 1
+        bal = round(bal + avg, 2)
+        series.append({"month": f"{yy}-{mm:02d}", "projected": bal})
+    return {"current_balance": current_balance, "avg_monthly_net": avg, "projection": series}
+
+
+@api.get("/insights")
+async def insights(user=Depends(get_current_user)):
+    now = datetime.now(timezone.utc)
+    cur_inc, cur_exp = await _month_net(user["id"], now.year, now.month)
+    pmm, pyy = now.month - 1, now.year
+    if pmm <= 0:
+        pmm, pyy = 12, now.year - 1
+    prev_inc, prev_exp = await _month_net(user["id"], pyy, pmm)
+
+    out = []
+    # Savings rate
+    if cur_inc > 0:
+        rate = round((cur_inc - cur_exp) / cur_inc * 100, 1)
+        if rate >= 0:
+            out.append({"type": "savings", "severity": "good",
+                        "title": "Taxa de poupança",
+                        "message": f"Você guardou {rate}% da sua receita este mês ({fmt_eur(cur_inc - cur_exp, user.get('currency','EUR'))})."})
+        else:
+            out.append({"type": "savings", "severity": "warning",
+                        "title": "Gastos acima da receita",
+                        "message": f"Suas despesas superaram a receita em {fmt_eur(cur_exp - cur_inc, user.get('currency','EUR'))} este mês."})
+    # Expense trend vs last month
+    if prev_exp > 0:
+        diff = cur_exp - prev_exp
+        pct = round(abs(diff) / prev_exp * 100, 1)
+        if diff > 0:
+            out.append({"type": "trend", "severity": "warning",
+                        "title": "Despesas em alta",
+                        "message": f"Seus gastos subiram {pct}% em relação a {pyy}-{pmm:02d}."})
+        elif diff < 0:
+            out.append({"type": "trend", "severity": "good",
+                        "title": "Despesas em queda",
+                        "message": f"Você gastou {pct}% menos que no mês passado. Continue assim!"})
+    # Top category this month
+    start, end = month_range(now.year, now.month)
+    txs = await db.transactions.find(
+        {"user_id": user["id"], "type": "expense", "date": {"$gte": start[:10], "$lt": end[:10]},
+         "status": {"$ne": "cancelled"}}, {"_id": 0},
+    ).to_list(5000)
+    by_cat = defaultdict(float)
+    for t in txs:
+        if t.get("category_id"):
+            by_cat[t["category_id"]] += t["amount"]
+    if by_cat:
+        top_id, top_val = max(by_cat.items(), key=lambda x: x[1])
+        cat = await db.categories.find_one({"id": top_id}, {"_id": 0, "name": 1})
+        share = round(top_val / cur_exp * 100, 1) if cur_exp else 0
+        out.append({"type": "category", "severity": "info",
+                    "title": "Maior categoria de gasto",
+                    "message": f"'{cat['name'] if cat else 'Outros'}' representa {share}% dos seus gastos ({fmt_eur(top_val, user.get('currency','EUR'))})."})
+    # Pending payables
+    pend = sum(t["amount"] for t in txs if t["status"] == "pending")
+    if pend > 0:
+        out.append({"type": "pending", "severity": "warning",
+                    "title": "Contas pendentes",
+                    "message": f"Você tem {fmt_eur(pend, user.get('currency','EUR'))} em despesas pendentes este mês."})
+    if not out:
+        out.append({"type": "empty", "severity": "info", "title": "Sem dados suficientes",
+                    "message": "Cadastre receitas e despesas para receber insights personalizados."})
+    return out
+
+
+# ---------- Financial Goals ----------
+class GoalIn(BaseModel):
+    title: str
+    target_amount: float
+    current_amount: float = 0.0
+    deadline: Optional[str] = None
+    color: str = "#1E3F33"
+
+
+class ContributeIn(BaseModel):
+    amount: float
+
+
+@api.get("/goals")
+async def list_goals(user=Depends(get_current_user)):
+    return await db.goals.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+
+
+@api.post("/goals")
+async def create_goal(payload: GoalIn, user=Depends(get_current_user)):
+    doc = {"id": new_id(), "user_id": user["id"], **payload.model_dump(),
+           "created_at": now_iso()}
+    await db.goals.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.put("/goals/{gid}")
+async def update_goal(gid: str, payload: GoalIn, user=Depends(get_current_user)):
+    res = await db.goals.update_one(
+        {"id": gid, "user_id": user["id"]}, {"$set": payload.model_dump()})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Meta não encontrada")
+    return await db.goals.find_one({"id": gid}, {"_id": 0})
+
+
+@api.post("/goals/{gid}/contribute")
+async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current_user)):
+    goal = await db.goals.find_one({"id": gid, "user_id": user["id"]}, {"_id": 0})
+    if not goal:
+        raise HTTPException(404, "Meta não encontrada")
+    new_amt = round(goal.get("current_amount", 0) + body.amount, 2)
+    await db.goals.update_one({"id": gid}, {"$set": {"current_amount": new_amt}})
+    goal["current_amount"] = new_amt
+    return goal
+
+
+@api.delete("/goals/{gid}")
+async def delete_goal(gid: str, user=Depends(get_current_user)):
+    await db.goals.delete_one({"id": gid, "user_id": user["id"]})
+    return {"ok": True}
 
 
 # ---------- Seed Demo ----------

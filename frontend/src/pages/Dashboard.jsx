@@ -3,11 +3,12 @@ import api from "@/lib/api";
 import { fmtMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
-  TrendingUp, TrendingDown, Wallet, Clock, HandCoins, CreditCard
+  TrendingUp, TrendingDown, Wallet, Clock, HandCoins, CreditCard,
+  Lightbulb, AlertTriangle, Info, CheckCircle2
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
-  PieChart, Pie, Cell, Legend
+  PieChart, Pie, Cell, Legend, AreaChart, Area
 } from "recharts";
 
 const months = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -15,6 +16,8 @@ const months = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
+  const [insights, setInsights] = useState([]);
+  const [projection, setProjection] = useState(null);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() + 1 };
@@ -23,6 +26,11 @@ export default function Dashboard() {
   useEffect(() => {
     api.get("/dashboard", { params: period }).then(r => setData(r.data));
   }, [period.year, period.month]);
+
+  useEffect(() => {
+    api.get("/insights").then(r => setInsights(r.data || [])).catch(() => {});
+    api.get("/reports/projection", { params: { months: 6 } }).then(r => setProjection(r.data)).catch(() => {});
+  }, []);
 
   const curr = user?.currency || "EUR";
 
@@ -128,6 +136,68 @@ export default function Dashboard() {
                   <Tooltip formatter={(v) => fmtMoney(v, curr)} />
                   <Legend />
                 </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Insights + Projection */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card-soft" data-testid="insights-section">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ fontFamily: "Outfit" }}>
+            <Lightbulb size={18} className="text-[#E5A83B]" /> Insights
+          </h3>
+          <div className="space-y-3">
+            {insights.length === 0 && <div className="text-sm text-[#6B7068]">Calculando insights...</div>}
+            {insights.map((ins, i) => {
+              const map = {
+                good: { Icon: CheckCircle2, c: "text-emerald-600", bg: "bg-emerald-50" },
+                warning: { Icon: AlertTriangle, c: "text-amber-700", bg: "bg-amber-50" },
+                info: { Icon: Info, c: "text-blue-600", bg: "bg-blue-50" },
+              };
+              const { Icon, c, bg } = map[ins.severity] || map.info;
+              return (
+                <div key={i} className="flex items-start gap-3" data-testid={`insight-${i}`}>
+                  <div className={`w-8 h-8 rounded-lg ${bg} ${c} flex items-center justify-center flex-shrink-0`}>
+                    <Icon size={16} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-[#1A1C1A]">{ins.title}</div>
+                    <div className="text-xs text-[#6B7068] mt-0.5">{ins.message}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="card-soft" data-testid="projection-section">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Projeção de saldo</h3>
+            {projection && (
+              <span className="text-xs text-[#6B7068]">
+                média mensal: {fmtMoney(projection.avg_monthly_net, curr)}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-[#6B7068] mb-3">Estimativa para os próximos 6 meses com base no seu histórico.</p>
+          {projection && (
+            <div style={{ width: "100%", height: 220 }}>
+              <ResponsiveContainer>
+                <AreaChart data={projection.projection.map(p => ({ name: p.month.slice(5), projected: p.projected }))}>
+                  <defs>
+                    <linearGradient id="projGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#1E3F33" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#1E3F33" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E4E0" />
+                  <XAxis dataKey="name" stroke="#6B7068" fontSize={12} />
+                  <YAxis stroke="#6B7068" fontSize={12} />
+                  <Tooltip formatter={(v) => fmtMoney(v, curr)} />
+                  <Area type="monotone" dataKey="projected" name="Saldo projetado" stroke="#1E3F33" strokeWidth={2} fill="url(#projGrad)" />
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           )}

@@ -8,8 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown } from "lucide-react";
 import { toast } from "sonner";
+import { exportCSV } from "@/lib/exporters";
 
 const STATUS_LABEL = { paid: "Pago", pending: "Pendente", cancelled: "Cancelado" };
 const TYPE_LABEL = { income: "Receita", expense: "Despesa", transfer: "Transferência" };
@@ -93,6 +94,18 @@ export default function Transactions() {
     load();
   };
 
+  const handleCSV = () => {
+    if (items.length === 0) { toast.error("Nada para exportar"); return; }
+    exportCSV(
+      `lancamentos_${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Data", "Descrição", "Categoria", "Tipo", "Status", "Valor"],
+      items.map(t => [
+        t.date, t.description || "", cats.find(c => c.id === t.category_id)?.name || "",
+        TYPE_LABEL[t.type], STATUS_LABEL[t.status], t.amount,
+      ]),
+    );
+  };
+
   return (
     <div className="space-y-6" data-testid="transactions-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -100,6 +113,10 @@ export default function Transactions() {
           <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Lançamentos</h1>
           <p className="text-[#6B7068]">Receitas, despesas e transferências</p>
         </div>
+        <div className="flex gap-2">
+        <Button variant="outline" onClick={handleCSV} data-testid="tx-export-csv" className="rounded-xl">
+          <FileDown size={16} className="mr-1" /> CSV
+        </Button>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>
             <Button onClick={openNew} data-testid="new-transaction-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
@@ -179,6 +196,7 @@ export default function Transactions() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="card-soft p-4">
