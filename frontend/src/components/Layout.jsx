@@ -4,6 +4,7 @@ import {
   Users, FolderOpen, Scale, FileBarChart, UserCircle, Settings, LogOut, Wallet
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import NotificationsBell from "@/components/NotificationsBell";
 
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "Painel", end: true },
@@ -66,6 +67,7 @@ export default function Layout() {
               <div className="text-xs text-[#6B7068]">{user?.email}</div>
             </div>
           </button>
+          <NotificationsBell />
           <button onClick={() => { logout(); navigate("/login"); }} data-testid="logout-button"
             className="p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]">
             <LogOut size={18} />
@@ -82,11 +84,14 @@ export default function Layout() {
             </div>
             <span className="font-semibold" style={{ fontFamily: "Outfit" }}>Aurea</span>
           </div>
-          <button onClick={() => navigate("/perfil")} data-testid="mobile-profile-button"
-            className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium"
-            style={{ backgroundColor: user?.avatar_color || "#1E3F33" }}>
-            {initials || "U"}
-          </button>
+          <div className="flex items-center gap-2">
+            <NotificationsBell />
+            <button onClick={() => navigate("/perfil")} data-testid="mobile-profile-button"
+              className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium"
+              style={{ backgroundColor: user?.avatar_color || "#1E3F33" }}>
+              {initials || "U"}
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-x-hidden">

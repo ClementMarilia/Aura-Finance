@@ -502,6 +502,13 @@ async def create_group(payload: GroupIn, user=Depends(get_current_user)):
     }
     await db.groups.insert_one(doc)
     doc.pop("_id", None)
+    for mid in member_ids:
+        if mid != user["id"]:
+            await push_notification(
+                mid, "group_added", "Adicionado a um grupo",
+                f"{user['name']} adicionou você ao grupo '{payload.name}'.",
+                "/grupos", {"group_id": doc["id"]},
+            )
     return doc
 
 
@@ -515,6 +522,11 @@ async def add_group_member(gid: str, body: dict, user=Depends(get_current_user))
     if not u:
         raise HTTPException(404, "Usuário não encontrado")
     await db.groups.update_one({"id": gid}, {"$addToSet": {"member_ids": u["id"]}})
+    await push_notification(
+        u["id"], "group_added", "Adicionado a um grupo",
+        f"{user['name']} adicionou você ao grupo '{group['name']}'.",
+        "/grupos", {"group_id": gid},
+    )
     return {"ok": True}
 
 
@@ -569,6 +581,17 @@ async def list_shared(user=Depends(get_current_user), group_id: Optional[str] = 
     return items
 
 
+async def push_notification(user_id: str, ntype: str, title: str, message: str,
+                            link: str = "", meta: Optional[dict] = None):
+    if not user_id:
+        return
+    await db.notifications.insert_one({
+        "id": new_id(), "user_id": user_id, "type": ntype,
+        "title": title, "message": message, "link": link,
+        "meta": meta or {}, "read": False, "created_at": now_iso(),
+    })
+
+
 @api.post("/shared-expenses")
 async def create_shared(payload: SharedExpenseIn, user=Depends(get_current_user)):
     participants_in = [p.model_dump() for p in payload.participants]
@@ -589,7 +612,28 @@ async def create_shared(payload: SharedExpenseIn, user=Depends(get_current_user)
     }
     await db.shared_expenses.insert_one(doc)
     doc.pop("_id", None)
+
+    # Notify all participants except the creator
+    payer = await db.users.find_one({"id": payload.payer_id}, {"_id": 0})
+    payer_name = payer["name"] if payer else "alguém"
+    for p in splits:
+        if p["user_id"] == user["id"]:
+            continue
+        is_payer = p["user_id"] == payload.payer_id
+        msg = (f"{user['name']} adicionou você na despesa '{payload.title}' "
+               f"({fmt_eur(payload.amount, user.get('currency', 'EUR'))})"
+               + ("" if is_payer else f". Você deve {fmt_eur(p['owed'], user.get('currency', 'EUR'))} para {payer_name}."))
+        await push_notification(
+            p["user_id"], "shared_expense_added",
+            "Nova despesa compartilhada", msg,
+            "/despesas-compartilhadas", {"expense_id": doc["id"]},
+        )
     return doc
+
+
+def fmt_eur(v: float, currency: str = "EUR") -> str:
+    symbol = {"EUR": "€", "BRL": "R$", "USD": "$"}.get(currency, currency)
+    return f"{symbol} {v:.2f}"
 
 
 @api.post("/shared-expenses/{sid}/settle/{user_id}")
@@ -598,14 +642,57 @@ async def settle_participant(sid: str, user_id: str, user=Depends(get_current_us
     if not se:
         raise HTTPException(404, "Despesa não encontrada")
     parts = se["participants"]
+    new_paid = False
     for p in parts:
         if p["user_id"] == user_id:
-            p["paid_back"] = not p.get("paid_back", False)
+            new_paid = not p.get("paid_back", False)
+            p["paid_back"] = new_paid
     all_paid = all(p.get("paid_back") or p["user_id"] == se["payer_id"] for p in parts)
     any_paid = any(p.get("paid_back") for p in parts)
     status = "finalized" if all_paid else ("partial" if any_paid else "open")
     await db.shared_expenses.update_one({"id": sid}, {"$set": {"participants": parts, "status": status}})
+    # Notify the payer when someone marks as paid
+    if new_paid and user_id != se["payer_id"]:
+        debtor = await db.users.find_one({"id": user_id}, {"_id": 0})
+        amount = next((p["owed"] for p in parts if p["user_id"] == user_id), 0)
+        await push_notification(
+            se["payer_id"], "settlement_paid",
+            "Acerto recebido",
+            f"{debtor['name'] if debtor else 'Alguém'} marcou {fmt_eur(amount)} como pago em '{se['title']}'.",
+            "/acertos", {"expense_id": sid},
+        )
     return {"ok": True, "status": status}
+
+
+# ---------- Notifications ----------
+@api.get("/notifications")
+async def list_notifications(user=Depends(get_current_user), limit: int = 30):
+    items = await db.notifications.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    return items
+
+
+@api.get("/notifications/unread-count")
+async def unread_count(user=Depends(get_current_user)):
+    n = await db.notifications.count_documents({"user_id": user["id"], "read": False})
+    return {"count": n}
+
+
+@api.post("/notifications/{nid}/read")
+async def mark_read(nid: str, user=Depends(get_current_user)):
+    await db.notifications.update_one(
+        {"id": nid, "user_id": user["id"]}, {"$set": {"read": True}}
+    )
+    return {"ok": True}
+
+
+@api.post("/notifications/read-all")
+async def mark_all_read(user=Depends(get_current_user)):
+    await db.notifications.update_many(
+        {"user_id": user["id"], "read": False}, {"$set": {"read": True}}
+    )
+    return {"ok": True}
 
 
 @api.delete("/shared-expenses/{sid}")
@@ -783,6 +870,7 @@ async def startup():
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
     await db.shared_expenses.create_index("participant_ids")
     await db.groups.create_index("member_ids")
+    await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     if os.environ.get("SEED_DEMO", "false").lower() != "true":
         return
     if await db.users.find_one({"email": "wendy@demo.com"}):
