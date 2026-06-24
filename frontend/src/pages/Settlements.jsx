@@ -22,6 +22,13 @@ export default function Settlements() {
   const load = () => api.get("/settlements").then(r => setData(r.data));
   useEffect(() => { load(); }, []);
 
+  const nudge = async (uid, name) => {
+    try {
+      const r = await api.post(`/settlements/nudge/${uid}`);
+      toast.success(`Lembrete enviado para ${name} (${r.data.amount}€)`);
+    } catch (err) { toast.error(err?.response?.data?.detail || "Erro"); }
+  };
+
   const settleAll = async (otherUserId, name) => {
     if (!window.confirm(`Marcar TODAS as dívidas pendentes entre você e ${name} como pagas?`)) return;
     const r = await api.post(`/settlements/settle-between/${otherUserId}`);

@@ -712,10 +712,18 @@ async def settle_participant(sid: str, user_id: str, user=Depends(get_current_us
         raise HTTPException(404, "Despesa não encontrada")
     parts = se["participants"]
     new_paid = False
+    amount_paid = 0
     for p in parts:
         if p["user_id"] == user_id:
             new_paid = not p.get("paid_back", False)
             p["paid_back"] = new_paid
+            amount_paid = p["owed"]
+    if new_paid and user_id != se["payer_id"]:
+        await db.settlement_history.insert_one({
+            "id": new_id(), "expense_id": sid, "expense_title": se["title"],
+            "debtor_id": user_id, "creditor_id": se["payer_id"],
+            "amount": amount_paid, "paid_at": now_iso(),
+        })
     all_paid = all(p.get("paid_back") or p["user_id"] == se["payer_id"] for p in parts)
     any_paid = any(p.get("paid_back") for p in parts)
     status = "finalized" if all_paid else ("partial" if any_paid else "open")
@@ -842,6 +850,44 @@ async def settle_between(other_id: str, user=Depends(get_current_user)):
             "/acertos", {},
         )
     return {"ok": True, "expenses_updated": touched}
+
+
+@api.post("/settlements/nudge/{debtor_id}")
+async def nudge_debtor(debtor_id: str, user=Depends(get_current_user)):
+    """Send a reminder notification to a debtor."""
+    exps = await db.shared_expenses.find(
+        {"participant_ids": {"$all": [user["id"], debtor_id]}, "payer_id": user["id"]},
+        {"_id": 0},
+    ).to_list(500)
+    total = 0.0
+    for e in exps:
+        for p in e["participants"]:
+            if p["user_id"] == debtor_id and not p.get("paid_back"):
+                total += p["owed"]
+    if total <= 0:
+        raise HTTPException(400, "Sem dívida pendente")
+    await push_notification(
+        debtor_id, "nudge", "Lembrete de pagamento",
+        f"{user['name']} está lembrando que você deve {fmt_eur(total)} em despesas compartilhadas.",
+        "/acertos", {"from": user["id"]},
+    )
+    return {"ok": True, "amount": round(total, 2)}
+
+
+@api.get("/settlements/history")
+async def settlement_history(user=Depends(get_current_user), limit: int = 100):
+    items = await db.settlement_history.find(
+        {"$or": [{"debtor_id": user["id"]}, {"creditor_id": user["id"]}]}, {"_id": 0},
+    ).sort("paid_at", -1).limit(limit).to_list(limit)
+    uids = set()
+    for it in items:
+        uids.update([it["debtor_id"], it["creditor_id"]])
+    users = await db.users.find({"id": {"$in": list(uids)}}, {"_id": 0, "password_hash": 0}).to_list(200)
+    umap = {u["id"]: public_user(u) for u in users}
+    for it in items:
+        it["debtor"] = umap.get(it["debtor_id"])
+        it["creditor"] = umap.get(it["creditor_id"])
+    return items
 
 
 @api.get("/settlements")
