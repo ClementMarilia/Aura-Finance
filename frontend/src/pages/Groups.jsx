@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, UserPlus } from "lucide-react";
+import { Plus, Trash2, UserPlus, Pencil, X } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
 function Initials({ name, color, size = 32 }) {
@@ -20,11 +21,14 @@ function Initials({ name, color, size = 32 }) {
 }
 
 export default function Groups() {
+  const { user } = useAuth();
   const [list, setList] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", member_emails: "" });
   const [addEmail, setAddEmail] = useState({});
   const [confirmDel, setConfirmDel] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [editForm, setEditForm] = useState({ name: "", description: "" });
 
   const load = () => api.get("/groups").then(r => setList(r.data));
   useEffect(() => { load(); }, []);
@@ -50,6 +54,20 @@ export default function Groups() {
       toast.success("Membro adicionado");
       setAddEmail({ ...addEmail, [gid]: "" }); load();
     } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const openEdit = (g) => { setEditing(g); setEditForm({ name: g.name, description: g.description || "" }); };
+  const submitEdit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.put(`/groups/${editing.id}`, editForm);
+      toast.success("Grupo atualizado"); setEditing(null); load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+  const removeMember = async (gid, uid, name) => {
+    if (!window.confirm(`Remover ${name} do grupo?`)) return;
+    try { await api.delete(`/groups/${gid}/members/${uid}`); toast.success("Removido"); load(); }
+    catch (err) { toast.error(formatApiError(err)); }
   };
 
   const remove = async () => {
@@ -106,9 +124,14 @@ export default function Groups() {
                 <div className="text-xl font-semibold" style={{ fontFamily: "Outfit" }}>{g.name}</div>
                 <div className="text-sm text-[#6B7068] mt-1">{g.description || "—"}</div>
               </div>
-              <button onClick={() => setConfirmDel(g)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`group-delete-${g.id}`}>
-                <Trash2 size={16} />
-              </button>
+              <div className="flex gap-1">
+                <button onClick={() => openEdit(g)} className="text-[#6B7068] hover:text-[#1E3F33] p-1" data-testid={`group-edit-${g.id}`} title="Editar">
+                  <Pencil size={16} />
+                </button>
+                <button onClick={() => setConfirmDel(g)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`group-delete-${g.id}`} title="Excluir">
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
             <div className="mt-4">
               <div className="text-xs text-[#6B7068] mb-2">{g.members.length} membro(s)</div>
@@ -132,6 +155,19 @@ export default function Groups() {
           </div>
         ))}
       </div>
+
+      <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Editar grupo</DialogTitle></DialogHeader>
+          <form onSubmit={submitEdit} className="space-y-3">
+            <div><Label>Nome</Label>
+              <Input value={editForm.name} required onChange={e => setEditForm({ ...editForm, name: e.target.value })} data-testid="group-edit-name" /></div>
+            <div><Label>Descrição</Label>
+              <Textarea value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} data-testid="group-edit-desc" /></div>
+            <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="group-edit-submit">Salvar alterações</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={!!confirmDel}

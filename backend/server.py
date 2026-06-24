@@ -805,6 +805,45 @@ async def delete_shared(sid: str, user=Depends(get_current_user)):
 
 
 # ---------- Settlements ----------
+@api.post("/settlements/settle-between/{other_id}")
+async def settle_between(other_id: str, user=Depends(get_current_user)):
+    """Mark as paid_back all open shared-expense debts between current user and other_id."""
+    exps = await db.shared_expenses.find(
+        {"participant_ids": {"$all": [user["id"], other_id]}}, {"_id": 0}
+    ).to_list(1000)
+    touched = 0
+    for e in exps:
+        changed = False
+        for p in e["participants"]:
+            if p.get("paid_back"):
+                continue
+            payer = e["payer_id"]
+            # case A: other_id is payer, user is debtor
+            if payer == other_id and p["user_id"] == user["id"]:
+                p["paid_back"] = True
+                changed = True
+            # case B: user is payer, other_id is debtor
+            elif payer == user["id"] and p["user_id"] == other_id:
+                p["paid_back"] = True
+                changed = True
+        if changed:
+            all_paid = all(p.get("paid_back") or p["user_id"] == e["payer_id"] for p in e["participants"])
+            any_paid = any(p.get("paid_back") for p in e["participants"])
+            status = "finalized" if all_paid else ("partial" if any_paid else "open")
+            await db.shared_expenses.update_one(
+                {"id": e["id"]}, {"$set": {"participants": e["participants"], "status": status}}
+            )
+            touched += 1
+    other = await db.users.find_one({"id": other_id}, {"_id": 0})
+    if other and touched:
+        await push_notification(
+            other_id, "settlement_paid", "Acertos quitados",
+            f"{user['name']} marcou todas as dívidas pendentes entre vocês como pagas.",
+            "/acertos", {},
+        )
+    return {"ok": True, "expenses_updated": touched}
+
+
 @api.get("/settlements")
 async def list_settlements(user=Depends(get_current_user)):
     """Compute simplified who-owes-whom from open shared expenses involving the user.

@@ -22,6 +22,13 @@ export default function Settlements() {
   const load = () => api.get("/settlements").then(r => setData(r.data));
   useEffect(() => { load(); }, []);
 
+  const settleAll = async (otherUserId, name) => {
+    if (!window.confirm(`Marcar TODAS as dívidas pendentes entre você e ${name} como pagas?`)) return;
+    const r = await api.post(`/settlements/settle-between/${otherUserId}`);
+    toast.success(`${r.data.expenses_updated} despesa(s) quitada(s)`);
+    load();
+  };
+
   const markPaid = async (row) => {
     await api.post(`/shared-expenses/${row.expense_id}/settle/${row.debtor_id}`);
     toast.success("Acerto registrado");
