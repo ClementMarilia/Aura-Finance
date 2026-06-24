@@ -19,6 +19,7 @@ import Profile from "@/pages/Profile";
 import Settings from "@/pages/Settings";
 import Notifications from "@/pages/Notifications";
 import Goals from "@/pages/Goals";
+import Recurrences from "@/pages/Recurrences";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -57,6 +58,7 @@ function App() {
             <Route path="configuracoes" element={<Settings />} />
             <Route path="notificacoes" element={<Notifications />} />
             <Route path="metas" element={<Goals />} />
+            <Route path="recorrencias" element={<Recurrences />} />
           </Route>
         </Routes>
       </BrowserRouter>

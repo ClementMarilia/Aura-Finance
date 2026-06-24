@@ -6,11 +6,18 @@ load_dotenv(ROOT_DIR / '.env')
 import os
 import uuid
 import logging
+import asyncio
+import calendar
+import requests
 import bcrypt
 import jwt
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Literal
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI, APIRouter, HTTPException, Depends, Request, WebSocket,
+    WebSocketDisconnect, UploadFile, File, Header, Query,
+)
+from fastapi.responses import Response
 from fastapi.security import HTTPBearer
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -30,6 +37,48 @@ security = HTTPBearer(auto_error=False)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("finance")
+
+# ---------- Object Storage ----------
+STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
+APP_NAME = "aurea-financas"
+_storage_key = None
+MIME_TYPES = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+    "gif": "image/gif", "webp": "image/webp", "pdf": "application/pdf",
+}
+
+
+def init_storage():
+    global _storage_key
+    if _storage_key:
+        return _storage_key
+    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+    resp.raise_for_status()
+    _storage_key = resp.json()["storage_key"]
+    return _storage_key
+
+
+def _put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    resp = requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data, timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _get_object(path: str):
+    key = init_storage()
+    resp = requests.get(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key}, timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
 
 
 # ---------- Realtime (WebSocket) ----------
@@ -165,6 +214,8 @@ class TransactionIn(BaseModel):
     amount: float
     category_id: Optional[str] = None
     account_id: Optional[str] = None
+    from_account_id: Optional[str] = None
+    to_account_id: Optional[str] = None
     payment_method: Optional[str] = None
     description: str = ""
     notes: str = ""
@@ -353,7 +404,24 @@ async def delete_category(cid: str, user=Depends(get_current_user)):
 # ---------- Accounts ----------
 @api.get("/accounts")
 async def list_accounts(user=Depends(get_current_user)):
-    return await db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
+    accounts = await db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
+    txs = await db.transactions.find(
+        {"user_id": user["id"], "status": {"$ne": "cancelled"}}, {"_id": 0},
+    ).to_list(20000)
+    bal = {a["id"]: a.get("initial_balance", 0.0) for a in accounts}
+    for t in txs:
+        if t["type"] == "income" and t.get("account_id") in bal:
+            bal[t["account_id"]] += t["amount"]
+        elif t["type"] == "expense" and t.get("account_id") in bal:
+            bal[t["account_id"]] -= t["amount"]
+        elif t["type"] == "transfer":
+            if t.get("from_account_id") in bal:
+                bal[t["from_account_id"]] -= t["amount"]
+            if t.get("to_account_id") in bal:
+                bal[t["to_account_id"]] += t["amount"]
+    for a in accounts:
+        a["balance"] = round(bal.get(a["id"], 0.0), 2)
+    return accounts
 
 
 @api.post("/accounts")
@@ -373,6 +441,7 @@ async def list_transactions(
     category_id: Optional[str] = None, status: Optional[str] = None,
     type: Optional[str] = None,
 ):
+    await materialize_recurrences(user["id"])
     q = {"user_id": user["id"]}
     if year and month:
         start, end = month_range(year, month)
@@ -408,7 +477,161 @@ async def update_transaction(tid: str, payload: TransactionIn, user=Depends(get_
 
 @api.delete("/transactions/{tid}")
 async def delete_transaction(tid: str, user=Depends(get_current_user)):
+    tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
+    if tx and tx.get("receipt"):
+        await db.files.update_one({"id": tx["receipt"]["file_id"]}, {"$set": {"is_deleted": True}})
     await db.transactions.delete_one({"id": tid, "user_id": user["id"]})
+    return {"ok": True}
+
+
+# ---------- Receipts (attachments) ----------
+@api.post("/transactions/{tid}/receipt")
+async def upload_receipt(tid: str, file: UploadFile = File(...), user=Depends(get_current_user)):
+    tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
+    if not tx:
+        raise HTTPException(404, "Lançamento não encontrado")
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "bin"
+    if ext not in MIME_TYPES:
+        raise HTTPException(400, "Formato não suportado (use JPG, PNG, WEBP, GIF ou PDF)")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(400, "Arquivo muito grande (máx 5MB)")
+    content_type = file.content_type or MIME_TYPES[ext]
+    path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
+    result = await asyncio.to_thread(_put_object, path, data, content_type)
+    fid = new_id()
+    await db.files.insert_one({
+        "id": fid, "user_id": user["id"], "storage_path": result["path"],
+        "original_filename": file.filename, "content_type": content_type,
+        "size": result.get("size", len(data)), "is_deleted": False,
+        "created_at": now_iso(),
+    })
+    receipt = {"file_id": fid, "path": result["path"],
+               "filename": file.filename, "content_type": content_type}
+    await db.transactions.update_one({"id": tid}, {"$set": {"receipt": receipt}})
+    return receipt
+
+
+@api.delete("/transactions/{tid}/receipt")
+async def delete_receipt(tid: str, user=Depends(get_current_user)):
+    tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
+    if not tx or not tx.get("receipt"):
+        raise HTTPException(404, "Sem comprovante")
+    await db.files.update_one({"id": tx["receipt"]["file_id"]}, {"$set": {"is_deleted": True}})
+    await db.transactions.update_one({"id": tid}, {"$unset": {"receipt": ""}})
+    return {"ok": True}
+
+
+async def _user_from_token(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except Exception:
+        return None
+    return await db.users.find_one({"id": payload.get("sub")}, {"_id": 0})
+
+
+@api.get("/files/{path:path}")
+async def download_file(path: str, authorization: str = Header(None), auth: str = Query(None)):
+    token = authorization[7:] if (authorization or "").startswith("Bearer ") else auth
+    if not token or not await _user_from_token(token):
+        raise HTTPException(401, "Não autenticado")
+    record = await db.files.find_one({"storage_path": path, "is_deleted": False}, {"_id": 0})
+    if not record:
+        raise HTTPException(404, "Arquivo não encontrado")
+    data, ct = await asyncio.to_thread(_get_object, path)
+    return Response(content=data, media_type=record.get("content_type", ct))
+
+
+# ---------- Recurrences ----------
+def _add_months(d: date, n: int) -> date:
+    m = d.month - 1 + n
+    y = d.year + m // 12
+    m = m % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def _advance(d: date, freq: str) -> date:
+    if freq == "weekly":
+        return d + timedelta(days=7)
+    if freq == "yearly":
+        return _add_months(d, 12)
+    return _add_months(d, 1)
+
+
+async def materialize_recurrences(user_id: str):
+    today = datetime.now(timezone.utc).date()
+    recs = await db.recurrences.find({"user_id": user_id, "active": True}, {"_id": 0}).to_list(500)
+    for r in recs:
+        try:
+            nxt = datetime.strptime(r["next_run"], "%Y-%m-%d").date()
+        except Exception:
+            continue
+        changed = False
+        guard = 0
+        while nxt <= today and guard < 120:
+            guard += 1
+            await db.transactions.insert_one({
+                "id": new_id(), "user_id": user_id, "type": r["type"],
+                "date": nxt.isoformat(), "amount": r["amount"],
+                "category_id": r.get("category_id"), "account_id": r.get("account_id"),
+                "from_account_id": None, "to_account_id": None,
+                "payment_method": r.get("payment_method"),
+                "description": r.get("description", ""), "notes": "(recorrente)",
+                "status": "paid", "recurrence_id": r["id"], "created_at": now_iso(),
+            })
+            nxt = _advance(nxt, r["frequency"])
+            changed = True
+        if changed:
+            await db.recurrences.update_one({"id": r["id"]}, {"$set": {"next_run": nxt.isoformat()}})
+
+
+class RecurrenceIn(BaseModel):
+    type: Literal["income", "expense"] = "expense"
+    amount: float
+    category_id: Optional[str] = None
+    account_id: Optional[str] = None
+    payment_method: Optional[str] = None
+    description: str = ""
+    frequency: Literal["weekly", "monthly", "yearly"] = "monthly"
+    next_run: str
+    active: bool = True
+
+
+@api.get("/recurrences")
+async def list_recurrences(user=Depends(get_current_user)):
+    return await db.recurrences.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+
+
+@api.post("/recurrences")
+async def create_recurrence(payload: RecurrenceIn, user=Depends(get_current_user)):
+    doc = {"id": new_id(), "user_id": user["id"], **payload.model_dump(), "created_at": now_iso()}
+    await db.recurrences.insert_one(doc)
+    doc.pop("_id", None)
+    await materialize_recurrences(user["id"])
+    return doc
+
+
+@api.put("/recurrences/{rid}")
+async def update_recurrence(rid: str, payload: RecurrenceIn, user=Depends(get_current_user)):
+    res = await db.recurrences.update_one(
+        {"id": rid, "user_id": user["id"]}, {"$set": payload.model_dump()})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Recorrência não encontrada")
+    return await db.recurrences.find_one({"id": rid}, {"_id": 0})
+
+
+@api.post("/recurrences/{rid}/toggle")
+async def toggle_recurrence(rid: str, user=Depends(get_current_user)):
+    r = await db.recurrences.find_one({"id": rid, "user_id": user["id"]}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Recorrência não encontrada")
+    await db.recurrences.update_one({"id": rid}, {"$set": {"active": not r.get("active", True)}})
+    return {"ok": True, "active": not r.get("active", True)}
+
+
+@api.delete("/recurrences/{rid}")
+async def delete_recurrence(rid: str, user=Depends(get_current_user)):
+    await db.recurrences.delete_one({"id": rid, "user_id": user["id"]})
     return {"ok": True}
 
 
@@ -1062,6 +1285,7 @@ async def list_settlements(user=Depends(get_current_user)):
 # ---------- Dashboard / Reports ----------
 @api.get("/dashboard")
 async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, month: Optional[int] = None):
+    await materialize_recurrences(user["id"])
     now = datetime.now(timezone.utc)
     y = year or now.year
     m = month or now.month
@@ -1373,6 +1597,11 @@ async def delete_goal(gid: str, user=Depends(get_current_user)):
 # ---------- Seed Demo ----------
 @app.on_event("startup")
 async def startup():
+    try:
+        init_storage()
+        logger.info("Object storage initialized")
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
     await db.users.create_index("email", unique=True)
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
     await db.shared_expenses.create_index("participant_ids")

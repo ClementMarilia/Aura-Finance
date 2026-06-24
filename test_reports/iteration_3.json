@@ -1,0 +1,39 @@
+{
+  "summary": "Onda 5 (filtro mês/ano, transferências, saldo por conta, recorrências CRUD+materialização, comprovantes upload/download/delete) totalmente validada. Backend: 5/5 testes novos passam (test_wave5.py). Frontend: todos os fluxos funcionam — Recorrências (criar, toggle, excluir), Lançamentos (filtros month/year presentes, transferência com tx-from/to-account-select visíveis somente quando tipo=transfer, upload de comprovante PNG aparece tx-receipt-view e tx-receipt-remove, remoção mostra toast 'Comprovante removido').",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Login redirect", "issues": ["Após login com sucesso, redireciona para '/' ao invés de '/painel'. Pode ser intencional (rota raiz exibe painel), mas teste de Playwright que aguardava '**/painel**' falhou inicialmente."]},
+      {"screen": "Dialogs (Transactions/Recurrences/Confirm)", "issues": ["Aviso a11y persistente do Radix: 'Missing Description or aria-describedby={undefined}' em vários DialogContent. Cosmético, não bloqueia uso."]},
+      {"screen": "WebSocket /api/ws/notifications", "issues": ["Warning 'WebSocket is closed before the connection is established' continua aparecendo. Já reportado em iterações anteriores."]},
+      {"screen": "Dashboard/Reports charts", "issues": ["Recharts warnings sobre width(-1)/height(-1) na montagem inicial — cosmético."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_wave5.py", "/app/test_reports/pytest/wave5.xml"],
+  "action_items": [
+    "(Opcional) Adicionar DialogDescription/aria-describedby em DialogContent (Transactions/Recurrences/Confirm) para silenciar warnings de a11y.",
+    "(Opcional) Limpar transação residual 'TEST_UI_REC_WAVE5' (€12,34) que foi materializada pela recorrência de teste e permanece após DELETE (comportamento esperado por spec). Pode ser removida via UI ou no DB."
+  ],
+  "critical_code_review_comments": [
+    "materialize_recurrences tem guard=120 iterações — adequado para recorrências semanais até ~2.5 anos atrasadas, mas se uma weekly ficasse pausada >2 anos não geraria tudo. OK na prática.",
+    "POST /transactions aceita type=transfer mas não valida que from_account_id != to_account_id nem que ambos são contas do usuário. Pode permitir transferência inválida (mesma conta) ou para conta de outro usuário se o ID for adivinhado. Sugiro validar ownership e from!=to.",
+    "GET /accounts retorna 'balance' iterando todas as transações do usuário em memória — pode ficar caro para usuários com 10k+ lançamentos. Considerar agregação MongoDB.",
+    "_put_object/_get_object usam requests síncrono via asyncio.to_thread no upload (bom) mas init_storage no startup é blocking — fine.",
+    "GET /files/{path:path} aceita ?auth=TOKEN — token na URL pode vazar em logs de proxy/CDN. Considerar usar somente header Authorization e usar fetch-as-blob no frontend (já é o caso). Querystring fallback é OK para abrir em nova aba se necessário.",
+    "Upload de comprovante valida tamanho (5MB) após ler tudo na memória. Para arquivos grandes pode ser ineficiente, mas dentro do limite tudo bem.",
+    "PUT /recurrences exige payload completo (RecurrenceIn) sem PATCH parcial — restritivo mas consistente com outros endpoints."
+  ],
+  "updated_files": ["/app/backend/tests/test_wave5.py"],
+  "success_rate": {"backend": "100% (5/5 testes da Onda 5)", "frontend": "100% nos fluxos Onda 5 testados"},
+  "test_credentials": "wendy@demo.com / demo123 (marilia/nathalia idem)",
+  "seed_data_creation": "Criados via UI: recorrência TEST_UI_REC_WAVE5 (excluída ao fim — mas o lançamento materializado permaneceu por spec), transferência TEST_UI_XFER_W5 (excluída). Backend pytest cria/deleta contas TEST_W5_A1/A2, recorrências e comprovantes isoladamente.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Onda 5 completa. Testes pytest em /app/backend/tests/test_wave5.py cobrem: filtro year+month, balance computado (income/expense/transfer), recorrência CRUD com materialização retroativa e advance de next_run, comprovante upload PNG real via Emergent Object Storage (path APP_NAME/uploads/{uid}/{uuid}.png), download via Bearer e ?auth=TOKEN, 401 sem auth, 404 após soft-delete, validação de tipo de arquivo (.exe -> 400). Rodar: pytest /app/backend/tests/test_wave5.py -v.",
+  "rca_of_the_issue": "Sem bugs abertos."
+}

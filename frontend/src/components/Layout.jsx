@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
-  Users, FolderOpen, Scale, FileBarChart, UserCircle, Settings, LogOut, Wallet, Bell, Target
+  Users, FolderOpen, Scale, FileBarChart, UserCircle, Settings, LogOut, Wallet, Bell, Target, Repeat
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import NotificationsBell from "@/components/NotificationsBell";
@@ -9,6 +9,7 @@ import NotificationsBell from "@/components/NotificationsBell";
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "Painel", end: true },
   { to: "/lancamentos", icon: ArrowLeftRight, label: "Lançamentos" },
+  { to: "/recorrencias", icon: Repeat, label: "Recorrências" },
   { to: "/parcelamentos", icon: CreditCard, label: "Parcelamentos" },
   { to: "/contas-a-receber", icon: HandCoins, label: "Contas a Receber" },
   { to: "/orcamento", icon: PiggyBank, label: "Orçamento" },

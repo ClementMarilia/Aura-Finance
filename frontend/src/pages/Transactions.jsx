@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api, { fmtMoney, fmtDate, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -8,12 +8,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil, FileDown } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 
 const STATUS_LABEL = { paid: "Pago", pending: "Pendente", cancelled: "Cancelado" };
 const TYPE_LABEL = { income: "Receita", expense: "Despesa", transfer: "Transferência" };
+const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
 export default function Transactions() {
   const { user } = useAuth();
@@ -21,11 +22,15 @@ export default function Transactions() {
   const [items, setItems] = useState([]);
   const [cats, setCats] = useState([]);
   const [accs, setAccs] = useState([]);
-  const [filter, setFilter] = useState({ status: "", type: "", category_id: "" });
+  const now = new Date();
+  const [filter, setFilter] = useState({ status: "", type: "", category_id: "", year: "", month: "" });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
   const [confirmDel, setConfirmDel] = useState(null);
+  const [uploadingId, setUploadingId] = useState(null);
+  const fileInputRef = useRef(null);
+  const pendingUploadTx = useRef(null);
 
   function defaultForm() {
     return {
@@ -34,6 +39,8 @@ export default function Transactions() {
       amount: "",
       category_id: "",
       account_id: "",
+      from_account_id: "",
+      to_account_id: "",
       payment_method: "",
       description: "",
       notes: "",
@@ -51,13 +58,14 @@ export default function Transactions() {
     api.get("/categories").then(r => setCats(r.data));
     api.get("/accounts").then(r => setAccs(r.data));
   }, []);
-  useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id]);
+  useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id, filter.year, filter.month]);
 
   const openEdit = (t) => {
     setEditing(t);
     setForm({
       type: t.type, date: t.date, amount: String(t.amount),
       category_id: t.category_id || "", account_id: t.account_id || "",
+      from_account_id: t.from_account_id || "", to_account_id: t.to_account_id || "",
       payment_method: t.payment_method || "", description: t.description || "",
       notes: t.notes || "", status: t.status,
     });
@@ -74,6 +82,8 @@ export default function Transactions() {
         amount: parseFloat(form.amount),
         category_id: form.category_id || null,
         account_id: form.account_id || null,
+        from_account_id: form.type === "transfer" ? (form.from_account_id || null) : null,
+        to_account_id: form.type === "transfer" ? (form.to_account_id || null) : null,
       };
       if (editing) {
         await api.put(`/transactions/${editing.id}`, body);
@@ -91,6 +101,39 @@ export default function Transactions() {
     await api.delete(`/transactions/${confirmDel.id}`);
     setConfirmDel(null);
     toast.success("Lançamento excluído");
+    load();
+  };
+
+  const triggerUpload = (t) => { pendingUploadTx.current = t; fileInputRef.current?.click(); };
+
+  const onFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    const t = pendingUploadTx.current;
+    if (!file || !t) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    setUploadingId(t.id);
+    try {
+      await api.post(`/transactions/${t.id}/receipt`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success("Comprovante anexado");
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
+    finally { setUploadingId(null); }
+  };
+
+  const viewReceipt = async (t) => {
+    try {
+      const r = await api.get(`/files/${t.receipt.path}`, { responseType: "blob" });
+      const url = URL.createObjectURL(r.data);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch { toast.error("Erro ao abrir comprovante"); }
+  };
+
+  const removeReceipt = async (t) => {
+    await api.delete(`/transactions/${t.id}/receipt`);
+    toast.success("Comprovante removido");
     load();
   };
 
@@ -158,6 +201,7 @@ export default function Transactions() {
                   <Input type="number" step="0.01" value={form.amount}
                     onChange={e => setForm({ ...form, amount: e.target.value })} required data-testid="tx-amount-input" />
                 </div>
+                {form.type !== "transfer" && (
                 <div>
                   <Label>Categoria</Label>
                   <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
@@ -167,6 +211,8 @@ export default function Transactions() {
                     </SelectContent>
                   </Select>
                 </div>
+                )}
+                {form.type !== "transfer" && (
                 <div>
                   <Label>Conta</Label>
                   <Select value={form.account_id} onValueChange={(v) => setForm({ ...form, account_id: v })}>
@@ -176,6 +222,29 @@ export default function Transactions() {
                     </SelectContent>
                   </Select>
                 </div>
+                )}
+                {form.type === "transfer" && (
+                <div>
+                  <Label>De conta</Label>
+                  <Select value={form.from_account_id} onValueChange={(v) => setForm({ ...form, from_account_id: v })}>
+                    <SelectTrigger data-testid="tx-from-account-select"><SelectValue placeholder="Origem" /></SelectTrigger>
+                    <SelectContent>
+                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                )}
+                {form.type === "transfer" && (
+                <div>
+                  <Label>Para conta</Label>
+                  <Select value={form.to_account_id} onValueChange={(v) => setForm({ ...form, to_account_id: v })}>
+                    <SelectTrigger data-testid="tx-to-account-select"><SelectValue placeholder="Destino" /></SelectTrigger>
+                    <SelectContent>
+                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                )}
                 <div className="col-span-2">
                   <Label>Forma de pagamento</Label>
                   <Input value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}
@@ -220,8 +289,21 @@ export default function Transactions() {
             <option value="">Todas categorias</option>
             {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+          <select value={filter.month} onChange={e => setFilter({ ...filter, month: e.target.value, year: e.target.value && !filter.year ? String(now.getFullYear()) : filter.year })}
+            data-testid="filter-month" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
+            <option value="">Todos os meses</option>
+            {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+          </select>
+          <select value={filter.year} onChange={e => setFilter({ ...filter, year: e.target.value })}
+            data-testid="filter-year" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
+            <option value="">Todos os anos</option>
+            {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
         </div>
       </div>
+
+      <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
+        onChange={onFileSelected} data-testid="receipt-file-input" />
 
       <div className="card-soft overflow-x-auto p-0">
         <table className="w-full text-sm">
@@ -261,7 +343,22 @@ export default function Transactions() {
                     {t.type === "expense" ? "-" : t.type === "income" ? "+" : ""}{fmtMoney(t.amount, curr)}
                   </td>
                   <td className="py-3 px-4">
-                    <div className="flex gap-1 justify-end">
+                    <div className="flex gap-1 justify-end items-center">
+                      {t.receipt ? (
+                        <>
+                          <button onClick={() => viewReceipt(t)} className="text-[#1E3F33] hover:bg-[#F1EFE7] rounded p-1" data-testid={`tx-receipt-view-${t.id}`} title="Ver comprovante">
+                            <Eye size={16} />
+                          </button>
+                          <button onClick={() => removeReceipt(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-receipt-remove-${t.id}`} title="Remover comprovante">
+                            <X size={14} />
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={() => triggerUpload(t)} disabled={uploadingId === t.id}
+                          className="text-[#6B7068] hover:text-[#1E3F33] p-1 disabled:opacity-40" data-testid={`tx-receipt-upload-${t.id}`} title="Anexar comprovante">
+                          <Paperclip size={16} className={uploadingId === t.id ? "animate-pulse" : ""} />
+                        </button>
+                      )}
                       <button onClick={() => openEdit(t)} className="text-[#6B7068] hover:text-[#1E3F33] p-1" data-testid={`tx-edit-${t.id}`} title="Editar">
                         <Pencil size={16} />
                       </button>
