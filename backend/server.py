@@ -1353,6 +1353,8 @@ async def update_goal(gid: str, payload: GoalIn, user=Depends(get_current_user))
 
 @api.post("/goals/{gid}/contribute")
 async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current_user)):
+    if body.amount <= 0:
+        raise HTTPException(400, "O valor do aporte deve ser maior que zero")
     goal = await db.goals.find_one({"id": gid, "user_id": user["id"]}, {"_id": 0})
     if not goal:
         raise HTTPException(404, "Meta não encontrada")

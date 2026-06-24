@@ -38,6 +38,14 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ Layout responsivo: sidebar desktop + bottom nav mobile
 - ✅ Seed 3 usuários demo + grupo Casa + despesa Mercado 222€
 
+## Onda 4 — Relatórios avançados + Metas (2026-06-24)
+- ✅ /reports/annual estendido com comparação ano a ano (YoY): totals, prev_year, prev_totals, prev_months
+- ✅ /reports/projection: projeção de saldo dos próximos N meses (média dos últimos 6) — exibida no Painel (AreaChart)
+- ✅ /insights: insights automáticos (taxa de poupança, tendência de gastos, maior categoria, contas pendentes) — seção no Painel
+- ✅ Metas financeiras: goals CRUD + POST /goals/{id}/contribute (valida amount>0) — página /metas com barra de progresso e aporte
+- ✅ Exportação CSV/PDF (client-side jsPDF) em Relatórios; CSV em Lançamentos
+- Testado: iteration_2.json — 9/9 backend Onda 4 + fluxos frontend 100%
+
 ## Onda 2.5 + Onda 3 (2026-06-24)
 - ✅ /acertos: botão "Cutucar" (nudge) nos cards + botão "Quitar tudo" + aba "Histórico" (GET /settlements/history)
 - ✅ Página dedicada /notificacoes (filtro todas/não lidas, marcar lida, excluir, marcar todas)
