@@ -32,8 +32,10 @@ export default function Dashboard() {
     { label: "Receita do mês", value: data.income, icon: TrendingUp, accent: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Despesa do mês", value: data.expense, icon: TrendingDown, accent: "text-rose-600", bg: "bg-rose-50" },
     { label: "Saldo atual", value: data.balance, icon: Wallet, accent: "text-[#1E3F33]", bg: "bg-[#F1EFE7]" },
-    { label: "Contas pendentes", value: data.pending_payable, icon: Clock, accent: "text-amber-700", bg: "bg-amber-50" },
-    { label: "A receber", value: data.receivable_total, icon: HandCoins, accent: "text-blue-600", bg: "bg-blue-50" },
+    { label: "Contas pendentes", value: data.pending_payable, icon: Clock, accent: "text-amber-700", bg: "bg-amber-50",
+      hint: data.shared_payable > 0 ? `Inclui ${fmtMoney(data.shared_payable, curr)} de despesas compartilhadas` : null },
+    { label: "A receber", value: data.receivable_total, icon: HandCoins, accent: "text-blue-600", bg: "bg-blue-50",
+      hint: data.shared_receivable > 0 ? `Inclui ${fmtMoney(data.shared_receivable, curr)} de despesas compartilhadas` : null },
     { label: "Parcelas futuras", value: data.future_installments_total, icon: CreditCard, accent: "text-[#D96C5B]", bg: "bg-orange-50" },
   ];
 
@@ -84,6 +86,7 @@ export default function Dashboard() {
             </div>
             <div className="stat-label">{s.label}</div>
             <div className={`stat-value mt-1 ${s.accent}`}>{fmtMoney(s.value, curr)}</div>
+            {s.hint && <div className="text-xs text-[#6B7068] mt-1.5">{s.hint}</div>}
           </div>
         ))}
       </div>

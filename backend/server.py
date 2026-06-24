@@ -790,6 +790,28 @@ async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, 
     ).to_list(200)
     receivable_total = sum(r["amount"] for r in rec_pending)
 
+    # Shared expenses: include what others owe me and what I owe others
+    shared_exps = await db.shared_expenses.find(
+        {"participant_ids": user["id"]}, {"_id": 0}
+    ).to_list(1000)
+    shared_receivable = 0.0
+    shared_payable = 0.0
+    for se in shared_exps:
+        payer = se["payer_id"]
+        for p in se["participants"]:
+            if p.get("paid_back"):
+                continue
+            if p["user_id"] == payer:
+                continue
+            if payer == user["id"]:
+                # I paid -> they owe me
+                shared_receivable += p["owed"]
+            elif p["user_id"] == user["id"]:
+                # I owe the payer
+                shared_payable += p["owed"]
+    receivable_total += shared_receivable
+    pending_payable += shared_payable
+
     # Future installments
     inst_future = await db.installments.find(
         {"user_id": user["id"], "status": "pending", "due_date": {"$gte": now.date().isoformat()}},
@@ -839,6 +861,8 @@ async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, 
         "balance": round(income - expense, 2),
         "pending_payable": round(pending_payable, 2),
         "receivable_total": round(receivable_total, 2),
+        "shared_receivable": round(shared_receivable, 2),
+        "shared_payable": round(shared_payable, 2),
         "future_installments_total": round(future_installments_total, 2),
         "category_breakdown": cat_breakdown,
         "evolution": evolution,
