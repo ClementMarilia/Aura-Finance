@@ -3,13 +3,14 @@ import api, { formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 export default function Settings() {
   const [cats, setCats] = useState([]);
   const [form, setForm] = useState({ name: "", color: "#1E3F33" });
+  const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
 
   const load = () => api.get("/categories").then(r => setCats(r.data));
@@ -18,9 +19,16 @@ export default function Settings() {
   const add = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/categories", { ...form, kind: "expense" });
-      toast.success("Categoria criada");
-      setForm({ name: "", color: "#1E3F33" }); load();
+      if (editing) {
+        await api.put(`/categories/${editing.id}`, { ...form, kind: editing.kind || "expense" });
+        toast.success("Categoria atualizada");
+      } else {
+        await api.post("/categories", { ...form, kind: "expense" });
+        toast.success("Categoria criada");
+      }
+      setForm({ name: "", color: "#1E3F33" });
+      setEditing(null);
+      load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
 

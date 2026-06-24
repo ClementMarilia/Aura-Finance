@@ -63,6 +63,29 @@ export default function Settlements() {
         ))}
       </div>
 
+      <div className="card-soft">
+        <h3 className="text-lg font-semibold mb-3" style={{ fontFamily: "Outfit" }}>Acertos simplificados</h3>
+        <p className="text-xs text-[#6B7068] mb-4">Cálculo otimizado: menor número possível de transferências para zerar todas as dívidas.</p>
+        {(!data.transfers || data.transfers.length === 0) && (
+          <div className="text-sm text-[#6B7068] py-4 text-center">Nenhum acerto pendente.</div>
+        )}
+        <div className="space-y-2">
+          {(data.transfers || []).map((t, i) => (
+            <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-[#F1EFE7]" data-testid={`transfer-${i}`}>
+              <div className="flex items-center gap-3 text-sm">
+                <Initials name={t.debtor?.name} color={t.debtor?.avatar_color} size={28} />
+                <span className="font-medium">{t.debtor?.name}</span>
+                <span className="text-[#6B7068]">paga</span>
+                <span className="font-semibold text-[#1E3F33]">{fmtMoney(t.amount, curr)}</span>
+                <span className="text-[#6B7068]">para</span>
+                <Initials name={t.creditor?.name} color={t.creditor?.avatar_color} size={28} />
+                <span className="font-medium">{t.creditor?.name}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="card-soft overflow-x-auto p-0">
         <h3 className="text-lg font-semibold p-4 pb-2" style={{ fontFamily: "Outfit" }}>Lançamentos pendentes</h3>
         <table className="w-full text-sm">

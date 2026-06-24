@@ -306,6 +306,17 @@ async def create_category(payload: CategoryIn, user=Depends(get_current_user)):
     return doc
 
 
+@api.put("/categories/{cid}")
+async def update_category(cid: str, payload: CategoryIn, user=Depends(get_current_user)):
+    res = await db.categories.update_one(
+        {"id": cid, "user_id": user["id"]},
+        {"$set": payload.model_dump()},
+    )
+    if not res.matched_count:
+        raise HTTPException(404, "Não encontrada")
+    return {"ok": True}
+
+
 @api.delete("/categories/{cid}")
 async def delete_category(cid: str, user=Depends(get_current_user)):
     await db.categories.delete_one({"id": cid, "user_id": user["id"]})
@@ -561,6 +572,33 @@ async def add_group_member(gid: str, body: dict, user=Depends(get_current_user))
     return {"ok": True}
 
 
+class GroupUpdateIn(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+@api.put("/groups/{gid}")
+async def update_group(gid: str, payload: GroupUpdateIn, user=Depends(get_current_user)):
+    g = await db.groups.find_one({"id": gid})
+    if not g or g.get("creator_id") != user["id"]:
+        raise HTTPException(403, "Apenas o criador pode editar")
+    upd = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    if upd:
+        await db.groups.update_one({"id": gid}, {"$set": upd})
+    return {"ok": True}
+
+
+@api.delete("/groups/{gid}/members/{uid}")
+async def remove_group_member(gid: str, uid: str, user=Depends(get_current_user)):
+    g = await db.groups.find_one({"id": gid})
+    if not g or g.get("creator_id") != user["id"]:
+        raise HTTPException(403, "Apenas o criador pode remover membros")
+    if uid == g["creator_id"]:
+        raise HTTPException(400, "Não é possível remover o criador")
+    await db.groups.update_one({"id": gid}, {"$pull": {"member_ids": uid}})
+    return {"ok": True}
+
+
 @api.delete("/groups/{gid}")
 async def delete_group(gid: str, user=Depends(get_current_user)):
     g = await db.groups.find_one({"id": gid})
@@ -769,47 +807,86 @@ async def delete_shared(sid: str, user=Depends(get_current_user)):
 # ---------- Settlements ----------
 @api.get("/settlements")
 async def list_settlements(user=Depends(get_current_user)):
-    """Compute who owes whom from open shared expenses involving the user."""
+    """Compute simplified who-owes-whom from open shared expenses involving the user.
+    Uses a greedy min-cash-flow algorithm: nets each user's balance then matches
+    biggest creditor to biggest debtor iteratively."""
     exps = await db.shared_expenses.find(
         {"participant_ids": user["id"]}, {"_id": 0}
     ).to_list(1000)
     user_ids = set()
-    rows = []
+    raw_rows = []
+    # Net balance per user (across ALL pending shared expenses the user sees)
+    net = defaultdict(float)
     for e in exps:
         payer = e["payer_id"]
         for p in e["participants"]:
-            if p["user_id"] == payer:
+            if p["user_id"] == payer or p.get("paid_back"):
                 continue
-            if p.get("paid_back"):
-                continue
-            # only include rows where current user is debtor or creditor
-            if user["id"] not in (p["user_id"], payer):
-                continue
-            rows.append({
-                "expense_id": e["id"], "title": e["title"],
-                "debtor_id": p["user_id"], "creditor_id": payer,
-                "amount": p["owed"], "date": e["date"],
+            net[payer] += p["owed"]
+            net[p["user_id"]] -= p["owed"]
+            user_ids.update([payer, p["user_id"]])
+            # keep raw row for "lançamentos pendentes" table
+            if user["id"] in (p["user_id"], payer):
+                raw_rows.append({
+                    "expense_id": e["id"], "title": e["title"],
+                    "debtor_id": p["user_id"], "creditor_id": payer,
+                    "amount": p["owed"], "date": e["date"],
+                })
+    # Simplification: greedy match
+    creditors = sorted(
+        [(uid, round(v, 2)) for uid, v in net.items() if v > 0.005],
+        key=lambda x: -x[1],
+    )
+    debtors = sorted(
+        [(uid, round(-v, 2)) for uid, v in net.items() if v < -0.005],
+        key=lambda x: -x[1],
+    )
+    transfers = []
+    i = j = 0
+    while i < len(debtors) and j < len(creditors):
+        d_id, d_amt = debtors[i]
+        c_id, c_amt = creditors[j]
+        amount = round(min(d_amt, c_amt), 2)
+        if user["id"] in (d_id, c_id):
+            transfers.append({
+                "debtor_id": d_id, "creditor_id": c_id, "amount": amount,
             })
-            user_ids.update([p["user_id"], payer])
-    users = await db.users.find({"id": {"$in": list(user_ids)}}, {"_id": 0, "password_hash": 0}).to_list(200)
+        d_amt = round(d_amt - amount, 2)
+        c_amt = round(c_amt - amount, 2)
+        debtors[i] = (d_id, d_amt)
+        creditors[j] = (c_id, c_amt)
+        if d_amt <= 0.005:
+            i += 1
+        if c_amt <= 0.005:
+            j += 1
+
+    users = await db.users.find(
+        {"id": {"$in": list(user_ids)}}, {"_id": 0, "password_hash": 0}
+    ).to_list(200)
     umap = {u["id"]: public_user(u) for u in users}
-    for r in rows:
+    for r in raw_rows:
         r["debtor"] = umap.get(r["debtor_id"])
         r["creditor"] = umap.get(r["creditor_id"])
-    # Aggregate summary per counterpart
-    agg = defaultdict(float)
-    for r in rows:
-        if r["debtor_id"] == user["id"]:
-            agg[r["creditor_id"]] -= r["amount"]
-        else:
-            agg[r["debtor_id"]] += r["amount"]
+    for t in transfers:
+        t["debtor"] = umap.get(t["debtor_id"])
+        t["creditor"] = umap.get(t["creditor_id"])
+
+    # Summary per counterpart from the user's perspective
     summary = []
-    for uid, val in agg.items():
-        summary.append({
-            "user": umap.get(uid),
-            "net": round(val, 2),  # positive => they owe you; negative => you owe them
-        })
-    return {"rows": rows, "summary": summary}
+    for uid, val in net.items():
+        if uid == user["id"]:
+            continue
+        # how much does THIS user net with `uid`?
+        # net[user] - net[uid] cannot be used directly; recompute from raw
+        v = 0.0
+        for r in raw_rows:
+            if r["creditor_id"] == user["id"] and r["debtor_id"] == uid:
+                v += r["amount"]
+            elif r["debtor_id"] == user["id"] and r["creditor_id"] == uid:
+                v -= r["amount"]
+        if abs(v) > 0.005:
+            summary.append({"user": umap.get(uid), "net": round(v, 2)})
+    return {"rows": raw_rows, "summary": summary, "transfers": transfers}
 
 
 # ---------- Dashboard / Reports ----------
