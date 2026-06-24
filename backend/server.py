@@ -457,6 +457,7 @@ async def list_transactions(
 
 @api.post("/transactions")
 async def create_transaction(payload: TransactionIn, user=Depends(get_current_user)):
+    await _validate_transfer(payload, user)
     doc = {"id": new_id(), "user_id": user["id"], **payload.model_dump(),
            "created_at": now_iso()}
     await db.transactions.insert_one(doc)
@@ -464,8 +465,22 @@ async def create_transaction(payload: TransactionIn, user=Depends(get_current_us
     return doc
 
 
+async def _validate_transfer(payload: TransactionIn, user):
+    if payload.type != "transfer":
+        return
+    if not payload.from_account_id or not payload.to_account_id:
+        raise HTTPException(400, "Selecione as contas de origem e destino")
+    if payload.from_account_id == payload.to_account_id:
+        raise HTTPException(400, "Origem e destino devem ser contas diferentes")
+    count = await db.accounts.count_documents(
+        {"user_id": user["id"], "id": {"$in": [payload.from_account_id, payload.to_account_id]}})
+    if count < 2:
+        raise HTTPException(404, "Conta não encontrada")
+
+
 @api.put("/transactions/{tid}")
 async def update_transaction(tid: str, payload: TransactionIn, user=Depends(get_current_user)):
+    await _validate_transfer(payload, user)
     res = await db.transactions.update_one(
         {"id": tid, "user_id": user["id"]},
         {"$set": payload.model_dump()},

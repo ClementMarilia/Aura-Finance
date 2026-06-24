@@ -38,6 +38,13 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ Layout responsivo: sidebar desktop + bottom nav mobile
 - ✅ Seed 3 usuários demo + grupo Casa + despesa Mercado 222€
 
+## Onda 5 — Lançamentos avançados (2026-06-24)
+- ✅ Filtro temporal mês/ano em Lançamentos (params year+month em GET /transactions)
+- ✅ Transferências entre contas: TransactionIn com from_account_id/to_account_id; GET /accounts retorna saldo computado por conta; validação origem≠destino e ownership
+- ✅ Transações recorrentes: recurrences CRUD + toggle + materialize_recurrences (gera lançamentos retroativos e avança next_run) — página /recorrencias
+- ✅ Anexar comprovantes: upload via Emergent Object Storage (EMERGENT_LLM_KEY), POST/DELETE /transactions/{id}/receipt, GET /files/{path} (Bearer ou ?auth=) — UI de anexar/ver/remover em Lançamentos
+- Testado: iteration_3.json — 5/5 backend + frontend 100%
+
 ## Onda 4 — Relatórios avançados + Metas (2026-06-24)
 - ✅ /reports/annual estendido com comparação ano a ano (YoY): totals, prev_year, prev_totals, prev_months
 - ✅ /reports/projection: projeção de saldo dos próximos N meses (média dos últimos 6) — exibida no Painel (AreaChart)
