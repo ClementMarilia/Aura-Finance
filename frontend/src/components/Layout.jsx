@@ -55,7 +55,7 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="border-t border-[#E5E4E0] pt-3 mt-3 flex items-center gap-2">
+        <div className="border-t border-[#E5E4E0] pt-3 mt-3 flex items-center gap-2 min-w-0">
           <button
             onClick={() => navigate("/perfil")}
             data-testid="profile-button"
@@ -65,15 +65,17 @@ export default function Layout() {
               style={{ backgroundColor: user?.avatar_color || "#1E3F33" }}>
               {initials || "U"}
             </div>
-            <div className="text-sm">
-              <div className="font-medium text-[#1A1C1A]">{user?.name}</div>
-              <div className="text-xs text-[#6B7068]">{user?.email}</div>
+            <div className="text-sm min-w-0 overflow-hidden">
+              <div className="font-medium text-[#1A1C1A] truncate">{user?.name}</div>
+              <div className="text-xs text-[#6B7068] truncate">{user?.email}</div>
             </div>
           </button>
           <NotificationsBell />
-          <button onClick={() => { logout(); navigate("/login"); }} data-testid="logout-button"
-            className="p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]">
-            <LogOut size={18} />
+          <button
+            onClick={() => navigate("/perfil")}
+            data-testid="profile-button"
+            className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden hover:bg-[#F1EFE7] hover:text-[#1E3F33] rounded-lg p-2 text-left"
+            >
           </button>
         </div>
       </aside>
