@@ -1,0 +1,37 @@
+import axios from "axios";
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+export const API = `${BACKEND_URL}/api`;
+
+const api = axios.create({ baseURL: API });
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+export function formatApiError(err) {
+  const d = err?.response?.data?.detail;
+  if (!d) return err?.message || "Erro inesperado";
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) return d.map((e) => e?.msg || JSON.stringify(e)).join(" ");
+  return String(d);
+}
+
+export const fmtMoney = (v, currency = "EUR") => {
+  try {
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(v || 0);
+  } catch {
+    return `€ ${(v || 0).toFixed(2)}`;
+  }
+};
+
+export const fmtDate = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString("pt-BR");
+};
+
+export default api;

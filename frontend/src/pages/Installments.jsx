@@ -1,0 +1,131 @@
+import { useEffect, useState } from "react";
+import api, { fmtMoney, fmtDate, formatApiError } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, Check, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+
+export default function Installments() {
+  const { user } = useAuth();
+  const curr = user?.currency || "EUR";
+  const [list, setList] = useState([]);
+  const [cats, setCats] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    description: "", total_amount: "", installments: 1,
+    first_date: new Date().toISOString().slice(0, 10), category_id: "", payment_method: "",
+  });
+
+  const load = () => api.get("/installments/purchases").then(r => setList(r.data));
+  useEffect(() => { load(); api.get("/categories").then(r => setCats(r.data)); }, []);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post("/installments/purchases", {
+        ...form,
+        total_amount: parseFloat(form.total_amount),
+        installments: parseInt(form.installments, 10),
+        category_id: form.category_id || null,
+      });
+      toast.success("Parcelamento criado");
+      setOpen(false); load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const togglePay = async (iid) => { await api.post(`/installments/${iid}/pay`); load(); };
+  const removePurchase = async (pid) => {
+    if (!window.confirm("Excluir parcelamento e todas as parcelas?")) return;
+    await api.delete(`/installments/purchases/${pid}`); load();
+  };
+
+  return (
+    <div className="space-y-6" data-testid="installments-page">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Parcelamentos</h1>
+          <p className="text-[#6B7068]">Compras parceladas com geração automática</p>
+        </div>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button data-testid="new-installment-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+              <Plus size={16} className="mr-1" /> Nova compra parcelada
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Nova compra parcelada</DialogTitle></DialogHeader>
+            <form onSubmit={submit} className="space-y-3">
+              <div><Label>Descrição</Label>
+                <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required data-testid="inst-description-input" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Valor total</Label>
+                  <Input type="number" step="0.01" value={form.total_amount} required data-testid="inst-total-input"
+                    onChange={e => setForm({ ...form, total_amount: e.target.value })} /></div>
+                <div><Label>Nº parcelas</Label>
+                  <Input type="number" min="1" max="120" value={form.installments} required data-testid="inst-count-input"
+                    onChange={e => setForm({ ...form, installments: e.target.value })} /></div>
+                <div><Label>Primeira parcela</Label>
+                  <Input type="date" value={form.first_date} required data-testid="inst-date-input"
+                    onChange={e => setForm({ ...form, first_date: e.target.value })} /></div>
+                <div><Label>Forma de pagamento</Label>
+                  <Input value={form.payment_method} data-testid="inst-payment-input"
+                    onChange={e => setForm({ ...form, payment_method: e.target.value })} /></div>
+                <div className="col-span-2"><Label>Categoria</Label>
+                  <Select value={form.category_id} onValueChange={v => setForm({ ...form, category_id: v })}>
+                    <SelectTrigger data-testid="inst-category-select"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      {cats.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select></div>
+              </div>
+              <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="inst-submit-button">Criar</Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="space-y-4">
+        {list.length === 0 && <div className="card-soft text-center text-[#6B7068]">Nenhum parcelamento ainda</div>}
+        {list.map(p => {
+          const paid = p.installments_list.filter(i => i.status === "paid").length;
+          return (
+            <div key={p.id} className="card-soft" data-testid={`purchase-${p.id}`}>
+              <div className="flex items-start justify-between flex-wrap gap-3">
+                <div>
+                  <div className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{p.description}</div>
+                  <div className="text-sm text-[#6B7068]">
+                    {p.installments}x · {fmtMoney(p.total_amount, curr)} · Pagas: {paid}/{p.installments}
+                  </div>
+                </div>
+                <button onClick={() => removePurchase(p.id)} className="text-[#6B7068] hover:text-[#D9453B]" data-testid={`purchase-delete-${p.id}`}>
+                  <Trash2 size={18} />
+                </button>
+              </div>
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                {p.installments_list.map(i => (
+                  <button key={i.id} onClick={() => togglePay(i.id)} data-testid={`installment-${i.id}`}
+                    className={`text-left p-3 rounded-xl border transition-all ${
+                      i.status === "paid"
+                        ? "bg-[#1E3F33] text-white border-transparent"
+                        : "bg-white border-[#E5E4E0] hover:bg-[#F1EFE7]"
+                    }`}>
+                    <div className="text-xs opacity-80">Parcela {i.number}/{i.total}</div>
+                    <div className="font-semibold text-sm mt-1">{fmtMoney(i.amount, curr)}</div>
+                    <div className="text-xs opacity-80 mt-1">{fmtDate(i.due_date)}</div>
+                    <div className="text-xs mt-2 flex items-center gap-1">
+                      {i.status === "paid" ? <><Check size={12} /> Pago</> : "Pendente"}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
