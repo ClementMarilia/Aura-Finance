@@ -695,13 +695,42 @@ async def mark_all_read(user=Depends(get_current_user)):
     return {"ok": True}
 
 
+@api.put("/shared-expenses/{sid}")
+async def update_shared(sid: str, payload: SharedExpenseIn, user=Depends(get_current_user)):
+    se = await db.shared_expenses.find_one({"id": sid})
+    if not se:
+        raise HTTPException(404, "Não encontrado")
+    if se["creator_id"] != user["id"]:
+        raise HTTPException(403, "Apenas o criador pode editar")
+    participants_in = [p.model_dump() for p in payload.participants]
+    if not participants_in:
+        raise HTTPException(400, "Adicione ao menos um participante")
+    participant_ids = [p["user_id"] for p in participants_in]
+    splits = compute_splits(payload.amount, payload.split_type, participants_in)
+    # preserve paid_back state
+    existing_paid = {p["user_id"]: p.get("paid_back", False) for p in se.get("participants", [])}
+    for p in splits:
+        p["paid_back"] = existing_paid.get(p["user_id"], False)
+    await db.shared_expenses.update_one(
+        {"id": sid},
+        {"$set": {
+            "title": payload.title, "amount": payload.amount, "date": payload.date,
+            "category": payload.category, "payer_id": payload.payer_id,
+            "split_type": payload.split_type, "group_id": payload.group_id,
+            "notes": payload.notes, "participants": splits,
+            "participant_ids": participant_ids,
+        }},
+    )
+    return {"ok": True}
+
+
 @api.delete("/shared-expenses/{sid}")
 async def delete_shared(sid: str, user=Depends(get_current_user)):
     se = await db.shared_expenses.find_one({"id": sid})
     if not se:
         raise HTTPException(404, "Não encontrado")
-    if se["creator_id"] != user["id"]:
-        raise HTTPException(403, "Apenas o criador pode excluir")
+    if se["creator_id"] != user["id"] and se["payer_id"] != user["id"]:
+        raise HTTPException(403, "Apenas o criador ou o pagador pode excluir")
     await db.shared_expenses.delete_one({"id": sid})
     return {"ok": True}
 
