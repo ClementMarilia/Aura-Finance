@@ -651,6 +651,11 @@ async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
     if horizon is None:
         last_day = calendar.monthrange(today.year, today.month)[1]
         horizon = date(today.year, today.month, last_day)
+    # Cap projection to avoid creating dozens of future transactions when
+    # navigating far-ahead months (bounds data growth).
+    max_horizon = _add_months(date(today.year, today.month, 1), 12)
+    if horizon > max_horizon:
+        horizon = max_horizon
     recs = await db.recurrences.find({"user_id": user_id, "active": True}, {"_id": 0}).to_list(500)
     for r in recs:
         try:
