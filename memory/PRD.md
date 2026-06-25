@@ -38,6 +38,11 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ Layout responsivo: sidebar desktop + bottom nav mobile
 - ✅ Seed 3 usuários demo + grupo Casa + despesa Mercado 222€
 
+## Patrimônio + Performance da troca de mês (2026-06-25)
+- ✅ Card "Patrimônio" no Painel: soma do saldo atual de todas as carteiras
+- ✅ Performance: desativadas animações Recharts (Lines da evolução + Pie de categorias) que re-animavam a cada troca de mês — transição caiu de ~340ms/~1s para ~86ms (avg)
+- Validado: iteration_9.json (Patrimônio €1.500 correto; troca de mês avg 86ms)
+
 ## Carteiras + Orçamento por mês + cards recolhíveis (2026-06-25)
 - ✅ Carteiras (/carteiras): CRUD de contas/carteiras (corrente, poupança, dinheiro, cartão, investimento); saldo computado; atualizar valor guardado/investido (editar saldo); pagamentos/transferências ajustam o saldo; card de saldo total
 - ✅ PUT/DELETE /accounts/{id} + tipo 'investment'

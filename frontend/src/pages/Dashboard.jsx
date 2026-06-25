@@ -117,7 +117,7 @@ export default function Dashboard() {
               <div className="text-2xl font-semibold mt-1" style={{ fontFamily: "Outfit" }} data-testid="patrimonio-value">
                 {fmtMoney(patrimonio, curr)}
               </div>
-              <div className="text-xs opacity-70 mt-1">Soma de todas as carteiras</div>
+              <div className="text-xs opacity-70 mt-1">Soma do saldo atual de todas as carteiras</div>
             </div>
             {accounts.map(a => (
               <div key={a.id} className="card-soft" data-testid={`account-card-${a.id}`}>
