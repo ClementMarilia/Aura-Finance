@@ -1,0 +1,30 @@
+{
+  "summary": "Iteração 9: validados (a) novo card 'Patrimônio' no Painel e (b) bug de performance da troca de mês. PATRIMÔNIO: criadas via API 2 carteiras de teste (TEST_Patrimonio_A checking €1000, TEST_Patrimonio_B savings €500) sob a conta wendy@demo.com; em / o data-testid='patrimonio-value' exibiu exatamente '€ 1.500,00' (= 0 da Conta Principal + 1000 + 500). Cards account-card-* mostraram corretamente 'TEST_Patrimonio_A €1.000,00' e 'TEST_Patrimonio_B €500,00'. Em /carteiras o data-testid='wallets-total' refletiu '€ 1.500,00'. Após cleanup (DELETE /api/accounts/{id} para ambos), patrimonio-value voltou a '€ 0,00'. PERFORMANCE: ao trocar o data-testid='dashboard-month-select' por 10 meses diferentes (1,3,5,8,11,2,6,9,12,4) medindo desde o select_option até networkidle: AVG=86ms, MIN=50ms, MAX=148ms. Muito abaixo do antes-fix (~340ms reportado pelo main agent e ~1s de animação anterior). Os gráficos (LineChart Evolução, PieChart categorias) atualizam imediatamente — confirma efeito de isAnimationActive={false} aplicado nas Lines e no Pie. REGRESSÃO: gráficos Evolução(6m)+Gastos por categoria+Projeção todos renderizando (5 SVG recharts visíveis); dashboard-balance/Receita/Despesa/Contas pendentes/A receber/Parcelas futuras/Gasto fixo continuam exibindo valores; /orcamento carrega 'Orçamento'; /carteiras CRUD ok; /recorrencias carrega. CLEANUP completo — ambas as carteiras de teste removidas (HTTP 200), nenhum resíduo na conta da Wendy.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Painel", "issues": ["Patrimônio card e Conta Principal aparecem na mesma linha de 'Minhas contas' — visualmente o Patrimônio (gradiente verde escuro) destaca-se bem do card branco da conta. OK."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/iter9_dashboard_after_cleanup.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Dashboard.jsx (linha 38) patrimonio = Σ accounts.balance via reduce — soma vem do GET /accounts que retorna balance computado dinamicamente (initial_balance + Σtransações). Logo Patrimônio reflete saldo REAL atual (não apenas initial_balance). Correto, mas vale documentar no tooltip 'Soma do saldo atual de todas as carteiras (lançamentos incluídos)' em vez de 'Soma de todas as carteiras', que é ambíguo entre saldo inicial e saldo atual.",
+    "Dashboard.jsx (linhas 147-149, 164) isAnimationActive={false} aplicado corretamente nas 3 Lines da LineChart e no Pie. AreaChart de projeção (linha 232) NÃO tem isAnimationActive={false} — porém só é re-renderizado se /reports/projection mudar (carregado uma vez no mount), então não impacta troca de mês. OK como está.",
+    "Dashboard.jsx (linha 38) o reduce roda em cada render — para listas pequenas (3-10 contas) é trivial; se um usuário tiver dezenas, considerar useMemo([accounts]). Não bloqueante.",
+    "context_note de iteração 8 dizia 'aurea_token' mas a key real em localStorage é 'token' (ver AuthContext.js). Atualizado neste relatório para próximos agentes.",
+    "Recharts emite warning 'width(-1) height(-1)' durante mount inicial (ResponsiveContainer mede antes do layout estabilizar). Benigno, mas pode ser silenciado escondendo charts com display:none até mount, se desejado."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (DELETE/POST /accounts e GET /dashboard usados como dependência funcionaram)", "frontend": "100% (Patrimônio render + troca de mês rápida + regressão de cards/gráficos/páginas confirmados)"},
+  "test_credentials": "wendy@demo.com / demo123",
+  "seed_data_creation": "Criadas TEST_Patrimonio_A (checking, initial_balance=1000) e TEST_Patrimonio_B (savings, initial_balance=500) via POST /api/accounts. LIMPAS no final via DELETE /api/accounts/{id} — verificado patrimonio-value voltou a € 0,00 e Conta Principal continua intacta com saldo €0,00.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Token JWT está em localStorage sob a key 'token' (NÃO 'aurea_token' como dizia iteração anterior). Para somar Patrimônio: GET /api/accounts retorna balance computado (initial_balance + Σtransações), o patrimonio-value soma esses balances. Em /carteiras um toast 'Carteira criada' permanece visível por ~2-3s e pode interceptar cliques no wallet-new-btn — use force=True ou aguarde, OU crie via API para setup de testes. Em medição de performance use networkidle (timeout 5-8s) após page.select_option no dashboard-month-select; valores típicos pós-fix: 50-150ms.",
+  "rca_of_the_issue": "Validation only — sem fix necessário. (1) Patrimônio: Dashboard.jsx linha 38 calcula reduce sobre accounts (carregadas via GET /api/accounts no mount, linha 34). Card renderiza com data-testid='patrimonio-card' e value com data-testid='patrimonio-value' dentro do bloco 'Minhas contas' (linhas 108-133). (2) Performance: a lentidão anterior era causada pelas animações default do Recharts (LineChart Lines + PieChart Pie) que re-animavam a cada mudança no array `data` ao trocar de mês. Fix aplicado: isAnimationActive={false} nas 3 Lines (linhas 147-149) e no Pie (linha 164). Validado: troca de mês caiu de ~1s (animação) → ~86ms (apenas re-render + fetch). Sem regressão funcional: dados continuam corretos por mês."
+}

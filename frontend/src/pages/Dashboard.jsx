@@ -4,7 +4,7 @@ import { fmtMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
   TrendingUp, TrendingDown, Wallet, Clock, HandCoins, CreditCard,
-  Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat
+  Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat, PiggyBank
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -35,6 +35,7 @@ export default function Dashboard() {
   }, []);
 
   const curr = user?.currency || "EUR";
+  const patrimonio = accounts.reduce((s, a) => s + (a.balance || 0), 0);
 
   if (!data) return <div className="text-[#6B7068]">Carregando painel...</div>;
 
@@ -111,6 +112,13 @@ export default function Dashboard() {
             <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Minhas contas</h3>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="card-soft bg-gradient-to-br from-[#1E3F33] to-[#2C5C4A] text-white border-transparent" data-testid="patrimonio-card">
+              <div className="flex items-center gap-1.5 text-sm opacity-80"><PiggyBank size={16} /> Patrimônio</div>
+              <div className="text-2xl font-semibold mt-1" style={{ fontFamily: "Outfit" }} data-testid="patrimonio-value">
+                {fmtMoney(patrimonio, curr)}
+              </div>
+              <div className="text-xs opacity-70 mt-1">Soma de todas as carteiras</div>
+            </div>
             {accounts.map(a => (
               <div key={a.id} className="card-soft" data-testid={`account-card-${a.id}`}>
                 <div className="text-sm text-[#6B7068]">{a.name}</div>
@@ -136,9 +144,9 @@ export default function Dashboard() {
                 <YAxis stroke="#6B7068" fontSize={12} />
                 <Tooltip formatter={(v) => fmtMoney(v, curr)} />
                 <Legend />
-                <Line type="monotone" dataKey="income" name="Receita" stroke="#2C7A51" strokeWidth={2} />
-                <Line type="monotone" dataKey="expense" name="Despesa" stroke="#D9453B" strokeWidth={2} />
-                <Line type="monotone" dataKey="balance" name="Saldo" stroke="#1E3F33" strokeWidth={2} />
+                <Line type="monotone" dataKey="income" name="Receita" stroke="#2C7A51" strokeWidth={2} isAnimationActive={false} />
+                <Line type="monotone" dataKey="expense" name="Despesa" stroke="#D9453B" strokeWidth={2} isAnimationActive={false} />
+                <Line type="monotone" dataKey="balance" name="Saldo" stroke="#1E3F33" strokeWidth={2} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -153,7 +161,7 @@ export default function Dashboard() {
               <ResponsiveContainer>
                 <PieChart>
                   <Pie data={data.category_breakdown} dataKey="amount" nameKey="category"
-                    innerRadius={50} outerRadius={90}>
+                    innerRadius={50} outerRadius={90} isAnimationActive={false}>
                     {data.category_breakdown.map((entry, i) => (
                       <Cell key={i} fill={entry.color} />
                     ))}
