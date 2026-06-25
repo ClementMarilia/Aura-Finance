@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Repeat, Plus, Pencil, Trash2 } from "lucide-react";
+import { Repeat, Plus, Pencil, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
@@ -27,6 +27,7 @@ export default function Recurrences() {
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [expanded, setExpanded] = useState({});
 
   const load = () => api.get("/recurrences").then(r => setItems(r.data || []));
   useEffect(() => { load(); api.get("/categories").then(r => setCats(r.data)); }, []);
@@ -123,10 +124,13 @@ export default function Recurrences() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {items.map(r => {
           const cat = cats.find(c => c.id === r.category_id);
+          const isOpen = !!expanded[r.id];
+          const toggleOpen = () => setExpanded(prev => ({ ...prev, [r.id]: !prev[r.id] }));
           return (
             <div key={r.id} className={`card-soft ${!r.active ? "opacity-60" : ""}`} data-testid={`rec-${r.id}`}>
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
+                <button onClick={toggleOpen} data-testid={`rec-toggle-card-${r.id}`} className="flex items-center gap-2 text-left flex-1">
+                  <span className="text-[#6B7068]">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${r.type === "income" ? "bg-emerald-600" : "bg-[#D96C5B]"}`}>
                     <Repeat size={18} />
                   </div>
@@ -134,7 +138,7 @@ export default function Recurrences() {
                     <div className="font-semibold">{r.description || (r.type === "income" ? "Receita" : "Despesa")}</div>
                     <div className="text-xs text-[#6B7068]">{FREQ_LABEL[r.frequency]} · próx: {fmtDate(r.next_run)}</div>
                   </div>
-                </div>
+                </button>
                 <div className="flex gap-1">
                   <button onClick={() => openEdit(r)} data-testid={`rec-edit-${r.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1E3F33]"><Pencil size={14} /></button>
                   <button onClick={() => setConfirmDel(r)} data-testid={`rec-delete-${r.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"><Trash2 size={14} /></button>
@@ -144,13 +148,18 @@ export default function Recurrences() {
                 <span className={`text-2xl font-semibold ${r.type === "income" ? "text-emerald-600" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }}>
                   {r.type === "income" ? "+" : "-"}{fmtMoney(r.amount, curr)}
                 </span>
-                {cat && <span className="text-xs inline-flex items-center gap-1.5 text-[#6B7068]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{cat.name}</span>}
+                <span className={`text-xs ${r.active ? "text-emerald-700" : "text-[#6B7068]"}`}>{r.active ? "Ativa" : "Pausada"}</span>
               </div>
-              <div className="mt-3 flex items-center justify-between border-t border-[#E5E4E0] pt-3">
-                <span className="text-xs text-[#6B7068]">{r.active ? "Ativa" : "Pausada"}</span>
-                <Switch data-testid={`rec-toggle-${r.id}`} className="data-[state=checked]:bg-[#1E3F33] data-[state=unchecked]:bg-[#D6D3CA]"
-                  checked={r.active} onCheckedChange={() => toggle(r)} />
+              {isOpen && (
+              <div className="mt-3 border-t border-[#E5E4E0] pt-3 space-y-2" data-testid={`rec-details-${r.id}`}>
+                {cat && <div className="text-xs inline-flex items-center gap-1.5 text-[#6B7068]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{cat.name}</div>}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[#6B7068]">{r.active ? "Pausar" : "Ativar"} recorrência</span>
+                  <Switch data-testid={`rec-toggle-${r.id}`} className="data-[state=checked]:bg-[#1E3F33] data-[state=unchecked]:bg-[#D6D3CA]"
+                    checked={r.active} onCheckedChange={() => toggle(r)} />
+                </div>
               </div>
+              )}
             </div>
           );
         })}

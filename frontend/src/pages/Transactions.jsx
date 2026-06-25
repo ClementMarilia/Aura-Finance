@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat, CreditCard } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat, CreditCard, Check } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 
@@ -134,6 +134,12 @@ export default function Transactions() {
   const removeReceipt = async (t) => {
     await api.delete(`/transactions/${t.id}/receipt`);
     toast.success("Comprovante removido");
+    load();
+  };
+
+  const payInstallment = async (t) => {
+    await api.post(`/installments/${t.id}/pay`);
+    toast.success(t.status === "paid" ? "Parcela reaberta" : "Parcela paga");
     load();
   };
 
@@ -330,7 +336,7 @@ export default function Transactions() {
             {items.map(t => {
               const cat = cats.find(c => c.id === t.category_id);
               return (
-                <tr key={t.id} className="border-b border-[#E5E4E0]" data-testid={`tx-row-${t.id}`}>
+                <tr key={t.id} className={`border-b border-[#E5E4E0] ${t.overdue ? "bg-red-50/60" : ""}`} data-testid={`tx-row-${t.id}`}>
                   <td className="py-3 px-4">{fmtDate(t.date)}</td>
                   <td className="py-3 px-4 font-medium">
                     <div className="flex items-center gap-2">
@@ -345,6 +351,12 @@ export default function Transactions() {
                         <span data-testid={`tx-installment-badge-${t.id}`}
                           className="inline-flex items-center gap-1 text-[10px] font-medium text-[#8A5A00] bg-orange-50 rounded-full px-2 py-0.5">
                           <CreditCard size={10} /> Parcela
+                        </span>
+                      )}
+                      {t.overdue && (
+                        <span data-testid={`tx-overdue-badge-${t.id}`}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#D9453B] bg-red-50 rounded-full px-2 py-0.5">
+                          Atrasada
                         </span>
                       )}
                     </div>
@@ -366,7 +378,15 @@ export default function Transactions() {
                   <td className="py-3 px-4">
                     <div className="flex gap-1 justify-end items-center">
                       {t.editable === false ? (
-                        <span className="text-xs text-[#6B7068] italic pr-1" title="Editar em Parcelamentos">vinculado</span>
+                        t.source === "installment" ? (
+                          <button onClick={() => payInstallment(t)} data-testid={`tx-installment-pay-${t.id}`}
+                            className={`p-1 ${t.status === "paid" ? "text-emerald-600" : "text-[#6B7068] hover:text-emerald-600"}`}
+                            title={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}>
+                            <Check size={16} />
+                          </button>
+                        ) : (
+                          <span className="text-xs text-[#6B7068] italic pr-1" title="Editar em Parcelamentos">vinculado</span>
+                        )
                       ) : (
                       <>
                       {t.receipt ? (

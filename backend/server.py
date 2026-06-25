@@ -208,7 +208,7 @@ class CategoryIn(BaseModel):
 
 class AccountIn(BaseModel):
     name: str
-    type: Literal["checking", "savings", "cash", "card", "other"] = "checking"
+    type: Literal["checking", "savings", "cash", "card", "investment", "other"] = "checking"
     initial_balance: float = 0.0
 
 
@@ -437,6 +437,21 @@ async def create_account(payload: AccountIn, user=Depends(get_current_user)):
     return doc
 
 
+@api.put("/accounts/{aid}")
+async def update_account(aid: str, payload: AccountIn, user=Depends(get_current_user)):
+    res = await db.accounts.update_one(
+        {"id": aid, "user_id": user["id"]}, {"$set": payload.model_dump()})
+    if not res.matched_count:
+        raise HTTPException(404, "Carteira não encontrada")
+    return {"ok": True}
+
+
+@api.delete("/accounts/{aid}")
+async def delete_account(aid: str, user=Depends(get_current_user)):
+    await db.accounts.delete_one({"id": aid, "user_id": user["id"]})
+    return {"ok": True}
+
+
 # ---------- Transactions ----------
 @api.get("/transactions")
 async def list_transactions(
@@ -471,14 +486,20 @@ async def list_transactions(
         r["source"] = "recurrence" if r.get("recurrence_id") else "manual"
         r["editable"] = True
 
-    # Merge installment parcels as linked (read-only) entries — unless excluded by filters
+    # Merge installment parcels as linked entries — only this month's + overdue pending
+    # (avoids cluttering the list with far-future parcels)
     if type in (None, "expense"):
-        iq = {"user_id": user["id"]}
-        if start and end:
-            iq["due_date"] = {"$gte": start, "$lt": end}
-        if status:
-            iq["status"] = status
+        now = datetime.now(timezone.utc)
+        vy, vm = (year, month) if (year and month) else (now.year, now.month)
+        vs, ve = month_range(vy, vm)
+        vstart, vend = vs[:10], ve[:10]
+        iq = {"user_id": user["id"], "$or": [
+            {"due_date": {"$gte": vstart, "$lt": vend}},
+            {"due_date": {"$lt": vstart}, "status": "pending"},
+        ]}
         parcels = await db.installments.find(iq, {"_id": 0}).to_list(2000)
+        if status:
+            parcels = [p for p in parcels if p["status"] == status]
         if parcels:
             pids = list({p["purchase_id"] for p in parcels})
             purchases = await db.installment_purchases.find(
@@ -490,15 +511,17 @@ async def list_transactions(
                     continue
                 if account_id and pur.get("account_id") != account_id:
                     continue
+                overdue = p["due_date"] < vstart and p["status"] == "pending"
                 rows.append({
                     "id": p["id"], "type": "expense", "date": p["due_date"],
                     "amount": p["amount"], "category_id": pur.get("category_id"),
                     "account_id": pur.get("account_id"),
                     "payment_method": pur.get("payment_method"),
                     "description": f"{pur.get('description', 'Parcela')} ({p['number']}/{p['total']})",
-                    "notes": "", "status": p["status"], "source": "installment",
-                    "purchase_id": p["purchase_id"], "installment_number": p["number"],
-                    "installment_total": p["total"], "editable": False,
+                    "notes": "atrasada" if overdue else "", "status": p["status"],
+                    "source": "installment", "purchase_id": p["purchase_id"],
+                    "installment_number": p["number"], "installment_total": p["total"],
+                    "overdue": overdue, "editable": False,
                 })
 
     rows.sort(key=lambda x: x.get("date", ""), reverse=True)
@@ -628,6 +651,11 @@ async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
     if horizon is None:
         last_day = calendar.monthrange(today.year, today.month)[1]
         horizon = date(today.year, today.month, last_day)
+    # Cap projection to avoid creating dozens of future transactions when
+    # navigating far-ahead months (bounds data growth).
+    max_horizon = _add_months(date(today.year, today.month, 1), 12)
+    if horizon > max_horizon:
+        horizon = max_horizon
     recs = await db.recurrences.find({"user_id": user_id, "active": True}, {"_id": 0}).to_list(500)
     for r in recs:
         try:

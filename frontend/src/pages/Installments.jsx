@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Check, Trash2, Pencil } from "lucide-react";
+import { Plus, Check, Trash2, Pencil, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Installments() {
@@ -18,6 +18,7 @@ export default function Installments() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [expanded, setExpanded] = useState({});
   const [editForm, setEditForm] = useState({ description: "", category_id: "", payment_method: "" });
   const [form, setForm] = useState({
     description: "", total_amount: "", installments: 1,
@@ -121,15 +122,29 @@ export default function Installments() {
         {list.length === 0 && <div className="card-soft text-center text-[#6B7068]">Nenhum parcelamento ainda</div>}
         {list.map(p => {
           const paid = p.installments_list.filter(i => i.status === "paid").length;
+          const remaining = p.installments - paid;
+          const next = p.installments_list.find(i => i.status === "pending");
+          const isOpen = !!expanded[p.id];
+          const toggle = () => setExpanded(prev => ({ ...prev, [p.id]: !prev[p.id] }));
           return (
             <div key={p.id} className="card-soft" data-testid={`purchase-${p.id}`}>
               <div className="flex items-start justify-between flex-wrap gap-3">
-                <div>
-                  <div className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{p.description}</div>
-                  <div className="text-sm text-[#6B7068]">
-                    {p.installments}x · {fmtMoney(p.total_amount, curr)} · Pagas: {paid}/{p.installments}
+                <button onClick={toggle} data-testid={`purchase-toggle-${p.id}`} className="flex items-start gap-2 text-left flex-1">
+                  <span className="mt-1 text-[#6B7068]">{isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</span>
+                  <div>
+                    <div className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{p.description}</div>
+                    <div className="text-sm text-[#6B7068]">
+                      {p.installments}x · {fmtMoney(p.total_amount, curr)} · Pagas: {paid}/{p.installments}
+                    </div>
+                    {!isOpen && (
+                      <div className="text-xs text-[#1E3F33] mt-1" data-testid={`purchase-summary-${p.id}`}>
+                        {next
+                          ? <>Próxima: <b>Parcela {next.number}/{next.total}</b> · {fmtMoney(next.amount, curr)} · vence {fmtDate(next.due_date)} · faltam {remaining}</>
+                          : <>Tudo pago! 🎉</>}
+                      </div>
+                    )}
                   </div>
-                </div>
+                </button>
                 <div className="flex gap-1">
                   <button onClick={() => openEdit(p)} className="text-[#6B7068] hover:text-[#1E3F33] p-2 rounded-lg border border-[#E5E4E0]" data-testid={`purchase-edit-${p.id}`} title="Editar">
                     <Pencil size={16} />
@@ -139,6 +154,7 @@ export default function Installments() {
                   </button>
                 </div>
               </div>
+              {isOpen && (
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
                 {p.installments_list.map(i => (
                   <button key={i.id} onClick={() => togglePay(i.id)} data-testid={`installment-${i.id}`}
@@ -156,6 +172,7 @@ export default function Installments() {
                   </button>
                 ))}
               </div>
+              )}
             </div>
           );
         })}

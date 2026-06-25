@@ -38,6 +38,20 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ Layout responsivo: sidebar desktop + bottom nav mobile
 - ✅ Seed 3 usuários demo + grupo Casa + despesa Mercado 222€
 
+## Carteiras + Orçamento por mês + cards recolhíveis (2026-06-25)
+- ✅ Carteiras (/carteiras): CRUD de contas/carteiras (corrente, poupança, dinheiro, cartão, investimento); saldo computado; atualizar valor guardado/investido (editar saldo); pagamentos/transferências ajustam o saldo; card de saldo total
+- ✅ PUT/DELETE /accounts/{id} + tipo 'investment'
+- ✅ Orçamento (/orcamento): seletor de mês/ano para visão futura (usa /dashboard?year&month)
+- ✅ Cards recolhíveis com resumo em Recorrências (rec-toggle-card) e Grupos (group-toggle) — consistência com Parcelamentos
+- ✅ Materialização de recorrências limitada a +12 meses (evita criar dezenas de transações ao navegar anos distantes)
+- Validado: iteration_8.json (backend 8/8, UI completa)
+
+## UX — Parcelamentos recolhíveis + Lançamentos enxuto (2026-06-25)
+- ✅ Página Parcelamentos: cards recolhidos por padrão com resumo (próxima parcela n/X, valor, vencimento, faltam N); clique expande/recolhe
+- ✅ Lançamentos: mostra só a parcela do mês visualizado + parcelas ATRASADAS pendentes (não as futuras distantes); selo "Atrasada" + linha destacada
+- ✅ Confirmar pagamento da parcela direto em Lançamentos (botão pago → POST /installments/{id}/pay); parcela não paga permanece pendente nos meses seguintes até confirmada
+- Validado: iteration_7.json (backend 3/3, UI 100%)
+
 ## Coerência cross-section — tudo linkado no mês (2026-06-25)
 - ✅ Dashboard escopado por mês: Despesa do mês = transações(expense) + recorrências materializadas + parcelas de parcelamento com vencimento no mês; Saldo = receita - despesa abrangente (sobra real)
 - ✅ Recebíveis no Dashboard escopados por mês (due_date < fim do mês; inclui vencidos, exclui futuros) — corrige "mostrava em todos os meses"

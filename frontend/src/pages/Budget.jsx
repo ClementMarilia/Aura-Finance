@@ -3,36 +3,51 @@ import api, { fmtMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 const COLORS = ["#1E3F33", "#D96C5B", "#E5A83B", "#7EA193", "#C7BCA1"];
+const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
 export default function Budget() {
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
+  const now = new Date();
+  const [period, setPeriod] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 });
   const [data, setData] = useState(null);
 
   useEffect(() => {
-    const d = new Date();
-    api.get("/dashboard", { params: { year: d.getFullYear(), month: d.getMonth() + 1 } })
-      .then(r => setData(r.data));
-  }, []);
+    setData(null);
+    api.get("/dashboard", { params: period }).then(r => setData(r.data));
+  }, [period.year, period.month]);
 
-  if (!data) return <div>Carregando...</div>;
-  const b = data.budget;
+  const b = data?.budget;
 
   return (
     <div className="space-y-6" data-testid="budget-page">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Orçamento Mensal</h1>
-        <p className="text-[#6B7068]">Divisão automática baseada na sua receita do mês</p>
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Orçamento Mensal</h1>
+          <p className="text-[#6B7068]">Divisão automática baseada na sua receita do mês</p>
+        </div>
+        <div className="flex gap-2">
+          <select value={period.month} onChange={e => setPeriod({ ...period, month: +e.target.value })}
+            data-testid="budget-month-select" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+            {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+          </select>
+          <select value={period.year} onChange={e => setPeriod({ ...period, year: +e.target.value })}
+            data-testid="budget-year-select" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+            {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1, now.getFullYear() + 2].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
       </div>
 
+      {!data ? <div className="text-[#6B7068]">Carregando...</div> : (
+      <>
       <div className="card-soft">
-        <div className="text-sm text-[#6B7068]">Receita do mês</div>
+        <div className="text-sm text-[#6B7068]">Receita de {MONTHS[period.month - 1]}/{period.year}</div>
         <div className="text-4xl font-semibold mt-1" style={{ fontFamily: "Outfit" }} data-testid="budget-income">
           {fmtMoney(b.income, curr)}
         </div>
         {b.income === 0 && (
           <div className="mt-3 text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
-            Cadastre uma receita em Lançamentos para ver a divisão automática.
+            Sem receita cadastrada neste mês. Cadastre uma receita (ou recorrência) para ver a divisão automática.
           </div>
         )}
       </div>
@@ -66,6 +81,9 @@ export default function Budget() {
           <li><strong>10% Outros objetivos</strong>: metas pessoais, presentes, doações.</li>
         </ul>
       </div>
+      </>
+      )}
     </div>
   );
 }
+
