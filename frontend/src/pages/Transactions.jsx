@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 
@@ -341,6 +341,12 @@ export default function Transactions() {
                           <Repeat size={10} /> Recorrente
                         </span>
                       )}
+                      {t.source === "installment" && (
+                        <span data-testid={`tx-installment-badge-${t.id}`}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#8A5A00] bg-orange-50 rounded-full px-2 py-0.5">
+                          <CreditCard size={10} /> Parcela
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="py-3 px-4">
@@ -359,6 +365,10 @@ export default function Transactions() {
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex gap-1 justify-end items-center">
+                      {t.editable === false ? (
+                        <span className="text-xs text-[#6B7068] italic pr-1" title="Editar em Parcelamentos">vinculado</span>
+                      ) : (
+                      <>
                       {t.receipt ? (
                         <>
                           <button onClick={() => viewReceipt(t)} className="text-[#1E3F33] hover:bg-[#F1EFE7] rounded p-1" data-testid={`tx-receipt-view-${t.id}`} title="Ver comprovante">
@@ -380,6 +390,8 @@ export default function Transactions() {
                       <button onClick={() => setConfirmDel(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-delete-${t.id}`} title="Excluir">
                         <Trash2 size={16} />
                       </button>
+                      </>
+                      )}
                     </div>
                   </td>
                 </tr>
