@@ -581,6 +581,9 @@ def _advance(d: date, freq: str) -> date:
 
 async def materialize_recurrences(user_id: str):
     today = datetime.now(timezone.utc).date()
+    # Horizon: end of current month, so expenses due later this month already show up
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    horizon = date(today.year, today.month, last_day)
     recs = await db.recurrences.find({"user_id": user_id, "active": True}, {"_id": 0}).to_list(500)
     for r in recs:
         try:
@@ -589,7 +592,7 @@ async def materialize_recurrences(user_id: str):
             continue
         changed = False
         guard = 0
-        while nxt <= today and guard < 120:
+        while nxt <= horizon and guard < 120:
             guard += 1
             await db.transactions.insert_one({
                 "id": new_id(), "user_id": user_id, "type": r["type"],
@@ -598,7 +601,8 @@ async def materialize_recurrences(user_id: str):
                 "from_account_id": None, "to_account_id": None,
                 "payment_method": r.get("payment_method"),
                 "description": r.get("description", ""), "notes": "(recorrente)",
-                "status": "paid", "recurrence_id": r["id"], "created_at": now_iso(),
+                "status": "paid" if nxt <= today else "pending",
+                "recurrence_id": r["id"], "created_at": now_iso(),
             })
             nxt = _advance(nxt, r["frequency"])
             changed = True
