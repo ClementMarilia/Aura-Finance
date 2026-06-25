@@ -38,6 +38,11 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ Layout responsivo: sidebar desktop + bottom nav mobile
 - ✅ Seed 3 usuários demo + grupo Casa + despesa Mercado 222€
 
+## Bug fix — Recorrência futura no mês não aparecia na "Despesa do mês" (2026-06-25)
+- Causa: materialize_recurrences usava horizonte = hoje; recorrências com vencimento futuro no mês corrente não eram geradas
+- Correção: horizonte = último dia do mês atual; ocorrências <= hoje = "paid", futuras no mês = "pending" (ambas contam na despesa do mês)
+- Validado: iteration_4.json (4/4 backend + UI, sem duplicação)
+
 ## Enhancements — Coerência saldo/metas (2026-06-24)
 - ✅ Aportes de Metas podem gerar lançamento real: meta com conta vinculada (account_id) + aporte com from_account_id cria transferência (conta vinculada) ou despesa; mantém saldo coerente
 - ✅ Resgate de Metas (POST /goals/{id}/withdraw): aporte negativo controlado (não passa do saldo da meta); com to_account_id devolve via transferência (da conta vinculada) ou receita — UI com botão "Resgatar" e diálogo
