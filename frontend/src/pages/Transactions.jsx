@@ -336,7 +336,7 @@ export default function Transactions() {
             {items.map(t => {
               const cat = cats.find(c => c.id === t.category_id);
               return (
-                <tr key={t.id} className="border-b border-[#E5E4E0]" data-testid={`tx-row-${t.id}`}>
+                <tr key={t.id} className={`border-b border-[#E5E4E0] ${t.overdue ? "bg-red-50/60" : ""}`} data-testid={`tx-row-${t.id}`}>
                   <td className="py-3 px-4">{fmtDate(t.date)}</td>
                   <td className="py-3 px-4 font-medium">
                     <div className="flex items-center gap-2">
