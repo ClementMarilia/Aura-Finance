@@ -38,6 +38,14 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ Layout responsivo: sidebar desktop + bottom nav mobile
 - ✅ Seed 3 usuários demo + grupo Casa + despesa Mercado 222€
 
+## Coerência cross-section — tudo linkado no mês (2026-06-25)
+- ✅ Dashboard escopado por mês: Despesa do mês = transações(expense) + recorrências materializadas + parcelas de parcelamento com vencimento no mês; Saldo = receita - despesa abrangente (sobra real)
+- ✅ Recebíveis no Dashboard escopados por mês (due_date < fim do mês; inclui vencidos, exclui futuros) — corrige "mostrava em todos os meses"
+- ✅ Lançamentos unificado: GET /transactions mescla parcelas (source='installment', editable=false, "Descrição (n/total)", selo "Parcela") e recorrências (source='recurrence', selo "Recorrente"); linhas vinculadas são read-only ("vinculado")
+- ✅ Recorrências materializam por mês visualizado (navegar mês futuro gera ocorrência 'pending')
+- ✅ Novo campo installments_month_total no /dashboard
+- Validado: iteration_6.json (backend 5/5, UI 7/7)
+
 ## Feature — Selo Recorrente + Média de gasto fixo (2026-06-25)
 - ✅ Selo "Recorrente" nos Lançamentos (transações com recurrence_id/notes='(recorrente)')
 - ✅ /dashboard retorna fixed_monthly_expense/fixed_monthly_income (normaliza weekly*52/12, monthly*1, yearly/12 das recorrências ativas) → card "Gasto fixo mensal" no Painel

@@ -366,7 +366,7 @@ export default function Transactions() {
                   <td className="py-3 px-4">
                     <div className="flex gap-1 justify-end items-center">
                       {t.editable === false ? (
-                        <span className="text-xs text-[#6B7068] italic pr-1">vinculado</span>
+                        <span className="text-xs text-[#6B7068] italic pr-1" title="Editar em Parcelamentos">vinculado</span>
                       ) : (
                       <>
                       {t.receipt ? (
