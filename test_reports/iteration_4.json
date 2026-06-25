@@ -1,0 +1,37 @@
+{
+  "summary": "Validado fix do bug 'despesa recorrente não aparece em Despesa do mês'. Backend pytest (4/4 PASSED) + UI Playwright confirmam: recorrência com next_run em dia FUTURO do mês corrente (28/06/2026) materializa como tx status='pending' com notes='(recorrente)', entra no card 'Despesa do mês' do Painel (€1.030,00 -> €1.072,10 = +€42,10 exato) e aparece em GET /api/transactions. Cenários adicionais cobertos: next_run=hoje gera 'paid' e soma; next_run no MÊS QUE VEM NÃO materializa nem soma; chamadas múltiplas a /dashboard e /transactions NÃO duplicam (idempotência verificada com 5 ciclos).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "RecurrenceDialog", "issues": ["Warning a11y Radix persistente: 'Missing Description or aria-describedby={undefined}' no DialogContent — cosmético, já reportado em iterações anteriores."]},
+      {"screen": "WebSocket /api/ws/notifications", "issues": ["Warning 'WebSocket is closed before the connection is established' continua aparecendo."]},
+      {"screen": "Dashboard charts", "issues": ["Recharts warnings sobre width(-1)/height(-1) na montagem inicial — cosmético."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_recurrence_bug.py",
+    "/app/test_reports/pytest/recurrence_bug.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "materialize_recurrences: horizonte = fim do mês atual está correto, mas avalie o caso de uma recorrência semanal antiga (>2.5 anos atrasada): guard=120 já protege contra loop infinito mas pode deixar lançamentos não gerados silenciosamente. Considerar log/alerta quando guard é atingido.",
+    "materialize_recurrences pode ser chamado concorrentemente (GET /transactions e GET /dashboard em paralelo, como ocorre na carga do dashboard que chama vários endpoints). Não há lock — dois threads simultâneos poderiam criar TX duplicada para a mesma ocorrência. A idempotência foi validada com chamadas sequenciais; sob alta concorrência poderia haver race. Sugestão: usar findOneAndUpdate atômico em recurrences ($set next_run com filtro de next_run anterior) ou índice único em (recurrence_id, date).",
+    "DELETE /api/recurrences/{rid} não remove as transações já materializadas (decisão de produto, consistente com aviso 'Os lançamentos já criados permanecem.' no diálogo de confirmação). OK.",
+    "Endpoint /dashboard chama materialize_recurrences mas /reports/* (se houver) também depende de TX do mês — verificar se outros endpoints que leem TX no mês corrente também chamam materialize, senão o valor pode divergir antes da primeira chamada de dashboard/transactions."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_recurrence_bug.py"
+  ],
+  "success_rate": {"backend": "100% (4/4 testes do bug)", "frontend": "100% no fluxo testado"},
+  "test_credentials": "wendy@demo.com / demo123",
+  "seed_data_creation": "Tudo limpo. Backend pytest cria e deleta (recurrence + transações materializadas) em cada teste. UI Playwright criou TEST_UI_REC_FUTURE (28/06/2026, €42,10), recorrência foi deletada via UI, e a TX materializada residual foi removida via API ao final. Dashboard.expense final = €1.030,00 (idêntico ao baseline).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Testes em /app/backend/tests/test_recurrence_bug.py usam pytest-xdist com xdist_group para rodar serial (evita interferência cruzada de 'Despesa do mês' entre testes). Rodar: pytest /app/backend/tests/test_recurrence_bug.py -v. Hoje na env = 2026-06-25; testes calculam dia futuro do mês dinamicamente; o teste skipa se hoje for o último dia do mês.",
+  "rca_of_the_issue": "ANTES DA CORREÇÃO: materialize_recurrences usava horizon=today (data atual), portanto recorrências com next_run > today nunca eram materializadas no mês corrente. O endpoint /dashboard soma transactions por mês — sem TX, sem valor no card. APÓS A CORREÇÃO: horizon=último dia do mês corrente, e status é 'paid' se next_run<=today, senão 'pending'. VALIDAÇÃO: 4 testes pytest + 1 fluxo UI ponta-a-ponta confirmam comportamento esperado."
+}

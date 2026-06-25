@@ -581,6 +581,9 @@ def _advance(d: date, freq: str) -> date:
 
 async def materialize_recurrences(user_id: str):
     today = datetime.now(timezone.utc).date()
+    # Horizon: end of current month, so expenses due later this month already show up
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    horizon = date(today.year, today.month, last_day)
     recs = await db.recurrences.find({"user_id": user_id, "active": True}, {"_id": 0}).to_list(500)
     for r in recs:
         try:
@@ -589,7 +592,7 @@ async def materialize_recurrences(user_id: str):
             continue
         changed = False
         guard = 0
-        while nxt <= today and guard < 120:
+        while nxt <= horizon and guard < 120:
             guard += 1
             await db.transactions.insert_one({
                 "id": new_id(), "user_id": user_id, "type": r["type"],
@@ -598,7 +601,8 @@ async def materialize_recurrences(user_id: str):
                 "from_account_id": None, "to_account_id": None,
                 "payment_method": r.get("payment_method"),
                 "description": r.get("description", ""), "notes": "(recorrente)",
-                "status": "paid", "recurrence_id": r["id"], "created_at": now_iso(),
+                "status": "paid" if nxt <= today else "pending",
+                "recurrence_id": r["id"], "created_at": now_iso(),
             })
             nxt = _advance(nxt, r["frequency"])
             changed = True
@@ -1406,6 +1410,17 @@ async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, 
         ],
     }
 
+    # Fixed (recurring) monthly average — normalizes weekly/yearly to monthly
+    _FREQ_FACTOR = {"weekly": 52 / 12, "monthly": 1.0, "yearly": 1 / 12}
+    recs = await db.recurrences.find(
+        {"user_id": user["id"], "active": True}, {"_id": 0}).to_list(500)
+    fixed_monthly_expense = round(sum(
+        r["amount"] * _FREQ_FACTOR.get(r["frequency"], 1.0)
+        for r in recs if r["type"] == "expense"), 2)
+    fixed_monthly_income = round(sum(
+        r["amount"] * _FREQ_FACTOR.get(r["frequency"], 1.0)
+        for r in recs if r["type"] == "income"), 2)
+
     return {
         "period": {"year": y, "month": m},
         "income": round(income, 2),
@@ -1416,6 +1431,8 @@ async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, 
         "shared_receivable": round(shared_receivable, 2),
         "shared_payable": round(shared_payable, 2),
         "future_installments_total": round(future_installments_total, 2),
+        "fixed_monthly_expense": fixed_monthly_expense,
+        "fixed_monthly_income": fixed_monthly_income,
         "category_breakdown": cat_breakdown,
         "evolution": evolution,
         "budget": budget,

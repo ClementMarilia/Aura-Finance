@@ -38,6 +38,17 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ Layout responsivo: sidebar desktop + bottom nav mobile
 - ✅ Seed 3 usuários demo + grupo Casa + despesa Mercado 222€
 
+## Feature — Selo Recorrente + Média de gasto fixo (2026-06-25)
+- ✅ Selo "Recorrente" nos Lançamentos (transações com recurrence_id/notes='(recorrente)')
+- ✅ /dashboard retorna fixed_monthly_expense/fixed_monthly_income (normaliza weekly*52/12, monthly*1, yearly/12 das recorrências ativas) → card "Gasto fixo mensal" no Painel
+- ✅ Página /recorrencias: resumo com Gasto fixo mensal, Receita fixa mensal e Saldo fixo estimado
+- Validado: iteration_5.json (backend 4/4, UI 6/6)
+
+## Bug fix — Recorrência futura no mês não aparecia na "Despesa do mês" (2026-06-25)
+- Causa: materialize_recurrences usava horizonte = hoje; recorrências com vencimento futuro no mês corrente não eram geradas
+- Correção: horizonte = último dia do mês atual; ocorrências <= hoje = "paid", futuras no mês = "pending" (ambas contam na despesa do mês)
+- Validado: iteration_4.json (4/4 backend + UI, sem duplicação)
+
 ## Enhancements — Coerência saldo/metas (2026-06-24)
 - ✅ Aportes de Metas podem gerar lançamento real: meta com conta vinculada (account_id) + aporte com from_account_id cria transferência (conta vinculada) ou despesa; mantém saldo coerente
 - ✅ Resgate de Metas (POST /goals/{id}/withdraw): aporte negativo controlado (não passa do saldo da meta); com to_account_id devolve via transferência (da conta vinculada) ou receita — UI com botão "Resgatar" e diálogo

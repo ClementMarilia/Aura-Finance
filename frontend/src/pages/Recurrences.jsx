@@ -31,6 +31,13 @@ export default function Recurrences() {
   const load = () => api.get("/recurrences").then(r => setItems(r.data || []));
   useEffect(() => { load(); api.get("/categories").then(r => setCats(r.data)); }, []);
 
+  const FACTOR = { weekly: 52 / 12, monthly: 1, yearly: 1 / 12 };
+  const monthly = (type) => items
+    .filter(r => r.active && r.type === type)
+    .reduce((s, r) => s + r.amount * (FACTOR[r.frequency] || 1), 0);
+  const fixedExpense = monthly("expense");
+  const fixedIncome = monthly("income");
+
   const openNew = () => { setEditing(null); setForm(emptyForm); setOpen(true); };
   const openEdit = (r) => {
     setEditing(r);
@@ -82,6 +89,29 @@ export default function Recurrences() {
           <Plus size={16} className="mr-1" /> Nova recorrência
         </Button>
       </div>
+
+      {items.some(r => r.active) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="rec-summary">
+          <div className="card-soft">
+            <div className="text-sm text-[#6B7068]">Gasto fixo mensal (média)</div>
+            <div className="text-2xl font-semibold text-rose-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-expense">
+              {fmtMoney(fixedExpense, curr)}
+            </div>
+          </div>
+          <div className="card-soft">
+            <div className="text-sm text-[#6B7068]">Receita fixa mensal (média)</div>
+            <div className="text-2xl font-semibold text-emerald-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-income">
+              {fmtMoney(fixedIncome, curr)}
+            </div>
+          </div>
+          <div className="card-soft">
+            <div className="text-sm text-[#6B7068]">Saldo fixo estimado</div>
+            <div className={`text-2xl font-semibold mt-1 ${fixedIncome - fixedExpense >= 0 ? "text-[#1E3F33]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-balance">
+              {fmtMoney(fixedIncome - fixedExpense, curr)}
+            </div>
+          </div>
+        </div>
+      )}
 
       {items.length === 0 && (
         <div className="card-soft text-center py-16 flex flex-col items-center gap-3 text-[#6B7068]" data-testid="rec-empty">

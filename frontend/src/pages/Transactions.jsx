@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 
@@ -332,7 +332,17 @@ export default function Transactions() {
               return (
                 <tr key={t.id} className="border-b border-[#E5E4E0]" data-testid={`tx-row-${t.id}`}>
                   <td className="py-3 px-4">{fmtDate(t.date)}</td>
-                  <td className="py-3 px-4 font-medium">{t.description || "—"}</td>
+                  <td className="py-3 px-4 font-medium">
+                    <div className="flex items-center gap-2">
+                      <span>{t.description || "—"}</span>
+                      {(t.recurrence_id || t.notes === "(recorrente)") && (
+                        <span data-testid={`tx-recurrent-badge-${t.id}`}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#1E3F33] bg-[#E8EFE9] rounded-full px-2 py-0.5">
+                          <Repeat size={10} /> Recorrente
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="py-3 px-4">
                     {cat ? <span className="inline-flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{cat.name}
