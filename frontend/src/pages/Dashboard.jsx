@@ -4,7 +4,7 @@ import { fmtMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
   TrendingUp, TrendingDown, Wallet, Clock, HandCoins, CreditCard,
-  Lightbulb, AlertTriangle, Info, CheckCircle2
+  Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -47,6 +47,8 @@ export default function Dashboard() {
     { label: "A receber", value: data.receivable_total, icon: HandCoins, accent: "text-blue-600", bg: "bg-blue-50",
       hint: data.shared_receivable > 0 ? `Inclui ${fmtMoney(data.shared_receivable, curr)} de despesas compartilhadas` : null },
     { label: "Parcelas futuras", value: data.future_installments_total, icon: CreditCard, accent: "text-[#D96C5B]", bg: "bg-orange-50" },
+    { label: "Gasto fixo mensal", value: data.fixed_monthly_expense || 0, icon: Repeat, accent: "text-[#1E3F33]", bg: "bg-[#E8EFE9]",
+      hint: data.fixed_monthly_income > 0 ? `Receita fixa: ${fmtMoney(data.fixed_monthly_income, curr)}` : "Média das recorrências ativas" },
   ];
 
   return (

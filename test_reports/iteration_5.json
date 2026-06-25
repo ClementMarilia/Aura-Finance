@@ -1,0 +1,37 @@
+{
+  "summary": "Validados os 3 itens da iteration_5: (1) selo 'Recorrente' em transações materializadas; (2) inclusão de despesa recorrente em 'Despesa do mês' (regressão da iter_4 — OK); (3) novo card 'Gasto fixo mensal' no Painel + bloco rec-summary em /recorrencias com normalização weekly*52/12, monthly*1, yearly/12. Backend pytest 4/4 PASSED; UI Playwright ponta-a-ponta 6/6 PASSED (login, criação via API, dashboard card, badge em TX, rec-summary, toggle off remove do cálculo). Cleanup automático no fim — nenhum dado TEST_ residual na conta da Wendy.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "WebSocket /api/ws/notifications", "issues": ["Warning persistente 'WebSocket is closed before the connection is established' (já reportado em iter_3/4)."]},
+      {"screen": "Dashboard charts", "issues": ["Recharts width(-1)/height(-1) na montagem inicial — cosmético, já reportado."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fixed_monthly.py",
+    "/app/test_reports/pytest/fixed_monthly.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py linha 1414: _FREQ_FACTOR usa 52/12 ≈ 4.3333 para 'weekly'. Convenção é correta para média anualizada; documente no /api/dashboard que é MÉDIA (já refletido no UI 'Média das recorrências ativas').",
+    "Recurrences.jsx calcula fixedExpense/fixedIncome localmente — duplicação de regra que existe no backend (linhas 1417-1422 do server.py). Considere expor um endpoint dedicado ou derivar do /dashboard para evitar drift (qualquer mudança de fator weekly precisa ser feita em 2 lugares).",
+    "RecurrenceIn.frequency é Literal['weekly','monthly','yearly'] mas _FREQ_FACTOR usa .get(..., 1.0) como fallback. Se um novo valor (ex.: 'daily') for adicionado no enum sem atualizar a tabela, o cálculo silenciosamente assume monthly. Sugestão: usar dict direto e levantar erro em frequência desconhecida.",
+    "Materialização de recorrências ainda sem lock atômico (já apontado em iter_4). Sob concorrência (vários endpoints chamando materialize_recurrences em paralelo no carregamento do dashboard) há risco teórico de TX duplicada — sugerir índice único (recurrence_id, date) ou findOneAndUpdate atômico em next_run.",
+    "Dashboard.jsx: hint 'Média das recorrências ativas' some quando fixed_monthly_income > 0 (vira 'Receita fixa: €X'). Pode ser confuso pois o card é de DESPESA — considere manter o texto descritivo e mostrar a receita fixa em outro lugar."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fixed_monthly.py"
+  ],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% (6/6 verificações)"},
+  "test_credentials": "wendy@demo.com / demo123",
+  "seed_data_creation": "Limpo. Cada teste pytest cria suas recorrências/TX e remove no finally. Fluxo Playwright criou 3 recorrências (TEST_UI_Aluguel €1200/mês, TEST_UI_Mercado €50/sem, TEST_UI_Badge €11,11/mês com next_run=hoje), validou e removeu todas + a TX materializada do TEST_UI_Badge ao final via API. Observação: existe uma recorrência pré-existente 'Despesa' €100 mensal (Mercado, prox: 22/07/2026) na conta da Wendy de iterações anteriores — NÃO foi criada por mim. Se for resíduo, avise para limpar.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_fixed_monthly.py compara DELTAS contra baseline (não valores absolutos), portanto é seguro mesmo com recorrências pré-existentes na conta. Rodar com: pytest backend/tests/test_fixed_monthly.py -v -o addopts='' (o pytest.ini do projeto força xdist; o override é necessário porque os testes manipulam estado compartilhado da mesma conta). Cálculo esperado: weekly*52/12 + monthly*1 + yearly/12.",
+  "rca_of_the_issue": "Não é fix — é feature. Validação cobre: (a) presença dos campos fixed_monthly_expense/fixed_monthly_income no /api/dashboard; (b) fórmula exata: monthly €1200 + weekly €50 → delta 1416.67 ± 0.05 (PASS); yearly €1200 → delta 100.00 (PASS); (c) toggle off remove do cálculo (PASS); (d) recorrência com next_run no mês corrente materializa TX com recurrence_id+notes='(recorrente)' (campos usados pelo badge tx-recurrent-badge-{id} no frontend — PASS); (e) UI: card Painel + rec-summary com 3 KPIs todos renderizando valores corretos."
+}
