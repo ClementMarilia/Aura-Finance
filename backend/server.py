@@ -163,6 +163,10 @@ def month_range(year: int, month: int):
     return start.isoformat(), end.isoformat()
 
 
+def month_end_date(year: int, month: int) -> date:
+    return date(year, month, calendar.monthrange(year, month)[1])
+
+
 # ---------- Models ----------
 class RegisterIn(BaseModel):
     name: str
@@ -441,11 +445,15 @@ async def list_transactions(
     category_id: Optional[str] = None, status: Optional[str] = None,
     type: Optional[str] = None, account_id: Optional[str] = None,
 ):
-    await materialize_recurrences(user["id"])
+    horizon = month_end_date(year, month) if (year and month) else None
+    await materialize_recurrences(user["id"], horizon)
+
     q = {"user_id": user["id"]}
+    start = end = None
     if year and month:
-        start, end = month_range(year, month)
-        q["date"] = {"$gte": start[:10], "$lt": end[:10]}
+        s, e = month_range(year, month)
+        start, end = s[:10], e[:10]
+        q["date"] = {"$gte": start, "$lt": end}
     if category_id:
         q["category_id"] = category_id
     if status:
@@ -458,7 +466,43 @@ async def list_transactions(
             {"from_account_id": account_id},
             {"to_account_id": account_id},
         ]
-    return await db.transactions.find(q, {"_id": 0}).sort("date", -1).to_list(2000)
+    rows = await db.transactions.find(q, {"_id": 0}).to_list(2000)
+    for r in rows:
+        r["source"] = "recurrence" if r.get("recurrence_id") else "manual"
+        r["editable"] = True
+
+    # Merge installment parcels as linked (read-only) entries — unless excluded by filters
+    if type in (None, "expense"):
+        iq = {"user_id": user["id"]}
+        if start and end:
+            iq["due_date"] = {"$gte": start, "$lt": end}
+        if status:
+            iq["status"] = status
+        parcels = await db.installments.find(iq, {"_id": 0}).to_list(2000)
+        if parcels:
+            pids = list({p["purchase_id"] for p in parcels})
+            purchases = await db.installment_purchases.find(
+                {"id": {"$in": pids}}, {"_id": 0}).to_list(500)
+            pmap = {p["id"]: p for p in purchases}
+            for p in parcels:
+                pur = pmap.get(p["purchase_id"], {})
+                if category_id and pur.get("category_id") != category_id:
+                    continue
+                if account_id and pur.get("account_id") != account_id:
+                    continue
+                rows.append({
+                    "id": p["id"], "type": "expense", "date": p["due_date"],
+                    "amount": p["amount"], "category_id": pur.get("category_id"),
+                    "account_id": pur.get("account_id"),
+                    "payment_method": pur.get("payment_method"),
+                    "description": f"{pur.get('description', 'Parcela')} ({p['number']}/{p['total']})",
+                    "notes": "", "status": p["status"], "source": "installment",
+                    "purchase_id": p["purchase_id"], "installment_number": p["number"],
+                    "installment_total": p["total"], "editable": False,
+                })
+
+    rows.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return rows
 
 
 @api.post("/transactions")
@@ -579,11 +623,11 @@ def _advance(d: date, freq: str) -> date:
     return _add_months(d, 1)
 
 
-async def materialize_recurrences(user_id: str):
+async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
     today = datetime.now(timezone.utc).date()
-    # Horizon: end of current month, so expenses due later this month already show up
-    last_day = calendar.monthrange(today.year, today.month)[1]
-    horizon = date(today.year, today.month, last_day)
+    if horizon is None:
+        last_day = calendar.monthrange(today.year, today.month)[1]
+        horizon = date(today.year, today.month, last_day)
     recs = await db.recurrences.find({"user_id": user_id, "active": True}, {"_id": 0}).to_list(500)
     for r in recs:
         try:
@@ -1310,10 +1354,10 @@ async def list_settlements(user=Depends(get_current_user)):
 # ---------- Dashboard / Reports ----------
 @api.get("/dashboard")
 async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, month: Optional[int] = None):
-    await materialize_recurrences(user["id"])
     now = datetime.now(timezone.utc)
     y = year or now.year
     m = month or now.month
+    await materialize_recurrences(user["id"], month_end_date(y, m))
     start, end = month_range(y, m)
 
     txs = await db.transactions.find(
@@ -1326,13 +1370,31 @@ async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, 
     expense = sum(t["amount"] for t in txs if t["type"] == "expense")
     pending_payable = sum(t["amount"] for t in txs if t["type"] == "expense" and t["status"] == "pending")
 
-    # Categories breakdown
+    # Installment parcels due in this month -> count as expense (linked)
+    inst_month = await db.installments.find(
+        {"user_id": user["id"], "due_date": {"$gte": start[:10], "$lt": end[:10]}},
+        {"_id": 0},
+    ).to_list(1000)
+    installments_month_total = sum(i["amount"] for i in inst_month)
+    expense += installments_month_total
+    pending_payable += sum(i["amount"] for i in inst_month if i["status"] == "pending")
+
+    # Categories breakdown (transactions + installments)
     cats = await db.categories.find({"user_id": user["id"]}, {"_id": 0}).to_list(200)
     cmap = {c["id"]: c for c in cats}
     by_cat = defaultdict(float)
     for t in txs:
         if t["type"] == "expense" and t.get("category_id"):
             by_cat[t["category_id"]] += t["amount"]
+    if inst_month:
+        pids = list({i["purchase_id"] for i in inst_month})
+        purchases = await db.installment_purchases.find(
+            {"id": {"$in": pids}}, {"_id": 0}).to_list(500)
+        pmap = {p["id"]: p for p in purchases}
+        for i in inst_month:
+            cid = pmap.get(i["purchase_id"], {}).get("category_id")
+            if cid:
+                by_cat[cid] += i["amount"]
     cat_breakdown = [
         {"category": cmap.get(cid, {}).get("name", "Outros"),
          "color": cmap.get(cid, {}).get("color", "#6B7068"),
@@ -1340,9 +1402,9 @@ async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, 
         for cid, v in sorted(by_cat.items(), key=lambda x: -x[1])
     ]
 
-    # Receivables pending
+    # Receivables pending — scoped to this month (and overdue), not future months
     rec_pending = await db.receivables.find(
-        {"user_id": user["id"], "status": "pending"}, {"_id": 0}
+        {"user_id": user["id"], "status": "pending", "due_date": {"$lt": end[:10]}}, {"_id": 0}
     ).to_list(200)
     receivable_total = sum(r["amount"] for r in rec_pending)
 
@@ -1431,6 +1493,7 @@ async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, 
         "shared_receivable": round(shared_receivable, 2),
         "shared_payable": round(shared_payable, 2),
         "future_installments_total": round(future_installments_total, 2),
+        "installments_month_total": round(installments_month_total, 2),
         "fixed_monthly_expense": fixed_monthly_expense,
         "fixed_monthly_income": fixed_monthly_income,
         "category_breakdown": cat_breakdown,
