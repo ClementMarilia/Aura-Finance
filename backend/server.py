@@ -208,7 +208,7 @@ class CategoryIn(BaseModel):
 
 class AccountIn(BaseModel):
     name: str
-    type: Literal["checking", "savings", "cash", "card", "other"] = "checking"
+    type: Literal["checking", "savings", "cash", "card", "investment", "other"] = "checking"
     initial_balance: float = 0.0
 
 
@@ -435,6 +435,21 @@ async def create_account(payload: AccountIn, user=Depends(get_current_user)):
     await db.accounts.insert_one(doc)
     doc.pop("_id", None)
     return doc
+
+
+@api.put("/accounts/{aid}")
+async def update_account(aid: str, payload: AccountIn, user=Depends(get_current_user)):
+    res = await db.accounts.update_one(
+        {"id": aid, "user_id": user["id"]}, {"$set": payload.model_dump()})
+    if not res.matched_count:
+        raise HTTPException(404, "Carteira não encontrada")
+    return {"ok": True}
+
+
+@api.delete("/accounts/{aid}")
+async def delete_account(aid: str, user=Depends(get_current_user)):
+    await db.accounts.delete_one({"id": aid, "user_id": user["id"]})
+    return {"ok": True}
 
 
 # ---------- Transactions ----------

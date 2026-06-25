@@ -2,8 +2,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
   Users, FolderOpen, Scale, FileBarChart, UserCircle, Settings, LogOut, Wallet, Bell, Target, Repeat
-} from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
+} from "lucide-react";import { useAuth } from "@/context/AuthContext";
 import NotificationsBell from "@/components/NotificationsBell";
 
 const nav = [
@@ -13,6 +12,7 @@ const nav = [
   { to: "/parcelamentos", icon: CreditCard, label: "Parcelamentos" },
   { to: "/contas-a-receber", icon: HandCoins, label: "Contas a Receber" },
   { to: "/orcamento", icon: PiggyBank, label: "Orçamento" },
+  { to: "/carteiras", icon: Wallet, label: "Carteiras" },
   { to: "/metas", icon: Target, label: "Metas" },
   { to: "/despesas-compartilhadas", icon: Users, label: "Despesas Compartilhadas" },
   { to: "/grupos", icon: FolderOpen, label: "Grupos" },

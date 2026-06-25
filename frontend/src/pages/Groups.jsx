@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, UserPlus, Pencil, X } from "lucide-react";
+import { Plus, Trash2, UserPlus, Pencil, X, ChevronDown, ChevronRight } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -29,6 +29,7 @@ export default function Groups() {
   const [confirmDel, setConfirmDel] = useState(null);
   const [editing, setEditing] = useState(null);
   const [editForm, setEditForm] = useState({ name: "", description: "" });
+  const [expanded, setExpanded] = useState({});
 
   const load = () => api.get("/groups").then(r => setList(r.data));
   useEffect(() => { load(); }, []);
@@ -117,13 +118,25 @@ export default function Groups() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {list.length === 0 && <div className="card-soft text-center text-[#6B7068] md:col-span-2">Nenhum grupo</div>}
-        {list.map(g => (
+        {list.map(g => {
+          const isOpen = !!expanded[g.id];
+          const toggle = () => setExpanded(prev => ({ ...prev, [g.id]: !prev[g.id] }));
+          return (
           <div key={g.id} className="card-soft" data-testid={`group-${g.id}`}>
             <div className="flex items-start justify-between">
-              <div>
-                <div className="text-xl font-semibold" style={{ fontFamily: "Outfit" }}>{g.name}</div>
-                <div className="text-sm text-[#6B7068] mt-1">{g.description || "—"}</div>
-              </div>
+              <button onClick={toggle} data-testid={`group-toggle-${g.id}`} className="flex items-start gap-2 text-left flex-1">
+                <span className="mt-1 text-[#6B7068]">{isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</span>
+                <div>
+                  <div className="text-xl font-semibold" style={{ fontFamily: "Outfit" }}>{g.name}</div>
+                  <div className="text-sm text-[#6B7068] mt-1">{g.description || "—"}</div>
+                  {!isOpen && (
+                    <div className="text-xs text-[#6B7068] mt-1 flex items-center gap-1" data-testid={`group-summary-${g.id}`}>
+                      {g.members.slice(0, 4).map(m => <Initials key={m.id} name={m.name} color={m.avatar_color} size={20} />)}
+                      <span className="ml-1">{g.members.length} membro(s)</span>
+                    </div>
+                  )}
+                </div>
+              </button>
               <div className="flex gap-1">
                 <button onClick={() => openEdit(g)} className="text-[#6B7068] hover:text-[#1E3F33] p-1" data-testid={`group-edit-${g.id}`} title="Editar">
                   <Pencil size={16} />
@@ -133,6 +146,8 @@ export default function Groups() {
                 </button>
               </div>
             </div>
+            {isOpen && (
+            <>
             <div className="mt-4">
               <div className="text-xs text-[#6B7068] mb-2">{g.members.length} membro(s)</div>
               <div className="flex flex-wrap gap-2">
@@ -152,8 +167,11 @@ export default function Groups() {
               <Button type="button" onClick={() => addMember(g.id)} data-testid={`group-add-member-${g.id}`}
                 className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl"><UserPlus size={16} /></Button>
             </div>
+            </>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
