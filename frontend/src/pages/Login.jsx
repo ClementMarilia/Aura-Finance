@@ -27,8 +27,6 @@ export default function Login() {
     }
   };
 
-  const demo = (em) => { setEmail(em); setPassword("demo123"); };
-
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-[#F9F8F6]">
       <div className="hidden md:flex md:w-1/2 relative bg-[#1E3F33] overflow-hidden">
@@ -82,18 +80,6 @@ export default function Login() {
             <Link to="/cadastro" className="text-[#1E3F33] font-medium hover:underline" data-testid="link-register">
               Criar conta
             </Link>
-          </div>
-
-          <div className="mt-8 p-4 rounded-xl bg-[#F1EFE7] border border-[#E5E4E0]">
-            <div className="text-xs text-[#6B7068] mb-2 font-medium">Contas demonstrativas (senha: demo123)</div>
-            <div className="flex flex-wrap gap-2">
-              {["wendy@demo.com","marilia@demo.com","nathalia@demo.com"].map(em => (
-                <button key={em} type="button" onClick={() => demo(em)} data-testid={`demo-${em.split("@")[0]}`}
-                  className="px-2.5 py-1 rounded-lg text-xs bg-white border border-[#E5E4E0] hover:bg-[#E5E4E0]">
-                  {em.split("@")[0]}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       </div>
