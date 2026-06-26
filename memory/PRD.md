@@ -38,6 +38,16 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ Layout responsivo: sidebar desktop + bottom nav mobile
 - ✅ Seed 3 usuários demo + grupo Casa + despesa Mercado 222€
 
+## Carteira em recorrência/parcelamento + bulk delete + transferência (2025-07)
+- ✅ Recorrências: seletor de carteira (account_id já propagava ao lançamento materializado → debita/credita a carteira)
+- ✅ Parcelamentos: seletor de carteira na criação e edição; saldo da carteira só é debitado quando a parcela é CONFIRMADA (paga); pendentes não afetam saldo e rolam para o mês seguinte; resumo "Total pendente / Total pago"
+- ✅ GET /accounts: parcelas pagas deduzem do saldo da carteira vinculada (reabrir parcela devolve o saldo)
+- ✅ Relatório anual: despesa mensal/anual passa a incluir parcelas (consistente com Dashboard)
+- ✅ Bulk delete em Lançamentos: checkboxes + barra "Excluir selecionados" → POST /transactions/bulk-delete (parcelas vinculadas não selecionáveis)
+- ✅ DELETE /recurrences/{id}: remove também os lançamentos FUTUROS (date > hoje) gerados pela recorrência; passados permanecem
+- ✅ Transferência entre carteiras na página Carteiras (origem→destino, valor, data)
+- Validado: backend 5/5 (deep_testing_backend_v2)
+
 ## Patrimônio + Performance da troca de mês (2026-06-25)
 - ✅ Card "Patrimônio" no Painel: soma do saldo atual de todas as carteiras
 - ✅ Performance: desativadas animações Recharts (Lines da evolução + Pie de categorias) que re-animavam a cada troca de mês — transição caiu de ~340ms/~1s para ~86ms (avg)
