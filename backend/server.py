@@ -241,6 +241,7 @@ class ReceivableIn(BaseModel):
     amount: float
     due_date: str
     description: str = ""
+    account_id: Optional[str] = None
 
 
 class GroupIn(BaseModel):
@@ -891,15 +892,43 @@ async def receive_receivable(rid: str, user=Depends(get_current_user)):
     if not r:
         raise HTTPException(404, "Não encontrado")
     new_status = "pending" if r["status"] == "received" else "received"
-    await db.receivables.update_one(
-        {"id": rid},
-        {"$set": {"status": new_status, "received_at": now_iso() if new_status == "received" else None}},
-    )
-    return {"ok": True}
+    if new_status == "received":
+        # Create an income transaction so it counts as receita AND credits the wallet
+        tx_id = new_id()
+        desc = (r.get("description") or r.get("person") or "").strip()
+        await db.transactions.insert_one({
+            "id": tx_id, "user_id": user["id"], "type": "income",
+            "date": datetime.now(timezone.utc).date().isoformat(),
+            "amount": r["amount"], "category_id": None,
+            "account_id": r.get("account_id"),
+            "from_account_id": None, "to_account_id": None,
+            "payment_method": None,
+            "description": f"Recebimento: {desc}" if desc else "Recebimento",
+            "notes": "(conta a receber)", "status": "paid",
+            "receivable_id": rid, "created_at": now_iso(),
+        })
+        await db.receivables.update_one(
+            {"id": rid},
+            {"$set": {"status": "received", "received_at": now_iso(), "received_tx_id": tx_id}},
+        )
+    else:
+        # Reverting to pending: remove the linked income transaction
+        if r.get("received_tx_id"):
+            await db.transactions.delete_one(
+                {"id": r["received_tx_id"], "user_id": user["id"]})
+        await db.receivables.update_one(
+            {"id": rid},
+            {"$set": {"status": "pending", "received_at": None, "received_tx_id": None}},
+        )
+    return {"ok": True, "status": new_status}
 
 
 @api.delete("/receivables/{rid}")
 async def delete_receivable(rid: str, user=Depends(get_current_user)):
+    r = await db.receivables.find_one({"id": rid, "user_id": user["id"]}, {"_id": 0})
+    if r and r.get("received_tx_id"):
+        await db.transactions.delete_one(
+            {"id": r["received_tx_id"], "user_id": user["id"]})
     await db.receivables.delete_one({"id": rid, "user_id": user["id"]})
     return {"ok": True}
 

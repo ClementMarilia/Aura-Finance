@@ -105,6 +105,20 @@
 user_problem_statement: "Adicionar conta/carteira em recorrências e parcelamentos; parcelamentos devem entrar nas despesas do relatório anual; deletar registros em lote (bulk) em Lançamentos; ao deletar recorrência, apagar lançamentos futuros gerados por ela; transferência entre carteiras. Parcela só deduz da carteira quando confirmada (paga); pendente rola para o mês seguinte."
 
 backend:
+  - task: "BUGFIX: Confirmar recebimento de conta a receber gera receita + credita carteira"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Bug reportado pelo usuário: ao confirmar recebimento, valor não somava em receita nem na carteira. Causa: POST /receivables/{rid}/receive só trocava status. Correção: ao marcar received cria transação income (account_id do recebível, notes='(conta a receber)', receivable_id, status paid) e salva received_tx_id; ao desfazer (toggle para pending) deleta a transação vinculada; DELETE /receivables também remove a transação vinculada. ReceivableIn ganhou account_id. TESTAR: criar recebível com account_id, anotar income do /dashboard e saldo da carteira, confirmar recebimento → income aumenta e saldo da carteira aumenta; desfazer → ambos voltam; excluir recebido → transação some."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED. Comprehensive test completed with all 15 steps verified: (1) Initial state captured: Balance S0=-120.0, Income I0=2500.0. (2) Created receivable with amount=150, account_id saved correctly, status=pending. (3) Verified balance and income unchanged while pending. (4) Confirmed receipt → status changed to 'received'. (5) Income increased correctly: 2500.0 → 2650.0 (delta: +150). (6) Balance increased correctly: -120.0 → 30.0 (delta: +150). (7) Transaction created with correct details: type=income, amount=150, notes='(conta a receber)', status=paid, description='Recebimento: Serviço de consultoria'. (8) Toggled back to pending successfully. (9) Income restored to I0=2500.0. (10) Balance restored to S0=-120.0. (11) Transaction removed when toggled to pending. (12) Received again and deleted receivable. (13) Linked transaction removed when receivable deleted. (14) Income back to baseline I0. (15) Balance back to baseline S0. User isolation verified (all operations scoped to user 776df16e-3694-489d-91da-b706a6cbb448). Bug fix working perfectly."
   - task: "Saldo da carteira: parcelas pagas deduzem do saldo da conta vinculada"
     implemented: true
     working: true
@@ -257,7 +271,11 @@ agent_communication:
       message: "Todos os 5 itens de backend testados e APROVADOS. Saldo deduz parcela paga e volta ao reabrir; bulk-delete ok (ids válidos/inexistentes/vazio); DELETE recorrência remove futuros e preserva passados; relatório anual inclui parcelas; account_id salvo/atualizado em recorrência e parcelamento. Backend production-ready."
     - agent: "testing"
       message: "FRONTEND: 4/4 fluxos APROVADOS. (1) Recorrências: seletor de carteira ok + texto de exclusão menciona lançamentos futuros. (2) Parcelamentos: seletor de carteira ok + resumo Total pendente/pago. (3) Carteiras: transferência ok (destino exclui origem, saldos atualizados, validação de erro). (4) Lançamentos: bulk delete ok (checkboxes, barra de ações, parcelas sem checkbox, selecionar todos/limpar). App production-ready para essas features."
+    - agent: "main"
+      message: "BUGFIX a testar (apenas backend): POST /receivables/{rid}/receive agora cria lançamento de receita e credita a carteira (account_id). Cenário: login wendy@demo.com/demo123 → GET /accounts (anote saldo de uma carteira) e GET /dashboard (anote income) → POST /receivables {person, amount, due_date hoje, account_id=carteira} → GET /accounts/dashboard NÃO muda ainda (pending) → POST /receivables/{id}/receive (status=received) → income do /dashboard AUMENTA pelo valor e saldo da carteira AUMENTA pelo valor; existe transação com notes '(conta a receber)' em /transactions → POST /receivables/{id}/receive de novo (toggle para pending) → income e saldo VOLTAM e a transação some → recriar/receber e DELETE /receivables/{id} → transação vinculada também some. Validar isolamento por usuário."
     - agent: "testing"
       message: "✓ BACKEND TESTING COMPLETE - ALL 5 FEATURES PASSED. Tested all 5 backend changes with comprehensive test scenarios. All APIs working correctly: (1) Wallet balance correctly deducts paid installments and restores when reopened. (2) Bulk delete transactions works with valid/invalid/empty IDs. (3) Delete recurrence removes future transactions while preserving past ones. (4) Annual report correctly includes installments as expenses. (5) account_id properly saved and updated in recurrences and installments. No critical issues found. Ready for user validation."
     - agent: "testing"
       message: "✓ FRONTEND TESTING COMPLETE - ALL 4 FLOWS PASSED. Tested all 4 frontend features requested: (1) Recorrências: wallet selector works, deletion confirmation correctly mentions 'lançamentos FUTUROS serão removidos'. (2) Parcelamentos: wallet selector works, summary shows pending total (€ 300) and paid total after creation. (3) Carteiras: transfer button works, destination excludes source wallet, balances update correctly (+20/-20), error handling works. (4) Lançamentos: bulk select/delete works, installment rows correctly have no checkbox, select all and clear buttons work. All features production-ready."
+    - agent: "testing"
+      message: "✓ BUGFIX VERIFIED - RECEIVABLES BUG FIX WORKING PERFECTLY. Tested comprehensive scenario with 15 verification steps. All aspects working correctly: (1) Receivable created with account_id saved. (2) Balance and income unchanged while pending. (3) Confirming receipt correctly increases income by 150 (2500→2650) and balance by 150 (-120→30). (4) Transaction created with correct details (type=income, notes='(conta a receber)', status=paid). (5) Toggle to pending correctly restores income and balance to original values and removes transaction. (6) Delete receivable correctly removes linked transaction. (7) User isolation verified. Bug fix is production-ready."

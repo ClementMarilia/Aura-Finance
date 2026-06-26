@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Check, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
@@ -13,29 +14,30 @@ export default function Receivables() {
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
   const [list, setList] = useState([]);
+  const [accs, setAccs] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "" });
+  const [form, setForm] = useState({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "" });
   const [confirmDel, setConfirmDel] = useState(null);
 
   const load = () => api.get("/receivables").then(r => setList(r.data));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.get("/accounts").then(r => setAccs(r.data || [])); }, []);
 
   const openNew = () => {
     setEditing(null);
-    setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "" });
+    setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "" });
     setOpen(true);
   };
   const openEdit = (r) => {
     setEditing(r);
-    setForm({ person: r.person, amount: String(r.amount), due_date: r.due_date, description: r.description || "" });
+    setForm({ person: r.person, amount: String(r.amount), due_date: r.due_date, description: r.description || "", account_id: r.account_id || "" });
     setOpen(true);
   };
 
   const submit = async (e) => {
     e.preventDefault();
     try {
-      const body = { ...form, amount: parseFloat(form.amount) };
+      const body = { ...form, amount: parseFloat(form.amount), account_id: form.account_id || null };
       if (editing) {
         await api.put(`/receivables/${editing.id}`, body);
         toast.success("Atualizado");
@@ -44,12 +46,18 @@ export default function Receivables() {
         toast.success("Conta a receber criada");
       }
       setOpen(false); setEditing(null);
-      setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "" });
+      setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "" });
       load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const receive = async (id) => { await api.post(`/receivables/${id}/receive`); load(); };
+  const receive = async (id) => {
+    try {
+      const r = await api.post(`/receivables/${id}/receive`);
+      toast.success(r.data?.status === "received" ? "Recebido! Receita lançada na carteira" : "Recebimento desfeito");
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
   const remove = async () => {
     if (!confirmDel) return;
     await api.delete(`/receivables/${confirmDel.id}`);
@@ -88,6 +96,13 @@ export default function Receivables() {
               <div><Label>Descrição</Label>
                 <Input value={form.description} data-testid="rec-description-input"
                   onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+              <div><Label>Carteira (onde o valor será creditado ao receber)</Label>
+                <Select value={form.account_id} onValueChange={v => setForm({ ...form, account_id: v })}>
+                  <SelectTrigger data-testid="rec-account-select"><SelectValue placeholder="Selecione a carteira" /></SelectTrigger>
+                  <SelectContent>
+                    {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  </SelectContent>
+                </Select></div>
               <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="rec-submit-button">
                 {editing ? "Salvar alterações" : "Salvar"}
               </Button>
