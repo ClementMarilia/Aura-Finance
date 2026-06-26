@@ -191,6 +191,20 @@ backend:
           comment: "✓ PASSED. Tested: (1) Created recurrence with account_id, verified GET /recurrences returns saved account_id. (2) Created installment purchase with account_id, verified account_id saved correctly. (3) Updated purchase with different account_id via PUT, verified account_id updated correctly. Both recurrences and installments properly handle account_id."
 
 frontend:
+  - task: "UI: Contas a Receber - marcar como recebido gera receita e credita carteira"
+    implemented: true
+    working: true
+    file: "frontend/src/pages/Receivables.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "user"
+          comment: "Usuário reportou bug: ao confirmar recebimento de conta a receber, valor NÃO soma na receita nem na carteira. Solicitou teste END-TO-END na UI."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED - ALL 6 TESTS. Teste END-TO-END completo do fluxo de Contas a Receber: (1) Login wendy@demo.com/demo123 OK. (2) Capturado valor inicial Dashboard Receita: € 2.500,00. (3) Capturado saldo inicial Carteira 'Conta Principal': -€ 120,00. (4) Criado recebível: Cliente Teste, valor 200, descrição 'Teste recebimento', carteira selecionada. Toast 'Conta a receber criada' OK. (5) Marcado como recebido: Toast 'Recebido! Receita lançada na carteira' OK, status mudou para 'Recebido'. (6) Dashboard Receita aumentou corretamente: € 2.500,00 → € 2.700,00 (+200). (7) Saldo da carteira aumentou corretamente: -€ 120,00 → € 80,00 (+200). (8) Lançamento de receita criado em Lançamentos: 'Recebimento: Teste recebimento', tipo Receita, valor +€ 200,00. Console: apenas warnings menores (WebSocket, charts), nenhum erro crítico. BUG CORRIGIDO e funcionando perfeitamente na UI."
   - task: "Seletor de carteira em Recorrências + texto exclusão (apaga futuros)"
     implemented: true
     working: true
@@ -251,15 +265,12 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 3
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Seletor de carteira em Recorrências + texto exclusão (apaga futuros)"
-    - "Seletor de carteira em Parcelamentos + resumo de pendente"
-    - "Transferência entre carteiras (Wallets)"
-    - "Bulk delete em Lançamentos (checkboxes + barra de ações)"
+    - "UI: Contas a Receber - marcar como recebido gera receita e credita carteira"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -281,3 +292,7 @@ agent_communication:
       message: "✓ FRONTEND TESTING COMPLETE - ALL 4 FLOWS PASSED. Tested all 4 frontend features requested: (1) Recorrências: wallet selector works, deletion confirmation correctly mentions 'lançamentos FUTUROS serão removidos'. (2) Parcelamentos: wallet selector works, summary shows pending total (€ 300) and paid total after creation. (3) Carteiras: transfer button works, destination excludes source wallet, balances update correctly (+20/-20), error handling works. (4) Lançamentos: bulk select/delete works, installment rows correctly have no checkbox, select all and clear buttons work. All features production-ready."
     - agent: "testing"
       message: "✓ BUGFIX VERIFIED - RECEIVABLES BUG FIX WORKING PERFECTLY. Tested comprehensive scenario with 15 verification steps. All aspects working correctly: (1) Receivable created with account_id saved. (2) Balance and income unchanged while pending. (3) Confirming receipt correctly increases income by 150 (2500→2650) and balance by 150 (-120→30). (4) Transaction created with correct details (type=income, notes='(conta a receber)', status=paid). (5) Toggle to pending correctly restores income and balance to original values and removes transaction. (6) Delete receivable correctly removes linked transaction. (7) User isolation verified. Bug fix is production-ready."
+    - agent: "user"
+      message: "Testar END-TO-END na interface o fluxo de 'Contas a Receber' do app de finanças 'Aurea' (React), pois o usuário relata que ao confirmar o recebimento o valor NÃO soma na receita nem na carteira. Reproduza e confirme se funciona ou falha na UI. Login: wendy@demo.com / demo123. Passos: (1) Anotar receita do Dashboard e saldo da carteira. (2) Criar conta a receber com valor 200. (3) Marcar como recebido. (4) Verificar se receita aumentou +200. (5) Verificar se saldo da carteira aumentou +200. (6) Verificar se lançamento de receita apareceu em Lançamentos."
+    - agent: "testing"
+      message: "✓ UI END-TO-END TEST PASSED - BUG FIX CONFIRMED WORKING IN UI. Executado teste completo do fluxo de Contas a Receber conforme solicitado pelo usuário. TODOS OS 6 TESTES PASSARAM: (1) Login OK. (2) Receita inicial capturada: € 2.500,00. (3) Saldo inicial carteira 'Conta Principal': -€ 120,00. (4) Recebível criado: Cliente Teste, valor 200, descrição 'Teste recebimento', carteira selecionada. (5) Marcado como recebido: toast 'Recebido! Receita lançada na carteira' OK, status mudou para 'Recebido'. (6) ✅ Receita do Dashboard AUMENTOU corretamente: € 2.500,00 → € 2.700,00 (+200). (7) ✅ Saldo da carteira AUMENTOU corretamente: -€ 120,00 → € 80,00 (+200). (8) ✅ Lançamento de receita CRIADO em Lançamentos: 'Recebimento: Teste recebimento', tipo Receita, valor +€ 200,00. Console: apenas warnings menores (WebSocket, charts), nenhum erro crítico. CONCLUSÃO: Bug reportado pelo usuário está CORRIGIDO e funcionando perfeitamente na interface. O valor agora soma corretamente na receita E na carteira ao confirmar recebimento."
