@@ -38,6 +38,19 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ Layout responsivo: sidebar desktop + bottom nav mobile
 - ✅ Seed 3 usuários demo + grupo Casa + despesa Mercado 222€
 
+## Recuperação de senha por pergunta de segurança (2025-07)
+- ✅ Sem integração externa (escolha do usuário): pergunta + resposta (resposta com hash bcrypt)
+- ✅ Backend: POST /auth/security-question (auth, define); GET /auth/security-question?email= (público, retorna pergunta ou null); POST /auth/reset-password-security (público, valida resposta e troca a senha). public_user expõe security_question/has_security_question
+- ✅ Resposta normalizada (trim + lowercase) — case-insensitive
+- ✅ Frontend: link "Esqueci minha senha" no Login (modal 2 passos: e-mail → pergunta+resposta+nova senha); seção "Pergunta de segurança" no Perfil (5 perguntas pré-definidas)
+- Validado: backend 10/10 (deep_testing_backend_v2)
+
+## Bugfixes recebíveis + recorrência (2025-07)
+- ✅ Confirmar recebimento de conta a receber agora gera lançamento de receita e credita a carteira escolhida (account_id); desfazer remove; excluir recebido remove a transação vinculada — backend verificado
+- ✅ Editar recorrência NÃO duplica mais: materialize_recurrences idempotente (não recria mesma (recurrence_id,date)); PUT propaga mudanças aos lançamentos PENDENTES vinculados — backend verificado
+- ✅ Removido bloco "Contas demonstrativas" da tela de login
+- Script utilitário: /app/scripts/dedupe_recurrences.py (limpeza de duplicados antigos)
+
 ## Carteira em recorrência/parcelamento + bulk delete + transferência (2025-07)
 - ✅ Recorrências: seletor de carteira (account_id já propagava ao lançamento materializado → debita/credita a carteira)
 - ✅ Parcelamentos: seletor de carteira na criação e edição; saldo da carteira só é debitado quando a parcela é CONFIRMADA (paga); pendentes não afetam saldo e rolam para o mês seguinte; resumo "Total pendente / Total pago"
