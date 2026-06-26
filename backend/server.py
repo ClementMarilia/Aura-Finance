@@ -308,6 +308,8 @@ def public_user(u: dict) -> dict:
         "currency": u.get("currency", "EUR"),
         "avatar_color": u.get("avatar_color", "#1E3F33"),
         "created_at": u.get("created_at", ""),
+        "security_question": u.get("security_question") or None,
+        "has_security_question": bool(u.get("security_answer_hash")),
     }
 
 
@@ -361,6 +363,55 @@ async def change_password(payload: ChangePasswordIn, user=Depends(get_current_us
         raise HTTPException(status_code=400, detail="Senha atual incorreta")
     await db.users.update_one(
         {"id": user["id"]},
+        {"$set": {"password_hash": hash_password(payload.new_password)}},
+    )
+    return {"ok": True}
+
+
+# ---------- Password recovery via security question (no external integration) ----------
+class SecurityQuestionIn(BaseModel):
+    question: str
+    answer: str
+
+
+class ResetPasswordSecurityIn(BaseModel):
+    email: EmailStr
+    answer: str
+    new_password: str
+
+
+@api.post("/auth/security-question")
+async def set_security_question(payload: SecurityQuestionIn, user=Depends(get_current_user)):
+    q = payload.question.strip()
+    a = payload.answer.strip().lower()
+    if not q or not a:
+        raise HTTPException(400, "Pergunta e resposta são obrigatórias")
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"security_question": q, "security_answer_hash": hash_password(a)}},
+    )
+    return {"ok": True}
+
+
+@api.get("/auth/security-question")
+async def get_security_question(email: str):
+    u = await db.users.find_one({"email": email.lower()}, {"_id": 0})
+    if not u or not u.get("security_answer_hash"):
+        return {"question": None}
+    return {"question": u.get("security_question")}
+
+
+@api.post("/auth/reset-password-security")
+async def reset_password_security(payload: ResetPasswordSecurityIn):
+    u = await db.users.find_one({"email": payload.email.lower()})
+    if not u or not u.get("security_answer_hash"):
+        raise HTTPException(400, "Recuperação por pergunta não disponível para esta conta")
+    if not verify_password(payload.answer.strip().lower(), u["security_answer_hash"]):
+        raise HTTPException(400, "Resposta de segurança incorreta")
+    if len(payload.new_password) < 4:
+        raise HTTPException(400, "A senha deve ter ao menos 4 caracteres")
+    await db.users.update_one(
+        {"id": u["id"]},
         {"$set": {"password_hash": hash_password(payload.new_password)}},
     )
     return {"ok": True}

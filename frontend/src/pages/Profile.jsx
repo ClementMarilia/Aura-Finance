@@ -7,13 +7,22 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
+
+const SECURITY_QUESTIONS = [
+  "Qual o nome do seu primeiro animal de estimação?",
+  "Em que cidade você nasceu?",
+  "Qual o nome de solteira da sua mãe?",
+  "Qual foi o nome da sua primeira escola?",
+  "Qual o seu prato de comida favorito?",
+];
 
 export default function Profile() {
   const { user, refreshMe, logout } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: user?.name || "", currency: user?.currency || "EUR" });
   const [pw, setPw] = useState({ current_password: "", new_password: "" });
+  const [sec, setSec] = useState({ question: user?.security_question || SECURITY_QUESTIONS[0], answer: "" });
 
   const initials = (user?.name || "").split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase();
 
@@ -32,6 +41,16 @@ export default function Profile() {
       await api.post("/auth/change-password", pw);
       toast.success("Senha alterada");
       setPw({ current_password: "", new_password: "" });
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const saveSecurity = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post("/auth/security-question", sec);
+      await refreshMe();
+      toast.success("Pergunta de segurança salva");
+      setSec({ ...sec, answer: "" });
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
@@ -79,6 +98,33 @@ export default function Profile() {
               onChange={e => setPw({ ...pw, new_password: e.target.value })} /></div>
           <Button type="submit" data-testid="profile-change-password-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
             Alterar senha
+          </Button>
+        </form>
+      </div>
+
+      <div className="card-soft">
+        <div className="flex items-center gap-2 mb-1">
+          <ShieldCheck size={18} className="text-[#1E3F33]" />
+          <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Pergunta de segurança</h3>
+        </div>
+        <p className="text-sm text-[#6B7068] mb-3">
+          {user?.has_security_question
+            ? "Já configurada. Usada para recuperar a senha caso você esqueça."
+            : "Configure para conseguir recuperar sua senha sem e-mail."}
+        </p>
+        <form onSubmit={saveSecurity} className="space-y-3">
+          <div><Label>Pergunta</Label>
+            <Select value={sec.question} onValueChange={v => setSec({ ...sec, question: v })}>
+              <SelectTrigger data-testid="security-question-select"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SECURITY_QUESTIONS.map(q => <SelectItem key={q} value={q}>{q}</SelectItem>)}
+              </SelectContent>
+            </Select></div>
+          <div><Label>Resposta</Label>
+            <Input value={sec.answer} required data-testid="security-answer-input"
+              onChange={e => setSec({ ...sec, answer: e.target.value })} placeholder="Sua resposta secreta" /></div>
+          <Button type="submit" data-testid="security-save-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+            {user?.has_security_question ? "Atualizar pergunta" : "Salvar pergunta"}
           </Button>
         </form>
       </div>
