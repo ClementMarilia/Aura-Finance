@@ -20,7 +20,7 @@ import requests
 # interference on the same demo user (dashboard expense snapshots).
 pytestmark = pytest.mark.xdist_group(name="recurrence_bug_serial")
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://despesa-facil-2.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://analyze-code-20.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
 EMAIL = "wendy@demo.com"
