@@ -179,45 +179,73 @@ backend:
 frontend:
   - task: "Seletor de carteira em Recorrências + texto exclusão (apaga futuros)"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/src/pages/Recurrences.jsx"
     stuck_count: 0
     priority: "medium"
     needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Implementado seletor de carteira (rec-account-select) e texto de confirmação de exclusão mencionando lançamentos FUTUROS."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED. Tested: (1) Wallet selector (rec-account-select) exists and works correctly. (2) Created recurrence with wallet selection, amount 50, description 'Teste Recorrência'. (3) Toast 'Recorrência criada' confirmed. (4) Deletion confirmation dialog correctly shows text 'os lançamentos FUTUROS já gerados por ela serão removidos. Os lançamentos passados permanecem.' All requirements met."
   - task: "Seletor de carteira em Parcelamentos + resumo de pendente"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/src/pages/Installments.jsx"
     stuck_count: 0
     priority: "medium"
     needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Implementado seletor de carteira (inst-account-select) e resumo com total pendente (inst-pending-total) e pago (inst-paid-total)."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED. Tested: (1) Wallet selector (inst-account-select) exists in create dialog. (2) Created installment 'Notebook', total 300, 3 installments, with category and wallet selection. (3) Toast 'Parcelamento criado' confirmed. (4) Summary section (inst-summary) appeared after creation with inst-pending-total showing € 300,00 and inst-paid-total. All requirements met."
   - task: "Transferência entre carteiras (Wallets)"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/src/pages/Wallets.jsx"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Implementado botão de transferência (wallet-transfer-btn) e diálogo com seletores de origem/destino. Destino exclui origem da lista."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED. Tested: (1) Transfer button (wallet-transfer-btn) exists. (2) Transfer dialog with transfer-from-select and transfer-to-select. (3) Destination selector correctly excludes source wallet (1 option when 2 wallets exist). (4) Transferred 20 from Conta Principal to Test Account 2. (5) Toast 'Transferência realizada' confirmed. (6) Balances updated correctly: Conta Principal -100 → -120, Test Account 2 0 → +20. (7) Error case tested: missing destination shows error toast 'Selecione as carteiras de origem e destino'. All requirements met."
   - task: "Bulk delete em Lançamentos (checkboxes + barra de ações)"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/src/pages/Transactions.jsx"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Implementado checkboxes (bulk-select-all, tx-select-{id}), barra de ações (bulk-action-bar) com botão de exclusão em lote (bulk-delete-btn). Parcelas não têm checkbox (editable=false)."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED. Tested: (1) Bulk select all checkbox (bulk-select-all) exists. (2) Found 7 selectable transactions with tx-select-{id} checkboxes. (3) Verified 1 installment row (Parcela badge) correctly has NO checkbox. (4) Selected transactions, bulk action bar (bulk-action-bar) appeared showing '2 selecionado(s)'. (5) Bulk delete button (bulk-delete-btn) works. (6) Confirmation dialog (tx-bulk-confirm-delete) appeared. (7) Confirmed deletion, toast '1 lançamento(s) excluído(s)' shown, transaction removed. (8) Select all (bulk-select-all) selected 6 transactions. (9) Clear button (bulk-clear-btn) cleared selection. All requirements met."
 
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 1
+  test_sequence: 2
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Saldo da carteira: parcelas pagas deduzem do saldo da conta vinculada"
-    - "POST /transactions/bulk-delete"
-    - "DELETE /recurrences/{rid} apaga lançamentos futuros (date > hoje)"
-    - "Relatório anual inclui parcelas como despesa"
+    - "Seletor de carteira em Recorrências + texto exclusão (apaga futuros)"
+    - "Seletor de carteira em Parcelamentos + resumo de pendente"
+    - "Transferência entre carteiras (Wallets)"
+    - "Bulk delete em Lançamentos (checkboxes + barra de ações)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -229,3 +257,5 @@ agent_communication:
       message: "Todos os 5 itens de backend testados e APROVADOS. Saldo deduz parcela paga e volta ao reabrir; bulk-delete ok (ids válidos/inexistentes/vazio); DELETE recorrência remove futuros e preserva passados; relatório anual inclui parcelas; account_id salvo/atualizado em recorrência e parcelamento. Backend production-ready."
     - agent: "testing"
       message: "✓ BACKEND TESTING COMPLETE - ALL 5 FEATURES PASSED. Tested all 5 backend changes with comprehensive test scenarios. All APIs working correctly: (1) Wallet balance correctly deducts paid installments and restores when reopened. (2) Bulk delete transactions works with valid/invalid/empty IDs. (3) Delete recurrence removes future transactions while preserving past ones. (4) Annual report correctly includes installments as expenses. (5) account_id properly saved and updated in recurrences and installments. No critical issues found. Ready for user validation."
+    - agent: "testing"
+      message: "✓ FRONTEND TESTING COMPLETE - ALL 4 FLOWS PASSED. Tested all 4 frontend features requested: (1) Recorrências: wallet selector works, deletion confirmation correctly mentions 'lançamentos FUTUROS serão removidos'. (2) Parcelamentos: wallet selector works, summary shows pending total (€ 300) and paid total after creation. (3) Carteiras: transfer button works, destination excludes source wallet, balances update correctly (+20/-20), error handling works. (4) Lançamentos: bulk select/delete works, installment rows correctly have no checkbox, select all and clear buttons work. All features production-ready."
