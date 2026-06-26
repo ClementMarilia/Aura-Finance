@@ -701,16 +701,24 @@ async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
         guard = 0
         while nxt <= horizon and guard < 120:
             guard += 1
-            await db.transactions.insert_one({
-                "id": new_id(), "user_id": user_id, "type": r["type"],
-                "date": nxt.isoformat(), "amount": r["amount"],
-                "category_id": r.get("category_id"), "account_id": r.get("account_id"),
-                "from_account_id": None, "to_account_id": None,
-                "payment_method": r.get("payment_method"),
-                "description": r.get("description", ""), "notes": "(recorrente)",
-                "status": "paid" if nxt <= today else "pending",
-                "recurrence_id": r["id"], "created_at": now_iso(),
-            })
+            # Idempotent: never create a second transaction for the same
+            # (recurrence, date). Prevents duplicates when next_run is edited
+            # back to an already-materialized date.
+            exists = await db.transactions.find_one(
+                {"user_id": user_id, "recurrence_id": r["id"], "date": nxt.isoformat()},
+                {"_id": 1},
+            )
+            if not exists:
+                await db.transactions.insert_one({
+                    "id": new_id(), "user_id": user_id, "type": r["type"],
+                    "date": nxt.isoformat(), "amount": r["amount"],
+                    "category_id": r.get("category_id"), "account_id": r.get("account_id"),
+                    "from_account_id": None, "to_account_id": None,
+                    "payment_method": r.get("payment_method"),
+                    "description": r.get("description", ""), "notes": "(recorrente)",
+                    "status": "paid" if nxt <= today else "pending",
+                    "recurrence_id": r["id"], "created_at": now_iso(),
+                })
             nxt = _advance(nxt, r["frequency"])
             changed = True
         if changed:
@@ -749,6 +757,17 @@ async def update_recurrence(rid: str, payload: RecurrenceIn, user=Depends(get_cu
         {"id": rid, "user_id": user["id"]}, {"$set": payload.model_dump()})
     if res.matched_count == 0:
         raise HTTPException(404, "Recorrência não encontrada")
+    # Keep linked lançamentos in sync (update, never duplicate). Only the
+    # not-yet-paid (pending) materialized occurrences are updated; already-paid
+    # past entries are kept as historical record.
+    await db.transactions.update_many(
+        {"user_id": user["id"], "recurrence_id": rid, "status": "pending"},
+        {"$set": {
+            "type": payload.type, "amount": payload.amount,
+            "category_id": payload.category_id, "account_id": payload.account_id,
+            "payment_method": payload.payment_method, "description": payload.description,
+        }},
+    )
     return await db.recurrences.find_one({"id": rid}, {"_id": 0})
 
 

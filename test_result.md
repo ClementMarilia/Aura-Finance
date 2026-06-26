@@ -105,6 +105,20 @@
 user_problem_statement: "Adicionar conta/carteira em recorrências e parcelamentos; parcelamentos devem entrar nas despesas do relatório anual; deletar registros em lote (bulk) em Lançamentos; ao deletar recorrência, apagar lançamentos futuros gerados por ela; transferência entre carteiras. Parcela só deduz da carteira quando confirmada (paga); pendente rola para o mês seguinte."
 
 backend:
+  - task: "BUGFIX: Editar recorrência duplicava lançamentos (materialização não-idempotente)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Bug do usuário: editar uma recorrência duplicava o lançamento. Causa: materialize_recurrences inseria transação para cada data entre next_run e horizon SEM checar se já existia; ao editar, o next_run reenviado podia recriar datas já materializadas. Correções: (1) materialize idempotente — só insere se NÃO existir transação com mesmo (recurrence_id, date); (2) PUT /recurrences/{rid} propaga as mudanças (type/amount/category_id/account_id/payment_method/description) para os lançamentos vinculados PENDENTES (status=pending) — atualiza, não duplica; pagos passados ficam como histórico. TESTAR: criar recorrência mensal, materializar (GET /transactions mês atual e mês futuro), contar lançamentos com aquele recurrence_id; editar a recorrência (mudar amount/description) várias vezes via PUT; recontar — NÃO deve aumentar a quantidade; os pendentes devem refletir o novo amount/description; chamar GET /transactions de novo não deve duplicar."
+        - working: true
+          agent: "testing"
+          comment: "✓ ALL 4 TESTS PASSED - BUG FIX VERIFIED. Comprehensive test completed with 10 verification steps: (1) Created monthly recurrence with amount=100, description='Assinatura X', starting today (2026-06-26). (2) Materialized transactions for current month + 2 future months. (3) Initial count: 3 transactions (1 paid for today, 2 pending for future months). (4) Edited recurrence 3 times changing amount to 250 and description to 'Assinatura Y'. (5) ✓ NO DUPLICATES: Count remained at 3 transactions after all edits. (6) ✓ PENDING UPDATED: All 2 pending transactions (2026-07-26, 2026-08-26) correctly updated to amount=250.0 and description='Assinatura Y'. (7) ✓ PAID PRESERVED: Paid transaction (2026-06-26) correctly kept original values (amount=100.0, description='Assinatura X') as historical record. (8) ✓ IDEMPOTENCY: Re-querying same months didn't create duplicates (count remained 3). (9) ✓ NEXT_RUN EDIT: Editing next_run back to already-materialized date (2026-06-26) didn't create duplicates. (10) Verified user isolation (all operations scoped to wendy@demo.com). Bug fix working perfectly - materialize_recurrences is now idempotent (checks for existing transaction before inserting), and PUT /recurrences updates pending transactions instead of duplicating them."
   - task: "BUGFIX: Confirmar recebimento de conta a receber gera receita + credita carteira"
     implemented: true
     working: true
@@ -265,7 +279,7 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 3
+  test_sequence: 4
   run_ui: false
 
 test_plan:
@@ -296,3 +310,5 @@ agent_communication:
       message: "Testar END-TO-END na interface o fluxo de 'Contas a Receber' do app de finanças 'Aurea' (React), pois o usuário relata que ao confirmar o recebimento o valor NÃO soma na receita nem na carteira. Reproduza e confirme se funciona ou falha na UI. Login: wendy@demo.com / demo123. Passos: (1) Anotar receita do Dashboard e saldo da carteira. (2) Criar conta a receber com valor 200. (3) Marcar como recebido. (4) Verificar se receita aumentou +200. (5) Verificar se saldo da carteira aumentou +200. (6) Verificar se lançamento de receita apareceu em Lançamentos."
     - agent: "testing"
       message: "✓ UI END-TO-END TEST PASSED - BUG FIX CONFIRMED WORKING IN UI. Executado teste completo do fluxo de Contas a Receber conforme solicitado pelo usuário. TODOS OS 6 TESTES PASSARAM: (1) Login OK. (2) Receita inicial capturada: € 2.500,00. (3) Saldo inicial carteira 'Conta Principal': -€ 120,00. (4) Recebível criado: Cliente Teste, valor 200, descrição 'Teste recebimento', carteira selecionada. (5) Marcado como recebido: toast 'Recebido! Receita lançada na carteira' OK, status mudou para 'Recebido'. (6) ✅ Receita do Dashboard AUMENTOU corretamente: € 2.500,00 → € 2.700,00 (+200). (7) ✅ Saldo da carteira AUMENTOU corretamente: -€ 120,00 → € 80,00 (+200). (8) ✅ Lançamento de receita CRIADO em Lançamentos: 'Recebimento: Teste recebimento', tipo Receita, valor +€ 200,00. Console: apenas warnings menores (WebSocket, charts), nenhum erro crítico. CONCLUSÃO: Bug reportado pelo usuário está CORRIGIDO e funcionando perfeitamente na interface. O valor agora soma corretamente na receita E na carteira ao confirmar recebimento."
+    - agent: "testing"
+      message: "✓ BUGFIX VERIFIED - RECURRENCE EDIT NO LONGER DUPLICATES TRANSACTIONS. Tested comprehensive scenario with 10 verification steps following exact user requirements. ALL 4 CRITICAL TESTS PASSED: (1) Created monthly recurrence (amount=100, description='Assinatura X', starting 2026-06-26). (2) Materialized 3 transactions (1 paid today, 2 pending future). (3) Edited recurrence 3 times (amount→250, description→'Assinatura Y'). (4) ✅ NO DUPLICATES: Count remained at 3 transactions (initial=3, after edits=3). (5) ✅ PENDING UPDATED: All 2 pending transactions correctly updated to new values (amount=250.0, description='Assinatura Y'). (6) ✅ PAID PRESERVED: Paid transaction (today) correctly kept original values as historical record (amount=100.0, description='Assinatura X'). (7) ✅ IDEMPOTENCY: Re-querying same months didn't create duplicates. (8) ✅ NEXT_RUN EDIT: Editing next_run back to already-materialized date didn't create duplicates. Implementation verified: materialize_recurrences checks for existing (recurrence_id, date) before inserting (idempotent), and PUT /recurrences updates pending transactions instead of duplicating. Bug fix is production-ready."
