@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Pencil, Trash2, Wallet, PiggyBank, Banknote, CreditCard, TrendingUp } from "lucide-react";
+import { Plus, Pencil, Trash2, Wallet, PiggyBank, Banknote, CreditCard, TrendingUp, ArrowLeftRight } from "lucide-react";
 import { toast } from "sonner";
 
 const TYPES = [
@@ -30,9 +30,39 @@ export default function Wallets() {
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const emptyTransfer = {
+    from_account_id: "", to_account_id: "", amount: "",
+    date: new Date().toISOString().slice(0, 10), description: "",
+  };
+  const [transfer, setTransfer] = useState(emptyTransfer);
 
   const load = () => api.get("/accounts").then(r => setList(r.data || []));
   useEffect(() => { load(); }, []);
+
+  const openTransfer = () => { setTransfer(emptyTransfer); setTransferOpen(true); };
+  const doTransfer = async (e) => {
+    e.preventDefault();
+    if (!transfer.from_account_id || !transfer.to_account_id) {
+      toast.error("Selecione as carteiras de origem e destino"); return;
+    }
+    if (transfer.from_account_id === transfer.to_account_id) {
+      toast.error("Origem e destino devem ser diferentes"); return;
+    }
+    try {
+      await api.post("/transactions", {
+        type: "transfer",
+        date: transfer.date,
+        amount: parseFloat(transfer.amount) || 0,
+        from_account_id: transfer.from_account_id,
+        to_account_id: transfer.to_account_id,
+        description: transfer.description || "Transferência entre carteiras",
+        status: "paid",
+      });
+      toast.success("Transferência realizada");
+      setTransferOpen(false); load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
 
   const total = list.reduce((s, a) => s + (a.balance || 0), 0);
 
@@ -68,9 +98,14 @@ export default function Wallets() {
           <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Carteiras</h1>
           <p className="text-[#6B7068]">Contas, poupança e investimentos — saldo usado para pagar contas</p>
         </div>
-        <Button onClick={openNew} data-testid="wallet-new-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
-          <Plus size={16} className="mr-1" /> Nova carteira
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={openTransfer} data-testid="wallet-transfer-btn" variant="outline" className="rounded-xl border-[#1E3F33] text-[#1E3F33]">
+            <ArrowLeftRight size={16} className="mr-1" /> Transferir
+          </Button>
+          <Button onClick={openNew} data-testid="wallet-new-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+            <Plus size={16} className="mr-1" /> Nova carteira
+          </Button>
+        </div>
       </div>
 
       <div className="card-soft" data-testid="wallets-total">
@@ -138,6 +173,52 @@ export default function Wallets() {
             <p className="text-xs text-[#6B7068]">Atualize aqui o valor guardado/investido. Pagamentos e transferências ajustam o saldo automaticamente.</p>
             <DialogFooter>
               <Button type="submit" data-testid="wallet-save-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Salvar</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle style={{ fontFamily: "Outfit" }}>Transferir entre carteiras</DialogTitle></DialogHeader>
+          <form onSubmit={doTransfer} className="space-y-3">
+            <div>
+              <Label>De (origem)</Label>
+              <Select value={transfer.from_account_id} onValueChange={v => setTransfer({ ...transfer, from_account_id: v })}>
+                <SelectTrigger data-testid="transfer-from-select"><SelectValue placeholder="Carteira de origem" /></SelectTrigger>
+                <SelectContent>
+                  {list.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({fmtMoney(a.balance || 0, curr)})</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Para (destino)</Label>
+              <Select value={transfer.to_account_id} onValueChange={v => setTransfer({ ...transfer, to_account_id: v })}>
+                <SelectTrigger data-testid="transfer-to-select"><SelectValue placeholder="Carteira de destino" /></SelectTrigger>
+                <SelectContent>
+                  {list.filter(a => a.id !== transfer.from_account_id).map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({fmtMoney(a.balance || 0, curr)})</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Valor</Label>
+                <Input type="number" step="0.01" value={transfer.amount} required data-testid="transfer-amount-input"
+                  onChange={e => setTransfer({ ...transfer, amount: e.target.value })} />
+              </div>
+              <div>
+                <Label>Data</Label>
+                <Input type="date" value={transfer.date} required data-testid="transfer-date-input"
+                  onChange={e => setTransfer({ ...transfer, date: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <Label>Descrição (opcional)</Label>
+              <Input value={transfer.description} data-testid="transfer-description-input"
+                onChange={e => setTransfer({ ...transfer, description: e.target.value })} placeholder="Ex: Sobra do mês para a poupança" />
+            </div>
+            <DialogFooter>
+              <Button type="submit" data-testid="transfer-save-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Transferir</Button>
             </DialogFooter>
           </form>
         </DialogContent>

@@ -15,18 +15,23 @@ export default function Installments() {
   const curr = user?.currency || "EUR";
   const [list, setList] = useState([]);
   const [cats, setCats] = useState([]);
+  const [accs, setAccs] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [expanded, setExpanded] = useState({});
-  const [editForm, setEditForm] = useState({ description: "", category_id: "", payment_method: "" });
+  const [editForm, setEditForm] = useState({ description: "", category_id: "", payment_method: "", account_id: "" });
   const [form, setForm] = useState({
     description: "", total_amount: "", installments: 1,
-    first_date: new Date().toISOString().slice(0, 10), category_id: "", payment_method: "",
+    first_date: new Date().toISOString().slice(0, 10), category_id: "", payment_method: "", account_id: "",
   });
 
   const load = () => api.get("/installments/purchases").then(r => setList(r.data));
-  useEffect(() => { load(); api.get("/categories").then(r => setCats(r.data)); }, []);
+  useEffect(() => {
+    load();
+    api.get("/categories").then(r => setCats(r.data));
+    api.get("/accounts").then(r => setAccs(r.data || []));
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -36,6 +41,7 @@ export default function Installments() {
         total_amount: parseFloat(form.total_amount),
         installments: parseInt(form.installments, 10),
         category_id: form.category_id || null,
+        account_id: form.account_id || null,
       });
       toast.success("Parcelamento criado");
       setOpen(false); load();
@@ -48,6 +54,7 @@ export default function Installments() {
       description: p.description,
       category_id: p.category_id || "",
       payment_method: p.payment_method || "",
+      account_id: p.account_id || "",
     });
   };
 
@@ -58,6 +65,7 @@ export default function Installments() {
         description: editForm.description,
         category_id: editForm.category_id || null,
         payment_method: editForm.payment_method,
+        account_id: editForm.account_id || null,
       });
       toast.success("Atualizado");
       setEditing(null); load();
@@ -111,12 +119,42 @@ export default function Installments() {
                       {cats.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select></div>
+                <div className="col-span-2"><Label>Carteira (pagamento sai daqui ao confirmar a parcela)</Label>
+                  <Select value={form.account_id} onValueChange={v => setForm({ ...form, account_id: v })}>
+                    <SelectTrigger data-testid="inst-account-select"><SelectValue placeholder="Selecione a carteira" /></SelectTrigger>
+                    <SelectContent>
+                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select></div>
               </div>
               <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="inst-submit-button">Criar</Button>
             </form>
           </DialogContent>
         </Dialog>
       </div>
+
+      {list.length > 0 && (() => {
+        const allParcels = list.flatMap(p => p.installments_list);
+        const pendingTotal = allParcels.filter(i => i.status === "pending").reduce((s, i) => s + i.amount, 0);
+        const paidTotal = allParcels.filter(i => i.status === "paid").reduce((s, i) => s + i.amount, 0);
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="inst-summary">
+            <div className="card-soft">
+              <div className="text-sm text-[#6B7068]">Total pendente (parcelas em aberto)</div>
+              <div className="text-2xl font-semibold text-rose-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="inst-pending-total">
+                {fmtMoney(pendingTotal, curr)}
+              </div>
+              <div className="text-xs text-[#6B7068] mt-1">Só sai da carteira quando você confirmar o pagamento</div>
+            </div>
+            <div className="card-soft">
+              <div className="text-sm text-[#6B7068]">Total já pago</div>
+              <div className="text-2xl font-semibold text-emerald-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="inst-paid-total">
+                {fmtMoney(paidTotal, curr)}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="space-y-4">
         {list.length === 0 && <div className="card-soft text-center text-[#6B7068]">Nenhum parcelamento ainda</div>}
@@ -135,6 +173,9 @@ export default function Installments() {
                     <div className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{p.description}</div>
                     <div className="text-sm text-[#6B7068]">
                       {p.installments}x · {fmtMoney(p.total_amount, curr)} · Pagas: {paid}/{p.installments}
+                      {p.account_id && accs.find(a => a.id === p.account_id) && (
+                        <> · {accs.find(a => a.id === p.account_id).name}</>
+                      )}
                     </div>
                     {!isOpen && (
                       <div className="text-xs text-[#1E3F33] mt-1" data-testid={`purchase-summary-${p.id}`}>
@@ -193,6 +234,13 @@ export default function Installments() {
                 <SelectTrigger data-testid="purchase-edit-category"><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
                   {cats.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select></div>
+            <div><Label>Carteira</Label>
+              <Select value={editForm.account_id} onValueChange={v => setEditForm({ ...editForm, account_id: v })}>
+                <SelectTrigger data-testid="purchase-edit-account"><SelectValue placeholder="Selecione a carteira" /></SelectTrigger>
+                <SelectContent>
+                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
                 </SelectContent>
               </Select></div>
             <p className="text-xs text-[#6B7068]">Para alterar valor total ou número de parcelas, exclua e crie um novo parcelamento.</p>

@@ -14,7 +14,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 const FREQ_LABEL = { weekly: "Semanal", monthly: "Mensal", yearly: "Anual" };
 
 const emptyForm = {
-  type: "expense", amount: "", category_id: "", payment_method: "",
+  type: "expense", amount: "", category_id: "", account_id: "", payment_method: "",
   description: "", frequency: "monthly", next_run: new Date().toISOString().slice(0, 10), active: true,
 };
 
@@ -23,6 +23,7 @@ export default function Recurrences() {
   const curr = user?.currency || "EUR";
   const [items, setItems] = useState([]);
   const [cats, setCats] = useState([]);
+  const [accs, setAccs] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState(null);
@@ -30,7 +31,11 @@ export default function Recurrences() {
   const [expanded, setExpanded] = useState({});
 
   const load = () => api.get("/recurrences").then(r => setItems(r.data || []));
-  useEffect(() => { load(); api.get("/categories").then(r => setCats(r.data)); }, []);
+  useEffect(() => {
+    load();
+    api.get("/categories").then(r => setCats(r.data));
+    api.get("/accounts").then(r => setAccs(r.data || []));
+  }, []);
 
   const FACTOR = { weekly: 52 / 12, monthly: 1, yearly: 1 / 12 };
   const monthly = (type) => items
@@ -44,6 +49,7 @@ export default function Recurrences() {
     setEditing(r);
     setForm({
       type: r.type, amount: String(r.amount), category_id: r.category_id || "",
+      account_id: r.account_id || "",
       payment_method: r.payment_method || "", description: r.description || "",
       frequency: r.frequency, next_run: r.next_run, active: r.active,
     });
@@ -54,7 +60,8 @@ export default function Recurrences() {
     e.preventDefault();
     const payload = {
       type: form.type, amount: parseFloat(form.amount) || 0,
-      category_id: form.category_id || null, payment_method: form.payment_method || null,
+      category_id: form.category_id || null, account_id: form.account_id || null,
+      payment_method: form.payment_method || null,
       description: form.description, frequency: form.frequency,
       next_run: form.next_run, active: form.active,
     };
@@ -214,6 +221,15 @@ export default function Recurrences() {
               </Select>
             </div>
             <div>
+              <Label>Carteira (de onde sai/entra o valor)</Label>
+              <Select value={form.account_id} onValueChange={(v) => setForm({ ...form, account_id: v })}>
+                <SelectTrigger data-testid="rec-account-select"><SelectValue placeholder="Selecione a carteira" /></SelectTrigger>
+                <SelectContent>
+                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>Descrição</Label>
               <Input value={form.description} data-testid="rec-description-input"
                 onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Ex: Aluguel, Salário, Spotify" />
@@ -229,7 +245,7 @@ export default function Recurrences() {
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
         title="Excluir recorrência?"
-        description={confirmDel ? `"${confirmDel.description || "Recorrência"}" não gerará mais lançamentos. Os lançamentos já criados permanecem.` : ""}
+        description={confirmDel ? `"${confirmDel.description || "Recorrência"}" não gerará mais lançamentos e os lançamentos FUTUROS já gerados por ela serão removidos. Os lançamentos passados permanecem.` : ""}
         onConfirm={remove}
         testId="rec-confirm-delete"
       />

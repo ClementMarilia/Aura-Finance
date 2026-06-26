@@ -28,6 +28,8 @@ export default function Transactions() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
   const [confirmDel, setConfirmDel] = useState(null);
+  const [selected, setSelected] = useState([]);
+  const [bulkConfirm, setBulkConfirm] = useState(false);
   const [uploadingId, setUploadingId] = useState(null);
   const fileInputRef = useRef(null);
   const pendingUploadTx = useRef(null);
@@ -51,7 +53,7 @@ export default function Transactions() {
   const load = () => {
     const params = {};
     Object.entries(filter).forEach(([k, v]) => { if (v) params[k] = v; });
-    api.get("/transactions", { params }).then(r => setItems(r.data));
+    api.get("/transactions", { params }).then(r => { setItems(r.data); setSelected([]); });
   };
 
   useEffect(() => {
@@ -101,6 +103,19 @@ export default function Transactions() {
     await api.delete(`/transactions/${confirmDel.id}`);
     setConfirmDel(null);
     toast.success("Lançamento excluído");
+    load();
+  };
+
+  const selectableIds = () => items.filter(t => t.editable !== false).map(t => t.id);
+  const allSelected = selected.length > 0 && selected.length === selectableIds().length;
+  const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelectAll = () => setSelected(allSelected ? [] : selectableIds());
+  const bulkDelete = async () => {
+    try {
+      const r = await api.post("/transactions/bulk-delete", { ids: selected });
+      toast.success(`${r.data?.deleted ?? selected.length} lançamento(s) excluído(s)`);
+    } catch (err) { toast.error(formatApiError(err)); }
+    setBulkConfirm(false);
     load();
   };
 
@@ -316,10 +331,27 @@ export default function Transactions() {
       <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
         onChange={onFileSelected} data-testid="receipt-file-input" />
 
+      {selected.length > 0 && (
+        <div className="card-soft flex items-center justify-between py-3" data-testid="bulk-action-bar">
+          <span className="text-sm text-[#1E3F33] font-medium">{selected.length} selecionado(s)</span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setSelected([])} className="rounded-xl" data-testid="bulk-clear-btn">Limpar</Button>
+            <Button onClick={() => setBulkConfirm(true)} data-testid="bulk-delete-btn" className="bg-[#D9453B] hover:bg-[#b8392f] rounded-xl">
+              <Trash2 size={16} className="mr-1" /> Excluir selecionados
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="card-soft overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="bg-[#F1EFE7] text-[#6B7068]">
             <tr>
+              <th className="py-3 px-4 w-10">
+                <input type="checkbox" checked={allSelected} onChange={toggleSelectAll}
+                  data-testid="bulk-select-all" className="accent-[#1E3F33] w-4 h-4 cursor-pointer"
+                  disabled={selectableIds().length === 0} />
+              </th>
               <th className="text-left py-3 px-4">Data</th>
               <th className="text-left py-3 px-4">Descrição</th>
               <th className="text-left py-3 px-4">Categoria</th>
@@ -331,12 +363,18 @@ export default function Transactions() {
           </thead>
           <tbody>
             {items.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-12 text-[#6B7068]">Nenhum lançamento</td></tr>
+              <tr><td colSpan={8} className="text-center py-12 text-[#6B7068]">Nenhum lançamento</td></tr>
             )}
             {items.map(t => {
               const cat = cats.find(c => c.id === t.category_id);
               return (
-                <tr key={t.id} className={`border-b border-[#E5E4E0] ${t.overdue ? "bg-red-50/60" : ""}`} data-testid={`tx-row-${t.id}`}>
+                <tr key={t.id} className={`border-b border-[#E5E4E0] ${t.overdue ? "bg-red-50/60" : ""} ${selected.includes(t.id) ? "bg-[#F1EFE7]" : ""}`} data-testid={`tx-row-${t.id}`}>
+                  <td className="py-3 px-4">
+                    {t.editable !== false ? (
+                      <input type="checkbox" checked={selected.includes(t.id)} onChange={() => toggleSelect(t.id)}
+                        data-testid={`tx-select-${t.id}`} className="accent-[#1E3F33] w-4 h-4 cursor-pointer" />
+                    ) : null}
+                  </td>
                   <td className="py-3 px-4">{fmtDate(t.date)}</td>
                   <td className="py-3 px-4 font-medium">
                     <div className="flex items-center gap-2">
@@ -428,6 +466,15 @@ export default function Transactions() {
         description={confirmDel ? `"${confirmDel.description || "Sem descrição"}" - ${fmtMoney(confirmDel.amount, curr)}. Esta ação não pode ser desfeita.` : ""}
         onConfirm={remove}
         testId="tx-confirm-delete"
+      />
+
+      <ConfirmDialog
+        open={bulkConfirm}
+        onOpenChange={setBulkConfirm}
+        title="Excluir selecionados?"
+        description={`${selected.length} lançamento(s) serão excluídos permanentemente. Esta ação não pode ser desfeita.`}
+        onConfirm={bulkDelete}
+        testId="tx-bulk-confirm-delete"
       />
     </div>
   );

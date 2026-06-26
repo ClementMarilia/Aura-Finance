@@ -101,3 +101,129 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "Adicionar conta/carteira em recorrências e parcelamentos; parcelamentos devem entrar nas despesas do relatório anual; deletar registros em lote (bulk) em Lançamentos; ao deletar recorrência, apagar lançamentos futuros gerados por ela; transferência entre carteiras. Parcela só deduz da carteira quando confirmada (paga); pendente rola para o mês seguinte."
+
+backend:
+  - task: "Saldo da carteira: parcelas pagas deduzem do saldo da conta vinculada"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "GET /accounts agora subtrai parcelas com status=paid da carteira (purchase.account_id). Parcelas pendentes NÃO afetam o saldo. Testar criando parcelamento com account_id, marcar parcela paga e ver saldo reduzir; ao reabrir (pending) saldo volta."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED. Tested complete flow: (1) Created installment purchase with account_id, verified balance unchanged with pending installments. (2) Marked first installment as paid, balance correctly reduced by installment amount (400.0). (3) Reopened installment (marked as pending), balance correctly restored to initial value. All assertions passed."
+  - task: "POST /transactions/bulk-delete"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Novo endpoint recebe {ids:[...]} e deleta apenas transações reais do usuário; limpa receipts. Retorna {deleted: N}. Testar com ids válidos e ids inexistentes."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED. Tested: (1) Created 3 test transactions. (2) Bulk deleted 2 transactions, correctly returned {deleted: 2}. (3) Verified deleted transactions removed from database. (4) Tested with non-existent IDs, correctly returned {deleted: 0}. (5) Tested with empty list, correctly returned {deleted: 0}. User isolation verified."
+  - task: "DELETE /recurrences/{rid} apaga lançamentos futuros (date > hoje)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Ao deletar recorrência, transações com recurrence_id e date > hoje são removidas; passadas permanecem. Retorna deleted_future. Testar criando recorrência mensal, materializar via GET /transactions de mês futuro, deletar e confirmar que futuras somem e passadas ficam."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED. Tested: (1) Created monthly recurrence. (2) Materialized future transactions by querying 2 months ahead. (3) Deleted recurrence, returned {deleted_future: 2}. (4) Verified all future transactions (date > today) removed. (5) Verified past/today transactions remain (1 transaction preserved). Correct behavior confirmed."
+  - task: "Relatório anual inclui parcelas como despesa"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "GET /reports/annual: despesa mensal agora soma parcelas com due_date no mês (consistente com /dashboard). Testar comparando expense do mês com parcelas existentes."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED. Tested: (1) Got baseline annual report expense for current month (1030.0). (2) Created installment purchase with 1 installment due this month (300.0). (3) Got updated annual report, expense correctly increased to 1330.0 (baseline + installment). (4) Verified dashboard consistency, installments_month_total matches (300.0). Installments correctly included in annual report."
+  - task: "account_id em recorrências e parcelamentos (modelos)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "RecurrenceIn já tinha account_id (materialize propaga ao lançamento). InstallmentPurchaseUpdateIn agora aceita account_id (edição da carteira do parcelamento). Testar POST/PUT preservando account_id."
+        - working: true
+          agent: "testing"
+          comment: "✓ PASSED. Tested: (1) Created recurrence with account_id, verified GET /recurrences returns saved account_id. (2) Created installment purchase with account_id, verified account_id saved correctly. (3) Updated purchase with different account_id via PUT, verified account_id updated correctly. Both recurrences and installments properly handle account_id."
+
+frontend:
+  - task: "Seletor de carteira em Recorrências + texto exclusão (apaga futuros)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Recurrences.jsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+  - task: "Seletor de carteira em Parcelamentos + resumo de pendente"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Installments.jsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+  - task: "Transferência entre carteiras (Wallets)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Wallets.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+  - task: "Bulk delete em Lançamentos (checkboxes + barra de ações)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Transactions.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Saldo da carteira: parcelas pagas deduzem do saldo da conta vinculada"
+    - "POST /transactions/bulk-delete"
+    - "DELETE /recurrences/{rid} apaga lançamentos futuros (date > hoje)"
+    - "Relatório anual inclui parcelas como despesa"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: "Implementei 5 mudanças no backend. Por favor teste apenas o BACKEND. Credenciais demo: wendy@demo.com / demo123 (também marilia@ e nathalia@). Foco: (1) /accounts deduz parcelas pagas; (2) /transactions/bulk-delete; (3) DELETE /recurrences apaga futuros; (4) /reports/annual inclui parcelas; (5) account_id em recorrência/parcelamento. NÃO testar frontend ainda."
+    - agent: "testing"
+      message: "✓ BACKEND TESTING COMPLETE - ALL 5 FEATURES PASSED. Tested all 5 backend changes with comprehensive test scenarios. All APIs working correctly: (1) Wallet balance correctly deducts paid installments and restores when reopened. (2) Bulk delete transactions works with valid/invalid/empty IDs. (3) Delete recurrence removes future transactions while preserving past ones. (4) Annual report correctly includes installments as expenses. (5) account_id properly saved and updated in recurrences and installments. No critical issues found. Ready for user validation."
