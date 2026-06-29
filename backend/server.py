@@ -468,7 +468,7 @@ async def delete_category(cid: str, user=Depends(get_current_user)):
 async def list_accounts(user=Depends(get_current_user)):
     accounts = await db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
     txs = await db.transactions.find(
-        {"user_id": user["id"], "status": {"$ne": "cancelled"}}, {"_id": 0},
+        {"user_id": user["id"], "status": "paid"}, {"_id": 0},
     ).to_list(20000)
     bal = {a["id"]: a.get("initial_balance", 0.0) for a in accounts}
     for t in txs:
