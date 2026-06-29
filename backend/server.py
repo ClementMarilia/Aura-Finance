@@ -558,6 +558,35 @@ async def list_transactions(
     for r in rows:
         r["source"] = "recurrence" if r.get("recurrence_id") else "manual"
         r["editable"] = True
+        r["overdue"] = False
+
+    # Roll-over: include real transactions still pending from previous months
+    # (so the user sees them in the current view and can confirm payment)
+    if year and month and status in (None, "pending"):
+        overdue_q = {
+            "user_id": user["id"],
+            "status": "pending",
+            "date": {"$lt": start},
+        }
+        if category_id:
+            overdue_q["category_id"] = category_id
+        if type:
+            overdue_q["type"] = type
+        if account_id:
+            overdue_q["$or"] = [
+                {"account_id": account_id},
+                {"from_account_id": account_id},
+                {"to_account_id": account_id},
+            ]
+        overdue_rows = await db.transactions.find(overdue_q, {"_id": 0}).to_list(2000)
+        existing_ids = {r["id"] for r in rows}
+        for r in overdue_rows:
+            if r["id"] in existing_ids:
+                continue
+            r["source"] = "recurrence" if r.get("recurrence_id") else "manual"
+            r["editable"] = True
+            r["overdue"] = True
+            rows.append(r)
 
     # Merge installment parcels as linked entries — only this month's + overdue pending
     # (avoids cluttering the list with far-future parcels)
@@ -643,6 +672,27 @@ async def delete_transaction(tid: str, user=Depends(get_current_user)):
         await db.files.update_one({"id": tx["receipt"]["file_id"]}, {"$set": {"is_deleted": True}})
     await db.transactions.delete_one({"id": tid, "user_id": user["id"]})
     return {"ok": True}
+
+
+@api.post("/transactions/{tid}/pay")
+async def toggle_transaction_payment(tid: str, user=Depends(get_current_user)):
+    """Toggle a real transaction between paid <-> pending.
+
+    Used by the "Confirmar pagamento" button in the Lançamentos list.
+    Recorded paid transactions affect the wallet balance immediately;
+    pending ones don't (rolling over to next months until confirmed).
+    """
+    tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
+    if not tx:
+        raise HTTPException(404, "Lançamento não encontrado")
+    if tx.get("status") == "cancelled":
+        raise HTTPException(400, "Lançamento cancelado não pode ser pago")
+    new_status = "pending" if tx.get("status") == "paid" else "paid"
+    await db.transactions.update_one(
+        {"id": tid, "user_id": user["id"]},
+        {"$set": {"status": new_status}},
+    )
+    return {"ok": True, "status": new_status}
 
 
 class BulkDeleteIn(BaseModel):

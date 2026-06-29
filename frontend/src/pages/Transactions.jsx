@@ -186,6 +186,15 @@ export default function Transactions() {
     load();
   };
 
+  const payTransaction = async (t) => {
+    try {
+      const r = await api.post(`/transactions/${t.id}/pay`);
+      const ns = r.data?.status;
+      toast.success(ns === "paid" ? "Pagamento confirmado" : "Lançamento marcado como pendente");
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
   const handleCSV = () => {
     if (items.length === 0) { toast.error("Nada para exportar"); return; }
     exportCSV(
@@ -471,6 +480,22 @@ export default function Transactions() {
                         )
                       ) : (
                       <>
+                      {t.status !== "cancelled" && (
+                        <button
+                          onClick={() => payTransaction(t)}
+                          data-testid={`tx-pay-${t.id}`}
+                          className={`p-1 rounded ${
+                            t.status === "paid"
+                              ? "text-emerald-600 hover:bg-emerald-50"
+                              : t.overdue
+                                ? "text-rose-600 hover:bg-rose-50 animate-pulse"
+                                : "text-[#6B7068] hover:text-emerald-600 hover:bg-emerald-50"
+                          }`}
+                          title={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}
+                        >
+                          <Check size={16} />
+                        </button>
+                      )}
                       {t.receipt ? (
                         <>
                           <button onClick={() => viewReceipt(t)} className="text-[#1E3F33] hover:bg-[#F1EFE7] rounded p-1" data-testid={`tx-receipt-view-${t.id}`} title="Ver comprovante">

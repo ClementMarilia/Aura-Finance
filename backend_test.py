@@ -1,11 +1,34 @@
 #!/usr/bin/env python3
 """
-Backend test for Categories by kind (expense/income/both) feature.
+Backend test for "Confirmar pagamento em Lançamentos + roll-over" feature.
 Tests ONLY the backend API endpoints.
+
+Test scenarios:
+1) Login wendy → token Bearer
+2) GET /accounts → note "Conta Principal" (id and initial balance S0)
+3) Create REAL expense with date from LAST MONTH, status="pending", amount=77.50
+4) GET /accounts → balance remains S0 (pending doesn't affect balance)
+5) GET /transactions?year=Y&month=M (current month) → transaction appears with overdue=true, editable=true
+6) GET /transactions?year=Y&month=M&status=paid → transaction should NOT appear
+7) GET /transactions?year=Y&month=M&status=pending → MUST appear with overdue=true
+8) POST /transactions/{tx_id}/pay → 200, returns {"ok":true,"status":"paid"}
+9) GET /transactions?year=Y&month=M → should NOT appear (status=paid, date outside month)
+10) GET /transactions?year=LAST_Y&month=LAST_M → appears with overdue=false
+11) GET /accounts → balance now is S0 - 77.50
+12) POST /transactions/{tx_id}/pay again → 200, returns {"status":"pending"}
+13) GET /accounts → balance returns to S0
+14) GET /transactions?year=Y&month=M → reappears with overdue=true
+15) Edge cases:
+    a) POST /transactions/inexistente-id/pay → 404
+    b) Create cancelled transaction, call /pay → 400
+16) User isolation: login marilia, GET /transactions doesn't include wendy's transaction
+17) Filter account_id: create another pending expense in different account
+18) Cleanup: DELETE created transactions
 """
 
 import requests
 import sys
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 # Base URL from frontend/.env
@@ -16,15 +39,6 @@ WENDY_EMAIL = "wendy@demo.com"
 WENDY_PASSWORD = "demo123"
 MARILIA_EMAIL = "marilia@demo.com"
 MARILIA_PASSWORD = "demo123"
-
-# Expected default income categories
-EXPECTED_INCOME_CATEGORIES = [
-    "Salário",
-    "Freelance / Extra",
-    "Investimentos",
-    "Presente / Reembolso",
-    "Outras receitas"
-]
 
 class TestResult:
     def __init__(self):
@@ -87,69 +101,102 @@ def login(email: str, password: str) -> Optional[str]:
         return None
 
 
-def get_categories(token: str) -> Optional[List[Dict]]:
-    """Get all categories for the authenticated user"""
+def get_accounts(token: str) -> Optional[List[Dict]]:
+    """Get all accounts for the authenticated user"""
     try:
         resp = requests.get(
-            f"{BASE_URL}/categories",
+            f"{BASE_URL}/accounts",
             headers={"Authorization": f"Bearer {token}"},
             timeout=10
         )
         if resp.status_code == 200:
             return resp.json()
         else:
-            print(f"GET /categories failed: {resp.status_code} - {resp.text}")
+            print(f"GET /accounts failed: {resp.status_code} - {resp.text}")
             return None
     except Exception as e:
-        print(f"GET /categories error: {e}")
+        print(f"GET /accounts error: {e}")
         return None
 
 
-def create_category(token: str, name: str, color: str, kind: str) -> Optional[Dict]:
-    """Create a new category"""
+def get_transactions(token: str, year: int = None, month: int = None, 
+                    status: str = None, account_id: str = None) -> Optional[List[Dict]]:
+    """Get transactions with optional filters"""
+    try:
+        params = {}
+        if year:
+            params["year"] = year
+        if month:
+            params["month"] = month
+        if status:
+            params["status"] = status
+        if account_id:
+            params["account_id"] = account_id
+        
+        resp = requests.get(
+            f"{BASE_URL}/transactions",
+            headers={"Authorization": f"Bearer {token}"},
+            params=params,
+            timeout=10
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        else:
+            print(f"GET /transactions failed: {resp.status_code} - {resp.text}")
+            return None
+    except Exception as e:
+        print(f"GET /transactions error: {e}")
+        return None
+
+
+def create_transaction(token: str, tx_data: Dict) -> Optional[Dict]:
+    """Create a new transaction"""
     try:
         resp = requests.post(
-            f"{BASE_URL}/categories",
+            f"{BASE_URL}/transactions",
             headers={"Authorization": f"Bearer {token}"},
-            json={"name": name, "color": color, "kind": kind},
+            json=tx_data,
             timeout=10
         )
         if resp.status_code == 200:
             return resp.json()
         else:
-            print(f"POST /categories failed: {resp.status_code} - {resp.text}")
+            print(f"POST /transactions failed: {resp.status_code} - {resp.text}")
             return None
     except Exception as e:
-        print(f"POST /categories error: {e}")
+        print(f"POST /transactions error: {e}")
         return None
 
 
-def update_category(token: str, category_id: str, name: str, color: str, kind: str) -> bool:
-    """Update a category"""
+def toggle_transaction_payment(token: str, tx_id: str) -> Optional[Dict]:
+    """Toggle transaction payment status (paid <-> pending)"""
     try:
-        resp = requests.put(
-            f"{BASE_URL}/categories/{category_id}",
+        resp = requests.post(
+            f"{BASE_URL}/transactions/{tx_id}/pay",
             headers={"Authorization": f"Bearer {token}"},
-            json={"name": name, "color": color, "kind": kind},
             timeout=10
         )
-        return resp.status_code == 200
+        return {
+            "status_code": resp.status_code,
+            "data": resp.json() if resp.status_code == 200 else None,
+            "text": resp.text
+        }
     except Exception as e:
-        print(f"PUT /categories error: {e}")
-        return False
+        print(f"POST /transactions/{tx_id}/pay error: {e}")
+        return None
 
 
-def delete_category(token: str, category_id: str) -> bool:
-    """Delete a category"""
+def delete_transaction(token: str, tx_id: str) -> bool:
+    """Delete a transaction"""
     try:
         resp = requests.delete(
-            f"{BASE_URL}/categories/{category_id}",
+            f"{BASE_URL}/transactions/{tx_id}",
             headers={"Authorization": f"Bearer {token}"},
             timeout=10
         )
         return resp.status_code == 200
     except Exception as e:
-        print(f"DELETE /categories error: {e}")
+        print(f"DELETE /transactions error: {e}")
         return False
 
 
@@ -157,14 +204,44 @@ def run_tests():
     result = TestResult()
     
     print("="*80)
-    print("BACKEND TEST: Categories by kind (expense/income/both)")
+    print("BACKEND TEST: Confirmar pagamento em Lançamentos + roll-over")
     print("="*80)
+    
+    # Calculate dates
+    today = datetime.now()
+    current_year = today.year
+    current_month = today.month
+    
+    # Last month date (for creating overdue transaction)
+    if current_month == 1:
+        last_month = 12
+        last_year = current_year - 1
+    else:
+        last_month = current_month - 1
+        last_year = current_year
+    
+    # Create a date from last month (e.g., 15th of last month)
+    last_month_date = datetime(last_year, last_month, 15).date().isoformat()
+    
+    print(f"\nTest dates:")
+    print(f"  Current month: {current_year}-{current_month:02d}")
+    print(f"  Last month: {last_year}-{last_month:02d}")
+    print(f"  Transaction date (last month): {last_month_date}")
+    
+    # Variables to store test data
+    wendy_token = None
+    conta_principal_id = None
+    initial_balance = None
+    tx_id = None
+    tx_id_cancelled = None
+    tx_id_other_account = None
+    other_account_id = None
     
     # Test 1: Login with wendy@demo.com
     print("\n[Test 1] Login with wendy@demo.com / demo123")
     wendy_token = login(WENDY_EMAIL, WENDY_PASSWORD)
     if wendy_token:
-        result.add_pass("Test 1: Login wendy", f"Token received (length: {len(wendy_token)})")
+        result.add_pass("Test 1: Login wendy", f"Bearer token received")
         print(f"✓ Login successful, token: {wendy_token[:20]}...")
     else:
         result.add_fail("Test 1: Login wendy", "Failed to get token")
@@ -172,209 +249,427 @@ def run_tests():
         result.print_summary()
         return False
     
-    # Test 2: GET /categories - verify 5 default income categories
-    print("\n[Test 2] GET /categories - verify 5 default income categories")
-    categories = get_categories(wendy_token)
-    if categories is None:
-        result.add_fail("Test 2: GET /categories", "Failed to fetch categories")
+    # Test 2: GET /accounts - note "Conta Principal" id and initial balance
+    print("\n[Test 2] GET /accounts - note 'Conta Principal' id and initial balance S0")
+    accounts = get_accounts(wendy_token)
+    if accounts is None:
+        result.add_fail("Test 2: GET /accounts", "Failed to fetch accounts")
         result.print_summary()
         return False
     
-    print(f"Total categories: {len(categories)}")
-    
-    # Filter income categories
-    income_cats = [c for c in categories if c.get("kind") == "income"]
-    print(f"Income categories found: {len(income_cats)}")
-    
-    # Check for default income categories
-    default_income_cats = [c for c in income_cats if c.get("is_default") == True]
-    print(f"Default income categories: {len(default_income_cats)}")
-    
-    # Verify each expected income category exists
-    found_names = [c["name"] for c in default_income_cats]
-    print(f"Default income category names: {found_names}")
-    
-    missing = []
-    for expected_name in EXPECTED_INCOME_CATEGORIES:
-        if expected_name not in found_names:
-            missing.append(expected_name)
-    
-    if len(default_income_cats) == 5 and len(missing) == 0:
-        result.add_pass("Test 2: Default income categories", 
-                       f"All 5 default income categories present: {', '.join(EXPECTED_INCOME_CATEGORIES)}")
-        print("✓ All 5 default income categories found with kind='income' and is_default=true")
+    # Find "Conta Principal"
+    conta_principal = next((acc for acc in accounts if acc.get("name") == "Conta Principal"), None)
+    if conta_principal:
+        conta_principal_id = conta_principal["id"]
+        initial_balance = conta_principal["balance"]
+        result.add_pass("Test 2: GET /accounts", 
+                       f"Found 'Conta Principal' - id={conta_principal_id}, balance S0={initial_balance}")
+        print(f"✓ Found 'Conta Principal': id={conta_principal_id}, initial balance S0={initial_balance}")
     else:
-        result.add_fail("Test 2: Default income categories", 
-                       f"Expected 5, found {len(default_income_cats)}. Missing: {missing}")
-        print(f"✗ Expected 5 default income categories, found {len(default_income_cats)}")
-        if missing:
-            print(f"  Missing: {missing}")
+        result.add_fail("Test 2: GET /accounts", "'Conta Principal' not found")
+        print("✗ 'Conta Principal' not found")
+        result.print_summary()
+        return False
     
-    # Verify all have kind='income'
-    wrong_kind = [c["name"] for c in default_income_cats if c.get("kind") != "income"]
-    if wrong_kind:
-        result.add_fail("Test 2: Income category kind", 
-                       f"Categories with wrong kind: {wrong_kind}")
-        print(f"✗ Some default income categories have wrong kind: {wrong_kind}")
+    # Test 3: Create REAL expense with date from LAST MONTH, status="pending"
+    print(f"\n[Test 3] Create expense with date from last month ({last_month_date}), status='pending', amount=77.50")
+    tx_data = {
+        "type": "expense",
+        "date": last_month_date,
+        "amount": 77.50,
+        "status": "pending",
+        "account_id": conta_principal_id,
+        "description": "Aluguel atrasado",
+        "notes": "Teste roll-over"
+    }
+    tx = create_transaction(wendy_token, tx_data)
+    if tx and tx.get("id"):
+        tx_id = tx["id"]
+        result.add_pass("Test 3: Create pending expense", 
+                       f"Created transaction id={tx_id}, date={last_month_date}, status=pending, amount=77.50")
+        print(f"✓ Created transaction: id={tx_id}")
     else:
-        result.add_pass("Test 2: Income category kind", "All default income categories have kind='income'")
-        print("✓ All default income categories have kind='income'")
+        result.add_fail("Test 3: Create pending expense", "Failed to create transaction")
+        print("✗ Failed to create transaction")
+        result.print_summary()
+        return False
     
-    # Test 3: POST /categories with kind='expense' (Gasolina)
-    print("\n[Test 3] POST /categories - create 'Gasolina' with kind='expense'")
-    gasolina = create_category(wendy_token, "Gasolina", "#E5A83B", "expense")
-    if gasolina and gasolina.get("kind") == "expense":
-        result.add_pass("Test 3: Create expense category", 
-                       f"Created 'Gasolina' with kind='expense', id={gasolina['id']}")
-        print(f"✓ Created 'Gasolina' with kind='expense', id={gasolina['id']}")
-        gasolina_id = gasolina["id"]
-    else:
-        result.add_fail("Test 3: Create expense category", 
-                       f"Failed to create or wrong kind: {gasolina}")
-        print(f"✗ Failed to create 'Gasolina' or wrong kind")
-        gasolina_id = None
-    
-    # Test 4: POST /categories with kind='income' (13o Salario)
-    print("\n[Test 4] POST /categories - create '13o Salario' with kind='income'")
-    decimo = create_category(wendy_token, "13o Salario", "#2C7A51", "income")
-    if decimo and decimo.get("kind") == "income":
-        result.add_pass("Test 4: Create income category", 
-                       f"Created '13o Salario' with kind='income', id={decimo['id']}")
-        print(f"✓ Created '13o Salario' with kind='income', id={decimo['id']}")
-        decimo_id = decimo["id"]
-    else:
-        result.add_fail("Test 4: Create income category", 
-                       f"Failed to create or wrong kind: {decimo}")
-        print(f"✗ Failed to create '13o Salario' or wrong kind")
-        decimo_id = None
-    
-    # Verify new categories appear in GET /categories
-    print("\n[Test 4b] Verify new categories appear in GET /categories")
-    categories_after = get_categories(wendy_token)
-    if categories_after:
-        gasolina_found = any(c["id"] == gasolina_id for c in categories_after) if gasolina_id else False
-        decimo_found = any(c["id"] == decimo_id for c in categories_after) if decimo_id else False
-        
-        if gasolina_found and decimo_found:
-            result.add_pass("Test 4b: New categories in list", 
-                           "Both new categories appear in GET /categories")
-            print("✓ Both new categories appear in GET /categories")
-        else:
-            result.add_fail("Test 4b: New categories in list", 
-                           f"Gasolina found: {gasolina_found}, 13o Salario found: {decimo_found}")
-            print(f"✗ New categories not found in list")
-    
-    # Test 5: PUT /categories - change Gasolina kind to 'both'
-    if gasolina_id:
-        print("\n[Test 5] PUT /categories - change 'Gasolina' kind to 'both'")
-        updated = update_category(wendy_token, gasolina_id, "Gasolina", "#E5A83B", "both")
-        if updated:
-            # Verify the change
-            categories_updated = get_categories(wendy_token)
-            gasolina_updated = next((c for c in categories_updated if c["id"] == gasolina_id), None)
-            if gasolina_updated and gasolina_updated.get("kind") == "both":
-                result.add_pass("Test 5: Update category kind", 
-                               "Changed 'Gasolina' kind from 'expense' to 'both'")
-                print("✓ Successfully changed 'Gasolina' kind to 'both'")
+    # Test 4: GET /accounts - balance should remain S0 (pending doesn't affect balance)
+    print("\n[Test 4] GET /accounts - verify balance remains S0 (pending doesn't affect balance)")
+    accounts_after = get_accounts(wendy_token)
+    if accounts_after:
+        conta_principal_after = next((acc for acc in accounts_after if acc["id"] == conta_principal_id), None)
+        if conta_principal_after:
+            balance_after = conta_principal_after["balance"]
+            if balance_after == initial_balance:
+                result.add_pass("Test 4: Balance unchanged (pending)", 
+                               f"Balance remains S0={initial_balance} (pending transaction doesn't affect balance)")
+                print(f"✓ Balance remains S0={initial_balance} (pending doesn't affect balance)")
             else:
-                result.add_fail("Test 5: Update category kind", 
-                               f"Update returned 200 but kind not changed: {gasolina_updated}")
-                print(f"✗ Update returned 200 but kind not changed")
+                result.add_fail("Test 4: Balance unchanged (pending)", 
+                               f"Balance changed from {initial_balance} to {balance_after} (should remain unchanged)")
+                print(f"✗ Balance changed from {initial_balance} to {balance_after}")
         else:
-            result.add_fail("Test 5: Update category kind", "PUT request failed")
-            print("✗ PUT request failed")
+            result.add_fail("Test 4: Balance unchanged (pending)", "Conta Principal not found")
     else:
-        result.add_warning("Test 5: Update category kind", "Skipped (Gasolina not created)")
-        print("⚠ Test 5 skipped (Gasolina not created)")
+        result.add_fail("Test 4: Balance unchanged (pending)", "Failed to fetch accounts")
     
-    # Test 6: DELETE /categories - delete 13o Salario
-    if decimo_id:
-        print("\n[Test 6] DELETE /categories - delete '13o Salario'")
-        deleted = delete_category(wendy_token, decimo_id)
-        if deleted:
-            # Verify it's gone
-            categories_after_delete = get_categories(wendy_token)
-            decimo_still_exists = any(c["id"] == decimo_id for c in categories_after_delete)
-            if not decimo_still_exists:
-                result.add_pass("Test 6: Delete category", 
-                               "Successfully deleted '13o Salario', verified it's gone")
-                print("✓ Successfully deleted '13o Salario', verified it's gone")
+    # Test 5: GET /transactions?year=Y&month=M (current month) → transaction appears with overdue=true, editable=true
+    print(f"\n[Test 5] GET /transactions?year={current_year}&month={current_month} → transaction appears with overdue=true, editable=true")
+    txs_current_month = get_transactions(wendy_token, year=current_year, month=current_month)
+    if txs_current_month is not None:
+        tx_found = next((t for t in txs_current_month if t.get("id") == tx_id), None)
+        if tx_found:
+            overdue = tx_found.get("overdue")
+            editable = tx_found.get("editable")
+            if overdue == True and editable == True:
+                result.add_pass("Test 5: Roll-over transaction appears", 
+                               f"Transaction appears in current month with overdue=true, editable=true")
+                print(f"✓ Transaction appears with overdue={overdue}, editable={editable}")
             else:
-                result.add_fail("Test 6: Delete category", 
-                               "DELETE returned 200 but category still exists")
-                print("✗ DELETE returned 200 but category still exists")
+                result.add_fail("Test 5: Roll-over transaction appears", 
+                               f"Transaction found but overdue={overdue}, editable={editable} (expected both true)")
+                print(f"✗ Transaction found but overdue={overdue}, editable={editable}")
         else:
-            result.add_fail("Test 6: Delete category", "DELETE request failed")
-            print("✗ DELETE request failed")
+            result.add_fail("Test 5: Roll-over transaction appears", 
+                           f"Transaction id={tx_id} NOT found in current month (should appear as overdue)")
+            print(f"✗ Transaction NOT found in current month")
     else:
-        result.add_warning("Test 6: Delete category", "Skipped (13o Salario not created)")
-        print("⚠ Test 6 skipped (13o Salario not created)")
+        result.add_fail("Test 5: Roll-over transaction appears", "Failed to fetch transactions")
     
-    # Test 7: Idempotency - verify no duplicates of default income categories
-    print("\n[Test 7] Idempotency - verify no duplicates of default income categories")
-    categories_final = get_categories(wendy_token)
-    if categories_final:
-        # Count occurrences of each default income category name
-        income_name_counts = {}
-        for cat in categories_final:
-            if cat.get("kind") == "income" and cat.get("is_default") == True:
-                name = cat["name"]
-                income_name_counts[name] = income_name_counts.get(name, 0) + 1
-        
-        duplicates = {name: count for name, count in income_name_counts.items() if count > 1}
-        
-        if not duplicates:
-            result.add_pass("Test 7: Idempotency", 
-                           f"No duplicates found. Each default income category appears exactly once: {income_name_counts}")
-            print(f"✓ No duplicates found. Each default income category appears exactly once")
-            print(f"  Counts: {income_name_counts}")
+    # Test 6: GET /transactions?year=Y&month=M&status=paid → transaction should NOT appear
+    print(f"\n[Test 6] GET /transactions?year={current_year}&month={current_month}&status=paid → transaction should NOT appear")
+    txs_paid = get_transactions(wendy_token, year=current_year, month=current_month, status="paid")
+    if txs_paid is not None:
+        tx_found_paid = next((t for t in txs_paid if t.get("id") == tx_id), None)
+        if not tx_found_paid:
+            result.add_pass("Test 6: Filter status=paid excludes overdue", 
+                           "Transaction correctly NOT included when filtering by status=paid")
+            print(f"✓ Transaction correctly NOT included with status=paid filter")
         else:
-            result.add_fail("Test 7: Idempotency", 
-                           f"Duplicates found: {duplicates}")
-            print(f"✗ Duplicates found: {duplicates}")
+            result.add_fail("Test 6: Filter status=paid excludes overdue", 
+                           "Transaction appears with status=paid filter (should be excluded)")
+            print(f"✗ Transaction appears with status=paid filter (should be excluded)")
     else:
-        result.add_fail("Test 7: Idempotency", "Failed to fetch categories")
-        print("✗ Failed to fetch categories for idempotency check")
+        result.add_fail("Test 6: Filter status=paid excludes overdue", "Failed to fetch transactions")
     
-    # Test 8: User isolation - verify wendy's categories don't appear for marilia
-    print("\n[Test 8] User isolation - verify wendy's categories don't appear for marilia")
+    # Test 7: GET /transactions?year=Y&month=M&status=pending → MUST appear with overdue=true
+    print(f"\n[Test 7] GET /transactions?year={current_year}&month={current_month}&status=pending → MUST appear with overdue=true")
+    txs_pending = get_transactions(wendy_token, year=current_year, month=current_month, status="pending")
+    if txs_pending is not None:
+        tx_found_pending = next((t for t in txs_pending if t.get("id") == tx_id), None)
+        if tx_found_pending:
+            overdue_pending = tx_found_pending.get("overdue")
+            if overdue_pending == True:
+                result.add_pass("Test 7: Filter status=pending includes overdue", 
+                               "Transaction appears with status=pending filter and overdue=true")
+                print(f"✓ Transaction appears with status=pending filter, overdue={overdue_pending}")
+            else:
+                result.add_fail("Test 7: Filter status=pending includes overdue", 
+                               f"Transaction found but overdue={overdue_pending} (expected true)")
+                print(f"✗ Transaction found but overdue={overdue_pending}")
+        else:
+            result.add_fail("Test 7: Filter status=pending includes overdue", 
+                           "Transaction NOT found with status=pending filter")
+            print(f"✗ Transaction NOT found with status=pending filter")
+    else:
+        result.add_fail("Test 7: Filter status=pending includes overdue", "Failed to fetch transactions")
+    
+    # Test 8: POST /transactions/{tx_id}/pay → 200, returns {"ok":true,"status":"paid"}
+    print(f"\n[Test 8] POST /transactions/{tx_id}/pay → toggle to paid")
+    pay_result = toggle_transaction_payment(wendy_token, tx_id)
+    if pay_result and pay_result["status_code"] == 200:
+        data = pay_result["data"]
+        if data and data.get("ok") == True and data.get("status") == "paid":
+            result.add_pass("Test 8: Toggle to paid", 
+                           f"Successfully toggled to paid: {data}")
+            print(f"✓ Successfully toggled to paid: {data}")
+        else:
+            result.add_fail("Test 8: Toggle to paid", 
+                           f"Response OK but unexpected data: {data}")
+            print(f"✗ Response OK but unexpected data: {data}")
+    else:
+        result.add_fail("Test 8: Toggle to paid", 
+                       f"Failed: status={pay_result.get('status_code') if pay_result else 'None'}")
+        print(f"✗ Failed to toggle to paid")
+    
+    # Test 9: GET /transactions?year=Y&month=M → should NOT appear (status=paid, date outside month)
+    print(f"\n[Test 9] GET /transactions?year={current_year}&month={current_month} → should NOT appear (status=paid, date outside month)")
+    txs_after_pay = get_transactions(wendy_token, year=current_year, month=current_month)
+    if txs_after_pay is not None:
+        tx_found_after_pay = next((t for t in txs_after_pay if t.get("id") == tx_id), None)
+        if not tx_found_after_pay:
+            result.add_pass("Test 9: Paid transaction not in current month", 
+                           "Transaction correctly NOT appears in current month after marking as paid")
+            print(f"✓ Transaction correctly NOT appears in current month (paid, date outside)")
+        else:
+            result.add_fail("Test 9: Paid transaction not in current month", 
+                           f"Transaction still appears in current month (should not, status={tx_found_after_pay.get('status')})")
+            print(f"✗ Transaction still appears in current month")
+    else:
+        result.add_fail("Test 9: Paid transaction not in current month", "Failed to fetch transactions")
+    
+    # Test 10: GET /transactions?year=LAST_Y&month=LAST_M → appears with overdue=false
+    print(f"\n[Test 10] GET /transactions?year={last_year}&month={last_month} → appears with overdue=false")
+    txs_last_month = get_transactions(wendy_token, year=last_year, month=last_month)
+    if txs_last_month is not None:
+        tx_found_last_month = next((t for t in txs_last_month if t.get("id") == tx_id), None)
+        if tx_found_last_month:
+            overdue_last = tx_found_last_month.get("overdue")
+            status_last = tx_found_last_month.get("status")
+            if overdue_last == False and status_last == "paid":
+                result.add_pass("Test 10: Transaction in its own month", 
+                               f"Transaction appears in its own month with overdue=false, status=paid")
+                print(f"✓ Transaction appears in last month with overdue={overdue_last}, status={status_last}")
+            else:
+                result.add_fail("Test 10: Transaction in its own month", 
+                               f"Transaction found but overdue={overdue_last}, status={status_last}")
+                print(f"✗ Transaction found but overdue={overdue_last}, status={status_last}")
+        else:
+            result.add_fail("Test 10: Transaction in its own month", 
+                           "Transaction NOT found in its own month")
+            print(f"✗ Transaction NOT found in last month")
+    else:
+        result.add_fail("Test 10: Transaction in its own month", "Failed to fetch transactions")
+    
+    # Test 11: GET /accounts → balance now is S0 - 77.50
+    print(f"\n[Test 11] GET /accounts → balance now is S0 - 77.50 = {initial_balance - 77.50}")
+    accounts_after_pay = get_accounts(wendy_token)
+    if accounts_after_pay:
+        conta_after_pay = next((acc for acc in accounts_after_pay if acc["id"] == conta_principal_id), None)
+        if conta_after_pay:
+            balance_after_pay = conta_after_pay["balance"]
+            expected_balance = round(initial_balance - 77.50, 2)
+            if balance_after_pay == expected_balance:
+                result.add_pass("Test 11: Balance reduced after paid", 
+                               f"Balance correctly reduced: {initial_balance} → {balance_after_pay} (delta: -77.50)")
+                print(f"✓ Balance correctly reduced: {initial_balance} → {balance_after_pay}")
+            else:
+                result.add_fail("Test 11: Balance reduced after paid", 
+                               f"Balance is {balance_after_pay}, expected {expected_balance}")
+                print(f"✗ Balance is {balance_after_pay}, expected {expected_balance}")
+        else:
+            result.add_fail("Test 11: Balance reduced after paid", "Conta Principal not found")
+    else:
+        result.add_fail("Test 11: Balance reduced after paid", "Failed to fetch accounts")
+    
+    # Test 12: POST /transactions/{tx_id}/pay again → toggle back to pending
+    print(f"\n[Test 12] POST /transactions/{tx_id}/pay again → toggle back to pending")
+    unpay_result = toggle_transaction_payment(wendy_token, tx_id)
+    if unpay_result and unpay_result["status_code"] == 200:
+        data = unpay_result["data"]
+        if data and data.get("ok") == True and data.get("status") == "pending":
+            result.add_pass("Test 12: Toggle back to pending", 
+                           f"Successfully toggled back to pending: {data}")
+            print(f"✓ Successfully toggled back to pending: {data}")
+        else:
+            result.add_fail("Test 12: Toggle back to pending", 
+                           f"Response OK but unexpected data: {data}")
+            print(f"✗ Response OK but unexpected data: {data}")
+    else:
+        result.add_fail("Test 12: Toggle back to pending", 
+                       f"Failed: status={unpay_result.get('status_code') if unpay_result else 'None'}")
+        print(f"✗ Failed to toggle back to pending")
+    
+    # Test 13: GET /accounts → balance returns to S0
+    print(f"\n[Test 13] GET /accounts → balance returns to S0 = {initial_balance}")
+    accounts_after_unpay = get_accounts(wendy_token)
+    if accounts_after_unpay:
+        conta_after_unpay = next((acc for acc in accounts_after_unpay if acc["id"] == conta_principal_id), None)
+        if conta_after_unpay:
+            balance_after_unpay = conta_after_unpay["balance"]
+            if balance_after_unpay == initial_balance:
+                result.add_pass("Test 13: Balance restored after unpay", 
+                               f"Balance correctly restored to S0={initial_balance}")
+                print(f"✓ Balance correctly restored to S0={initial_balance}")
+            else:
+                result.add_fail("Test 13: Balance restored after unpay", 
+                               f"Balance is {balance_after_unpay}, expected {initial_balance}")
+                print(f"✗ Balance is {balance_after_unpay}, expected {initial_balance}")
+        else:
+            result.add_fail("Test 13: Balance restored after unpay", "Conta Principal not found")
+    else:
+        result.add_fail("Test 13: Balance restored after unpay", "Failed to fetch accounts")
+    
+    # Test 14: GET /transactions?year=Y&month=M → reappears with overdue=true
+    print(f"\n[Test 14] GET /transactions?year={current_year}&month={current_month} → reappears with overdue=true")
+    txs_after_unpay = get_transactions(wendy_token, year=current_year, month=current_month)
+    if txs_after_unpay is not None:
+        tx_found_after_unpay = next((t for t in txs_after_unpay if t.get("id") == tx_id), None)
+        if tx_found_after_unpay:
+            overdue_after_unpay = tx_found_after_unpay.get("overdue")
+            status_after_unpay = tx_found_after_unpay.get("status")
+            if overdue_after_unpay == True and status_after_unpay == "pending":
+                result.add_pass("Test 14: Transaction reappears as overdue", 
+                               f"Transaction reappears in current month with overdue=true, status=pending")
+                print(f"✓ Transaction reappears with overdue={overdue_after_unpay}, status={status_after_unpay}")
+            else:
+                result.add_fail("Test 14: Transaction reappears as overdue", 
+                               f"Transaction found but overdue={overdue_after_unpay}, status={status_after_unpay}")
+                print(f"✗ Transaction found but overdue={overdue_after_unpay}, status={status_after_unpay}")
+        else:
+            result.add_fail("Test 14: Transaction reappears as overdue", 
+                           "Transaction NOT found in current month (should reappear)")
+            print(f"✗ Transaction NOT found in current month")
+    else:
+        result.add_fail("Test 14: Transaction reappears as overdue", "Failed to fetch transactions")
+    
+    # Test 15a: Edge case - POST /transactions/inexistente-id/pay → 404
+    print(f"\n[Test 15a] Edge case: POST /transactions/inexistente-id/pay → 404")
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    fake_result = toggle_transaction_payment(wendy_token, fake_id)
+    if fake_result and fake_result["status_code"] == 404:
+        result.add_pass("Test 15a: Edge case 404", 
+                       "Correctly returns 404 for non-existent transaction")
+        print(f"✓ Correctly returns 404 for non-existent transaction")
+    else:
+        result.add_fail("Test 15a: Edge case 404", 
+                       f"Expected 404, got {fake_result.get('status_code') if fake_result else 'None'}")
+        print(f"✗ Expected 404, got {fake_result.get('status_code') if fake_result else 'None'}")
+    
+    # Test 15b: Edge case - Create cancelled transaction, call /pay → 400
+    print(f"\n[Test 15b] Edge case: Create cancelled transaction, call /pay → 400")
+    tx_cancelled_data = {
+        "type": "expense",
+        "date": last_month_date,
+        "amount": 50.0,
+        "status": "cancelled",
+        "account_id": conta_principal_id,
+        "description": "Transação cancelada para teste"
+    }
+    tx_cancelled = create_transaction(wendy_token, tx_cancelled_data)
+    if tx_cancelled and tx_cancelled.get("id"):
+        tx_id_cancelled = tx_cancelled["id"]
+        print(f"  Created cancelled transaction: id={tx_id_cancelled}")
+        
+        cancelled_pay_result = toggle_transaction_payment(wendy_token, tx_id_cancelled)
+        if cancelled_pay_result and cancelled_pay_result["status_code"] == 400:
+            result.add_pass("Test 15b: Edge case cancelled → 400", 
+                           "Correctly returns 400 when trying to pay cancelled transaction")
+            print(f"✓ Correctly returns 400 for cancelled transaction")
+        else:
+            result.add_fail("Test 15b: Edge case cancelled → 400", 
+                           f"Expected 400, got {cancelled_pay_result.get('status_code') if cancelled_pay_result else 'None'}")
+            print(f"✗ Expected 400, got {cancelled_pay_result.get('status_code') if cancelled_pay_result else 'None'}")
+    else:
+        result.add_warning("Test 15b: Edge case cancelled → 400", 
+                          "Failed to create cancelled transaction")
+        print(f"⚠ Failed to create cancelled transaction")
+    
+    # Test 16: User isolation - login marilia, GET /transactions doesn't include wendy's transaction
+    print(f"\n[Test 16] User isolation: login marilia, verify wendy's transaction not visible")
     marilia_token = login(MARILIA_EMAIL, MARILIA_PASSWORD)
     if marilia_token:
-        result.add_pass("Test 8a: Login marilia", "Token received")
         print(f"✓ Login marilia successful")
         
-        marilia_categories = get_categories(marilia_token)
-        if marilia_categories is not None:
-            # Check if Gasolina (wendy's custom category) appears in marilia's list
-            gasolina_in_marilia = any(c.get("name") == "Gasolina" and c.get("id") == gasolina_id 
-                                      for c in marilia_categories) if gasolina_id else False
-            
-            if not gasolina_in_marilia:
-                result.add_pass("Test 8b: User isolation", 
-                               "Wendy's custom 'Gasolina' category does NOT appear in Marilia's list")
-                print("✓ User isolation verified: Wendy's custom categories don't appear for Marilia")
+        marilia_txs = get_transactions(marilia_token, year=current_year, month=current_month)
+        if marilia_txs is not None:
+            wendy_tx_in_marilia = next((t for t in marilia_txs if t.get("id") == tx_id), None)
+            if not wendy_tx_in_marilia:
+                result.add_pass("Test 16: User isolation", 
+                               "Wendy's transaction correctly NOT visible to Marilia")
+                print(f"✓ User isolation verified: Wendy's transaction not visible to Marilia")
             else:
-                result.add_fail("Test 8b: User isolation", 
-                               "Wendy's 'Gasolina' category appears in Marilia's list")
-                print("✗ User isolation FAILED: Wendy's categories appear for Marilia")
-            
-            # Verify marilia also has the 5 default income categories
-            marilia_income_defaults = [c for c in marilia_categories 
-                                      if c.get("kind") == "income" and c.get("is_default") == True]
-            if len(marilia_income_defaults) == 5:
-                result.add_pass("Test 8c: Marilia default categories", 
-                               "Marilia also has 5 default income categories")
-                print("✓ Marilia also has 5 default income categories")
-            else:
-                result.add_warning("Test 8c: Marilia default categories", 
-                                  f"Expected 5, found {len(marilia_income_defaults)}")
-                print(f"⚠ Marilia has {len(marilia_income_defaults)} default income categories (expected 5)")
+                result.add_fail("Test 16: User isolation", 
+                               "Wendy's transaction appears in Marilia's list (isolation broken)")
+                print(f"✗ User isolation FAILED: Wendy's transaction visible to Marilia")
         else:
-            result.add_fail("Test 8b: User isolation", "Failed to fetch Marilia's categories")
-            print("✗ Failed to fetch Marilia's categories")
+            result.add_fail("Test 16: User isolation", "Failed to fetch Marilia's transactions")
     else:
-        result.add_fail("Test 8a: Login marilia", "Failed to get token")
-        print("✗ Login marilia failed")
+        result.add_fail("Test 16: User isolation", "Failed to login as Marilia")
+    
+    # Test 17: Filter account_id - create another pending expense in different account
+    print(f"\n[Test 17] Filter account_id: create expense in different account, verify filtering")
+    
+    # Find or create another account
+    other_account = next((acc for acc in accounts if acc["id"] != conta_principal_id), None)
+    if not other_account:
+        # Create a new account for testing
+        print("  Creating a new test account...")
+        try:
+            resp = requests.post(
+                f"{BASE_URL}/accounts",
+                headers={"Authorization": f"Bearer {wendy_token}"},
+                json={"name": "Conta Teste", "type": "checking", "initial_balance": 0.0},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                other_account = resp.json()
+                print(f"  Created test account: id={other_account['id']}")
+            else:
+                print(f"  Failed to create test account: {resp.status_code}")
+        except Exception as e:
+            print(f"  Error creating test account: {e}")
+    
+    if other_account:
+        other_account_id = other_account["id"]
+        print(f"  Using account: id={other_account_id}, name={other_account.get('name')}")
+        
+        # Create another pending expense in the other account
+        tx_other_data = {
+            "type": "expense",
+            "date": last_month_date,
+            "amount": 100.0,
+            "status": "pending",
+            "account_id": other_account_id,
+            "description": "Despesa em outra conta"
+        }
+        tx_other = create_transaction(wendy_token, tx_other_data)
+        if tx_other and tx_other.get("id"):
+            tx_id_other_account = tx_other["id"]
+            print(f"  Created transaction in other account: id={tx_id_other_account}")
+            
+            # GET /transactions with account_id filter for conta_principal
+            txs_filtered = get_transactions(wendy_token, year=current_year, month=current_month, 
+                                           account_id=conta_principal_id)
+            if txs_filtered is not None:
+                tx_principal_found = next((t for t in txs_filtered if t.get("id") == tx_id), None)
+                tx_other_found = next((t for t in txs_filtered if t.get("id") == tx_id_other_account), None)
+                
+                if tx_principal_found and not tx_other_found:
+                    result.add_pass("Test 17: Filter by account_id", 
+                                   "Filter correctly includes only transactions from specified account")
+                    print(f"✓ Filter by account_id works: includes tx from conta_principal, excludes tx from other account")
+                else:
+                    result.add_fail("Test 17: Filter by account_id", 
+                                   f"Filter failed: principal_found={bool(tx_principal_found)}, other_found={bool(tx_other_found)}")
+                    print(f"✗ Filter by account_id failed")
+            else:
+                result.add_fail("Test 17: Filter by account_id", "Failed to fetch filtered transactions")
+        else:
+            result.add_warning("Test 17: Filter by account_id", "Failed to create transaction in other account")
+    else:
+        result.add_warning("Test 17: Filter by account_id", "No other account available for testing")
+    
+    # Test 18: Cleanup - DELETE created transactions
+    print(f"\n[Test 18] Cleanup: DELETE created transactions")
+    cleanup_success = True
+    
+    if tx_id:
+        if delete_transaction(wendy_token, tx_id):
+            print(f"✓ Deleted main test transaction: {tx_id}")
+        else:
+            print(f"⚠ Failed to delete main test transaction: {tx_id}")
+            cleanup_success = False
+    
+    if tx_id_cancelled:
+        if delete_transaction(wendy_token, tx_id_cancelled):
+            print(f"✓ Deleted cancelled test transaction: {tx_id_cancelled}")
+        else:
+            print(f"⚠ Failed to delete cancelled test transaction: {tx_id_cancelled}")
+            cleanup_success = False
+    
+    if tx_id_other_account:
+        if delete_transaction(wendy_token, tx_id_other_account):
+            print(f"✓ Deleted other account test transaction: {tx_id_other_account}")
+        else:
+            print(f"⚠ Failed to delete other account test transaction: {tx_id_other_account}")
+            cleanup_success = False
+    
+    if cleanup_success:
+        result.add_pass("Test 18: Cleanup", "All test transactions deleted successfully")
+    else:
+        result.add_warning("Test 18: Cleanup", "Some test transactions could not be deleted")
     
     # Print summary
     success = result.print_summary()
