@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, date
 from typing import Optional
 
 # Base URL from frontend/.env
-BASE_URL = "https://analyze-code-20.preview.emergentagent.com/api"
+BASE_URL = "https://readme-generator-8.preview.emergentagent.com/api"
 
 # Test credentials
 TEST_EMAIL = "wendy@demo.com"
