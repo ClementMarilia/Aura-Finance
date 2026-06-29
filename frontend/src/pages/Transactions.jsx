@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import api, { fmtMoney, fmtDate, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,15 @@ export default function Transactions() {
   const [cats, setCats] = useState([]);
   const [accs, setAccs] = useState([]);
   const now = new Date();
-  const [filter, setFilter] = useState({ status: "", type: "", category_id: "", year: "", month: "", account_id: "" });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filter, setFilter] = useState(() => ({
+    status: searchParams.get("status") || "",
+    type: searchParams.get("type") || "",
+    category_id: searchParams.get("category_id") || "",
+    year: searchParams.get("year") || "",
+    month: searchParams.get("month") || "",
+    account_id: searchParams.get("account_id") || "",
+  }));
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
@@ -61,6 +70,25 @@ export default function Transactions() {
     api.get("/accounts").then(r => setAccs(r.data));
   }, []);
   useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id, filter.year, filter.month, filter.account_id]);
+
+  // React to URL changes (when user navigates from another page like Dashboard)
+  const sp = searchParams.toString();
+  useEffect(() => {
+    setFilter({
+      status: searchParams.get("status") || "",
+      type: searchParams.get("type") || "",
+      category_id: searchParams.get("category_id") || "",
+      year: searchParams.get("year") || "",
+      month: searchParams.get("month") || "",
+      account_id: searchParams.get("account_id") || "",
+    });
+  }, [sp]);
+
+  const clearFilters = () => {
+    setFilter({ status: "", type: "", category_id: "", year: "", month: "", account_id: "" });
+    setSearchParams({}, { replace: true });
+  };
+  const hasActiveFilters = Object.values(filter).some(Boolean);
 
   const openEdit = (t) => {
     setEditing(t);
@@ -228,7 +256,13 @@ export default function Transactions() {
                   <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
                     <SelectTrigger data-testid="tx-category-select"><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
-                      {cats.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      {cats
+                        .filter(c => {
+                          const k = c.kind || "expense";
+                          if (k === "both") return true;
+                          return k === form.type;
+                        })
+                        .map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -290,7 +324,7 @@ export default function Transactions() {
       </div>
 
       <div className="card-soft p-4">
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3 items-center">
           <select value={filter.type} onChange={e => setFilter({ ...filter, type: e.target.value })}
             data-testid="filter-type" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
             <option value="">Todos os tipos</option>
@@ -325,6 +359,16 @@ export default function Transactions() {
             <option value="">Todas as contas</option>
             {accs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              data-testid="clear-filters-btn"
+              className="text-sm text-[#1E3F33] hover:text-[#D9453B] underline px-2 py-2"
+            >
+              Limpar filtros
+            </button>
+          )}
         </div>
       </div>
 

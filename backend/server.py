@@ -270,25 +270,31 @@ class SharedExpenseIn(BaseModel):
 
 # ---------- Defaults ----------
 DEFAULT_CATEGORIES = [
-    ("Moradia", "home", "#1E3F33"),
-    ("Mercado", "shopping-cart", "#D96C5B"),
-    ("Transporte", "car", "#E5A83B"),
-    ("Saúde", "heart-pulse", "#D9453B"),
-    ("Educação", "graduation-cap", "#3B82F6"),
-    ("Lazer", "gamepad-2", "#7EA193"),
-    ("Assinaturas", "repeat", "#C7BCA1"),
-    ("Contas fixas", "file-text", "#2C5C4A"),
-    ("Compras", "shopping-bag", "#D96C5B"),
-    ("Viagem", "plane", "#E5A83B"),
-    ("Outros", "more-horizontal", "#6B7068"),
+    ("Moradia", "home", "#1E3F33", "expense"),
+    ("Mercado", "shopping-cart", "#D96C5B", "expense"),
+    ("Transporte", "car", "#E5A83B", "expense"),
+    ("Saúde", "heart-pulse", "#D9453B", "expense"),
+    ("Educação", "graduation-cap", "#3B82F6", "expense"),
+    ("Lazer", "gamepad-2", "#7EA193", "expense"),
+    ("Assinaturas", "repeat", "#C7BCA1", "expense"),
+    ("Contas fixas", "file-text", "#2C5C4A", "expense"),
+    ("Compras", "shopping-bag", "#D96C5B", "expense"),
+    ("Viagem", "plane", "#E5A83B", "expense"),
+    ("Outros", "more-horizontal", "#6B7068", "expense"),
+    # Receita
+    ("Salário", "wallet", "#2C7A51", "income"),
+    ("Freelance / Extra", "briefcase", "#1E3F33", "income"),
+    ("Investimentos", "trending-up", "#3B82F6", "income"),
+    ("Presente / Reembolso", "gift", "#E5A83B", "income"),
+    ("Outras receitas", "more-horizontal", "#7EA193", "income"),
 ]
 
 
 async def seed_user_defaults(user_id: str):
-    for name, icon, color in DEFAULT_CATEGORIES:
+    for name, icon, color, kind in DEFAULT_CATEGORIES:
         await db.categories.insert_one({
             "id": new_id(), "user_id": user_id, "name": name,
-            "icon": icon, "color": color, "kind": "expense",
+            "icon": icon, "color": color, "kind": kind,
             "is_default": True, "created_at": now_iso(),
         })
     await db.accounts.insert_one({
@@ -1954,6 +1960,23 @@ async def startup():
     await db.shared_expenses.create_index("participant_ids")
     await db.groups.create_index("member_ids")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+
+    # Backfill: garantir categorias padrão de receita para usuários existentes
+    income_defaults = [c for c in DEFAULT_CATEGORIES if c[3] == "income"]
+    async for u in db.users.find({}, {"id": 1}):
+        uid = u["id"]
+        existing_names = set()
+        async for c in db.categories.find({"user_id": uid, "kind": "income"}, {"name": 1}):
+            existing_names.add(c["name"])
+        for name, icon, color, kind in income_defaults:
+            if name in existing_names:
+                continue
+            await db.categories.insert_one({
+                "id": new_id(), "user_id": uid, "name": name,
+                "icon": icon, "color": color, "kind": kind,
+                "is_default": True, "created_at": now_iso(),
+            })
+
     if os.environ.get("SEED_DEMO", "false").lower() != "true":
         return
     if await db.users.find_one({"email": "wendy@demo.com"}):

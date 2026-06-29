@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "@/lib/api";
 import { fmtMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
   TrendingUp, TrendingDown, Wallet, Clock, HandCoins, CreditCard,
-  Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat, PiggyBank
+  Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat, PiggyBank, ChevronRight
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -36,20 +37,49 @@ export default function Dashboard() {
 
   const curr = user?.currency || "EUR";
   const patrimonio = accounts.reduce((s, a) => s + (a.balance || 0), 0);
+  const ym = `year=${period.year}&month=${period.month}`;
 
   if (!data) return <div className="text-[#6B7068]">Carregando painel...</div>;
 
   const stats = [
-    { label: "Receita do mês", value: data.income, icon: TrendingUp, accent: "text-emerald-600", bg: "bg-emerald-50" },
-    { label: "Despesa do mês", value: data.expense, icon: TrendingDown, accent: "text-rose-600", bg: "bg-rose-50" },
-    { label: "Saldo atual", value: data.balance, icon: Wallet, accent: "text-[#1E3F33]", bg: "bg-[#F1EFE7]" },
-    { label: "Contas pendentes", value: data.pending_payable, icon: Clock, accent: "text-amber-700", bg: "bg-amber-50",
-      hint: data.shared_payable > 0 ? `Inclui ${fmtMoney(data.shared_payable, curr)} de despesas compartilhadas` : null },
-    { label: "A receber", value: data.receivable_total, icon: HandCoins, accent: "text-blue-600", bg: "bg-blue-50",
-      hint: data.shared_receivable > 0 ? `Inclui ${fmtMoney(data.shared_receivable, curr)} de despesas compartilhadas` : null },
-    { label: "Parcelas futuras", value: data.future_installments_total, icon: CreditCard, accent: "text-[#D96C5B]", bg: "bg-orange-50" },
-    { label: "Gasto fixo mensal", value: data.fixed_monthly_expense || 0, icon: Repeat, accent: "text-[#1E3F33]", bg: "bg-[#E8EFE9]",
-      hint: data.fixed_monthly_income > 0 ? `Receita fixa: ${fmtMoney(data.fixed_monthly_income, curr)}` : "Média das recorrências ativas" },
+    {
+      label: "Receita do mês", value: data.income, icon: TrendingUp,
+      accent: "text-emerald-600", bg: "bg-emerald-50",
+      to: `/lancamentos?type=income&${ym}`,
+    },
+    {
+      label: "Despesa do mês", value: data.expense, icon: TrendingDown,
+      accent: "text-rose-600", bg: "bg-rose-50",
+      to: `/lancamentos?type=expense&${ym}`,
+    },
+    {
+      label: "Saldo atual", value: data.balance, icon: Wallet,
+      accent: "text-[#1E3F33]", bg: "bg-[#F1EFE7]",
+      to: `/carteiras`,
+    },
+    {
+      label: "Contas pendentes", value: data.pending_payable, icon: Clock,
+      accent: "text-amber-700", bg: "bg-amber-50",
+      hint: data.shared_payable > 0 ? `Inclui ${fmtMoney(data.shared_payable, curr)} de despesas compartilhadas` : null,
+      to: `/lancamentos?type=expense&status=pending&${ym}`,
+    },
+    {
+      label: "A receber", value: data.receivable_total, icon: HandCoins,
+      accent: "text-blue-600", bg: "bg-blue-50",
+      hint: data.shared_receivable > 0 ? `Inclui ${fmtMoney(data.shared_receivable, curr)} de despesas compartilhadas` : null,
+      to: `/contas-a-receber`,
+    },
+    {
+      label: "Parcelas futuras", value: data.future_installments_total, icon: CreditCard,
+      accent: "text-[#D96C5B]", bg: "bg-orange-50",
+      to: `/parcelamentos`,
+    },
+    {
+      label: "Gasto fixo mensal", value: data.fixed_monthly_expense || 0, icon: Repeat,
+      accent: "text-[#1E3F33]", bg: "bg-[#E8EFE9]",
+      hint: data.fixed_monthly_income > 0 ? `Receita fixa: ${fmtMoney(data.fixed_monthly_income, curr)}` : "Média das recorrências ativas",
+      to: `/recorrencias`,
+    },
   ];
 
   return (
@@ -78,8 +108,15 @@ export default function Dashboard() {
       </div>
 
       {/* Hero balance */}
-      <div className="card-soft bg-gradient-to-br from-[#1E3F33] to-[#2C5C4A] text-white border-transparent">
-        <div className="text-sm uppercase tracking-wide opacity-80">Saldo atual</div>
+      <Link
+        to={`/carteiras`}
+        data-testid="hero-balance-link"
+        className="card-soft bg-gradient-to-br from-[#1E3F33] to-[#2C5C4A] text-white border-transparent block hover:brightness-110 transition cursor-pointer"
+      >
+        <div className="flex items-center justify-between">
+          <div className="text-sm uppercase tracking-wide opacity-80">Saldo atual</div>
+          <ChevronRight size={18} className="opacity-70" />
+        </div>
         <div className="text-5xl font-semibold tracking-tight mt-2" style={{ fontFamily: "Outfit" }}
           data-testid="dashboard-balance">
           {fmtMoney(data.balance, curr)}
@@ -88,19 +125,25 @@ export default function Dashboard() {
           <span>Receita: <strong>{fmtMoney(data.income, curr)}</strong></span>
           <span>Despesa: <strong>{fmtMoney(data.expense, curr)}</strong></span>
         </div>
-      </div>
+      </Link>
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {stats.map((s) => (
-          <div key={s.label} className="card-soft" data-testid={`stat-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>
+          <Link
+            key={s.label}
+            to={s.to}
+            className="card-soft block hover:shadow-md hover:-translate-y-0.5 transition cursor-pointer relative"
+            data-testid={`stat-${s.label.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            <ChevronRight size={16} className="absolute top-4 right-4 text-[#A8ABA0]" />
             <div className={`w-10 h-10 rounded-xl ${s.bg} flex items-center justify-center ${s.accent} mb-3`}>
               <s.icon size={18} />
             </div>
             <div className="stat-label">{s.label}</div>
             <div className={`stat-value mt-1 ${s.accent}`}>{fmtMoney(s.value, curr)}</div>
             {s.hint && <div className="text-xs text-[#6B7068] mt-1.5">{s.hint}</div>}
-          </div>
+          </Link>
         ))}
       </div>
 
@@ -112,21 +155,31 @@ export default function Dashboard() {
             <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Minhas contas</h3>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            <div className="card-soft bg-gradient-to-br from-[#1E3F33] to-[#2C5C4A] text-white border-transparent" data-testid="patrimonio-card">
-              <div className="flex items-center gap-1.5 text-sm opacity-80"><PiggyBank size={16} /> Patrimônio</div>
+            <Link to={`/carteiras`} className="card-soft bg-gradient-to-br from-[#1E3F33] to-[#2C5C4A] text-white border-transparent block hover:brightness-110 transition cursor-pointer" data-testid="patrimonio-card">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-sm opacity-80"><PiggyBank size={16} /> Patrimônio</div>
+                <ChevronRight size={16} className="opacity-70" />
+              </div>
               <div className="text-2xl font-semibold mt-1" style={{ fontFamily: "Outfit" }} data-testid="patrimonio-value">
                 {fmtMoney(patrimonio, curr)}
               </div>
               <div className="text-xs opacity-70 mt-1">Soma do saldo atual de todas as carteiras</div>
-            </div>
+            </Link>
             {accounts.map(a => (
-              <div key={a.id} className="card-soft" data-testid={`account-card-${a.id}`}>
+              <Link
+                key={a.id}
+                to={`/lancamentos?account_id=${a.id}`}
+                className="card-soft block hover:shadow-md hover:-translate-y-0.5 transition cursor-pointer relative"
+                data-testid={`account-card-${a.id}`}
+              >
+                <ChevronRight size={14} className="absolute top-4 right-4 text-[#A8ABA0]" />
                 <div className="text-sm text-[#6B7068]">{a.name}</div>
                 <div className={`text-xl font-semibold mt-1 ${a.balance >= 0 ? "text-[#1E3F33]" : "text-rose-600"}`}
                   style={{ fontFamily: "Outfit" }}>
                   {fmtMoney(a.balance, curr)}
                 </div>
-              </div>
+                <div className="text-xs text-[#6B7068] mt-1">Ver lançamentos →</div>
+              </Link>
             ))}
           </div>
         </div>

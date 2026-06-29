@@ -1,413 +1,392 @@
 #!/usr/bin/env python3
 """
-Backend API Test Suite for Aurea Finance App
-Testing: Password Recovery via Security Question Feature
+Backend test for Categories by kind (expense/income/both) feature.
+Tests ONLY the backend API endpoints.
 """
 
 import requests
-import json
 import sys
-from datetime import datetime
+from typing import Dict, List, Optional
 
-# Configuration
-BASE_URL = "https://readme-generator-8.preview.emergentagent.com/api"
+# Base URL from frontend/.env
+BASE_URL = "https://de950129-d299-4610-b5f7-32045bdb977b.preview.emergentagent.com/api"
 
 # Test credentials
-MARILIA_EMAIL = "marilia@demo.com"
-MARILIA_PASSWORD_ORIGINAL = "demo123"
-MARILIA_PASSWORD_NEW = "nova123"
-
 WENDY_EMAIL = "wendy@demo.com"
 WENDY_PASSWORD = "demo123"
+MARILIA_EMAIL = "marilia@demo.com"
+MARILIA_PASSWORD = "demo123"
 
-# Security question data
-SECURITY_QUESTION = "Qual o nome do seu primeiro animal de estimação?"
-SECURITY_ANSWER = "Rex"
+# Expected default income categories
+EXPECTED_INCOME_CATEGORIES = [
+    "Salário",
+    "Freelance / Extra",
+    "Investimentos",
+    "Presente / Reembolso",
+    "Outras receitas"
+]
 
-# Colors for output
-GREEN = '\033[92m'
-RED = '\033[91m'
-YELLOW = '\033[93m'
-BLUE = '\033[94m'
-RESET = '\033[0m'
-
-def log_test(step, message, status="INFO"):
-    color = BLUE if status == "INFO" else GREEN if status == "PASS" else RED if status == "FAIL" else YELLOW
-    print(f"{color}[{status}] Step {step}: {message}{RESET}")
-
-def log_detail(message):
-    print(f"  → {message}")
-
-def test_step_1_login_marilia():
-    """Step 1: Login marilia@demo.com / demo123 → Bearer token"""
-    log_test(1, "Login marilia@demo.com with original password", "INFO")
+class TestResult:
+    def __init__(self):
+        self.passed = []
+        self.failed = []
+        self.warnings = []
     
-    response = requests.post(
-        f"{BASE_URL}/auth/login",
-        json={"email": MARILIA_EMAIL, "password": MARILIA_PASSWORD_ORIGINAL}
-    )
+    def add_pass(self, test_name: str, details: str = ""):
+        self.passed.append(f"✓ {test_name}" + (f": {details}" if details else ""))
     
-    if response.status_code == 200:
-        data = response.json()
-        token = data.get("token")
-        if token:
-            log_test(1, f"Login successful, token received", "PASS")
-            log_detail(f"User: {data.get('user', {}).get('name')}")
-            return token
+    def add_fail(self, test_name: str, details: str):
+        self.failed.append(f"✗ {test_name}: {details}")
+    
+    def add_warning(self, test_name: str, details: str):
+        self.warnings.append(f"⚠ {test_name}: {details}")
+    
+    def print_summary(self):
+        print("\n" + "="*80)
+        print("TEST SUMMARY")
+        print("="*80)
+        
+        if self.passed:
+            print(f"\n✓ PASSED ({len(self.passed)}):")
+            for p in self.passed:
+                print(f"  {p}")
+        
+        if self.warnings:
+            print(f"\n⚠ WARNINGS ({len(self.warnings)}):")
+            for w in self.warnings:
+                print(f"  {w}")
+        
+        if self.failed:
+            print(f"\n✗ FAILED ({len(self.failed)}):")
+            for f in self.failed:
+                print(f"  {f}")
+        
+        print("\n" + "="*80)
+        print(f"Total: {len(self.passed)} passed, {len(self.failed)} failed, {len(self.warnings)} warnings")
+        print("="*80 + "\n")
+        
+        return len(self.failed) == 0
+
+
+def login(email: str, password: str) -> Optional[str]:
+    """Login and return Bearer token"""
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/auth/login",
+            json={"email": email, "password": password},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("token")
         else:
-            log_test(1, "Login response missing token", "FAIL")
+            print(f"Login failed for {email}: {resp.status_code} - {resp.text}")
             return None
-    else:
-        log_test(1, f"Login failed: {response.status_code} - {response.text}", "FAIL")
+    except Exception as e:
+        print(f"Login error for {email}: {e}")
         return None
 
-def test_step_2_set_security_question(token):
-    """Step 2: Set security question via POST /auth/security-question"""
-    log_test(2, "Set security question and answer", "INFO")
-    
-    response = requests.post(
-        f"{BASE_URL}/auth/security-question",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"question": SECURITY_QUESTION, "answer": SECURITY_ANSWER}
-    )
-    
-    if response.status_code == 200:
-        log_test(2, "Security question set successfully", "PASS")
-        log_detail(f"Question: {SECURITY_QUESTION}")
-        log_detail(f"Answer: {SECURITY_ANSWER}")
-        return True
-    else:
-        log_test(2, f"Failed to set security question: {response.status_code} - {response.text}", "FAIL")
-        return False
 
-def test_step_3_verify_has_security_question(token):
-    """Step 3: GET /auth/me should show has_security_question=true"""
-    log_test(3, "Verify /auth/me shows has_security_question=true", "INFO")
-    
-    response = requests.get(
-        f"{BASE_URL}/auth/me",
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    
-    if response.status_code == 200:
-        data = response.json()
-        has_security_question = data.get("has_security_question")
-        security_question = data.get("security_question")
-        
-        if has_security_question == True and security_question == SECURITY_QUESTION:
-            log_test(3, "Security question correctly reflected in /auth/me", "PASS")
-            log_detail(f"has_security_question: {has_security_question}")
-            log_detail(f"security_question: {security_question}")
-            return True
+def get_categories(token: str) -> Optional[List[Dict]]:
+    """Get all categories for the authenticated user"""
+    try:
+        resp = requests.get(
+            f"{BASE_URL}/categories",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            return resp.json()
         else:
-            log_test(3, f"Security question not properly set. has_security_question={has_security_question}, question={security_question}", "FAIL")
-            return False
-    else:
-        log_test(3, f"Failed to get /auth/me: {response.status_code} - {response.text}", "FAIL")
-        return False
-
-def test_step_4_get_security_question_existing():
-    """Step 4: GET /auth/security-question?email=marilia@demo.com (no auth) → returns question"""
-    log_test(4, "Get security question for existing user (public endpoint)", "INFO")
-    
-    response = requests.get(
-        f"{BASE_URL}/auth/security-question",
-        params={"email": MARILIA_EMAIL}
-    )
-    
-    if response.status_code == 200:
-        data = response.json()
-        question = data.get("question")
-        
-        if question == SECURITY_QUESTION:
-            log_test(4, "Security question retrieved successfully", "PASS")
-            log_detail(f"Question: {question}")
-            return True
-        else:
-            log_test(4, f"Unexpected question returned: {question}", "FAIL")
-            return False
-    else:
-        log_test(4, f"Failed to get security question: {response.status_code} - {response.text}", "FAIL")
-        return False
-
-def test_step_5_get_security_question_nonexistent():
-    """Step 5: GET /auth/security-question?email=naoexiste@demo.com → returns {question: null}"""
-    log_test(5, "Get security question for non-existent user", "INFO")
-    
-    response = requests.get(
-        f"{BASE_URL}/auth/security-question",
-        params={"email": "naoexiste@demo.com"}
-    )
-    
-    if response.status_code == 200:
-        data = response.json()
-        question = data.get("question")
-        
-        if question is None:
-            log_test(5, "Correctly returns null for non-existent user (no info leak)", "PASS")
-            log_detail(f"Response: {data}")
-            return True
-        else:
-            log_test(5, f"Should return null but got: {question}", "FAIL")
-            return False
-    else:
-        log_test(5, f"Unexpected status code: {response.status_code} - {response.text}", "FAIL")
-        return False
-
-def test_step_6_reset_wrong_answer():
-    """Step 6: Reset with WRONG answer → 400"""
-    log_test(6, "Reset password with WRONG security answer", "INFO")
-    
-    response = requests.post(
-        f"{BASE_URL}/auth/reset-password-security",
-        json={
-            "email": MARILIA_EMAIL,
-            "answer": "errado",
-            "new_password": MARILIA_PASSWORD_NEW
-        }
-    )
-    
-    if response.status_code == 400:
-        log_test(6, "Correctly rejected wrong answer with 400", "PASS")
-        log_detail(f"Error message: {response.json().get('detail')}")
-        return True
-    else:
-        log_test(6, f"Expected 400 but got {response.status_code}", "FAIL")
-        return False
-
-def test_step_7_reset_correct_answer_case_insensitive():
-    """Step 7: Reset with CORRECT answer (case-insensitive, with spaces) → 200"""
-    log_test(7, "Reset password with correct answer (case-insensitive: ' REX ')", "INFO")
-    
-    response = requests.post(
-        f"{BASE_URL}/auth/reset-password-security",
-        json={
-            "email": MARILIA_EMAIL,
-            "answer": " REX ",  # Case-insensitive and with spaces
-            "new_password": MARILIA_PASSWORD_NEW
-        }
-    )
-    
-    if response.status_code == 200:
-        log_test(7, "Password reset successful with case-insensitive answer", "PASS")
-        log_detail(f"Answer used: ' REX ' (with spaces and uppercase)")
-        return True
-    else:
-        log_test(7, f"Password reset failed: {response.status_code} - {response.text}", "FAIL")
-        return False
-
-def test_step_8_confirm_password_change():
-    """Step 8: Confirm password change - new password works, old password fails"""
-    log_test(8, "Confirm password change", "INFO")
-    
-    # Test 8a: Login with NEW password should work
-    log_detail("8a: Testing login with NEW password (nova123)")
-    response_new = requests.post(
-        f"{BASE_URL}/auth/login",
-        json={"email": MARILIA_EMAIL, "password": MARILIA_PASSWORD_NEW}
-    )
-    
-    # Test 8b: Login with OLD password should fail
-    log_detail("8b: Testing login with OLD password (demo123)")
-    response_old = requests.post(
-        f"{BASE_URL}/auth/login",
-        json={"email": MARILIA_EMAIL, "password": MARILIA_PASSWORD_ORIGINAL}
-    )
-    
-    success_new = response_new.status_code == 200
-    fail_old = response_old.status_code == 401
-    
-    if success_new and fail_old:
-        log_test(8, "Password change confirmed: new password works, old password rejected", "PASS")
-        log_detail(f"New password login: {response_new.status_code}")
-        log_detail(f"Old password login: {response_old.status_code}")
-        return response_new.json().get("token")  # Return token for next steps
-    else:
-        log_test(8, f"Password change verification failed. New: {response_new.status_code}, Old: {response_old.status_code}", "FAIL")
+            print(f"GET /categories failed: {resp.status_code} - {resp.text}")
+            return None
+    except Exception as e:
+        print(f"GET /categories error: {e}")
         return None
 
-def test_step_9_account_without_security_question():
-    """Step 9: Test account without security question configured"""
-    log_test(9, "Test account without security question", "INFO")
-    
-    # Create a new test user
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    test_email = f"teste+{timestamp}@demo.com"
-    test_password = "1234"
-    
-    log_detail(f"9a: Creating new user: {test_email}")
-    response_register = requests.post(
-        f"{BASE_URL}/auth/register",
-        json={
-            "name": "Test User",
-            "email": test_email,
-            "password": test_password,
-            "currency": "EUR"
-        }
-    )
-    
-    if response_register.status_code != 200:
-        log_test(9, f"Failed to create test user: {response_register.status_code}", "FAIL")
-        return False
-    
-    log_detail(f"User created successfully")
-    
-    # Test 9b: GET security question should return null
-    log_detail(f"9b: GET security question for user without question")
-    response_get = requests.get(
-        f"{BASE_URL}/auth/security-question",
-        params={"email": test_email}
-    )
-    
-    if response_get.status_code != 200 or response_get.json().get("question") is not None:
-        log_test(9, f"GET security question should return null: {response_get.json()}", "FAIL")
-        return False
-    
-    log_detail(f"Correctly returns question: null")
-    
-    # Test 9c: Try to reset password without security question → 400
-    log_detail(f"9c: Try to reset password without security question configured")
-    response_reset = requests.post(
-        f"{BASE_URL}/auth/reset-password-security",
-        json={
-            "email": test_email,
-            "answer": "x",
-            "new_password": "y123"
-        }
-    )
-    
-    if response_reset.status_code == 400:
-        error_msg = response_reset.json().get("detail", "")
-        if "não disponível" in error_msg.lower() or "not available" in error_msg.lower():
-            log_test(9, "Correctly rejected reset for account without security question", "PASS")
-            log_detail(f"Error message: {error_msg}")
-            return True
+
+def create_category(token: str, name: str, color: str, kind: str) -> Optional[Dict]:
+    """Create a new category"""
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/categories",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": name, "color": color, "kind": kind},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            return resp.json()
         else:
-            log_test(9, f"Got 400 but unexpected error message: {error_msg}", "FAIL")
-            return False
-    else:
-        log_test(9, f"Expected 400 but got {response_reset.status_code}", "FAIL")
+            print(f"POST /categories failed: {resp.status_code} - {resp.text}")
+            return None
+    except Exception as e:
+        print(f"POST /categories error: {e}")
+        return None
+
+
+def update_category(token: str, category_id: str, name: str, color: str, kind: str) -> bool:
+    """Update a category"""
+    try:
+        resp = requests.put(
+            f"{BASE_URL}/categories/{category_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": name, "color": color, "kind": kind},
+            timeout=10
+        )
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"PUT /categories error: {e}")
         return False
 
-def test_step_10_restore_password():
-    """Step 10: RESTORE marilia's password back to demo123"""
-    log_test(10, "RESTORE marilia's password to original (demo123)", "INFO")
-    
-    # Use the reset flow to restore password
-    log_detail("10a: Using reset flow to restore password")
-    response_reset = requests.post(
-        f"{BASE_URL}/auth/reset-password-security",
-        json={
-            "email": MARILIA_EMAIL,
-            "answer": " REX ",  # Case-insensitive
-            "new_password": MARILIA_PASSWORD_ORIGINAL
-        }
-    )
-    
-    if response_reset.status_code != 200:
-        log_test(10, f"Failed to reset password back: {response_reset.status_code} - {response_reset.text}", "FAIL")
-        return False
-    
-    log_detail("Password reset to original successful")
-    
-    # Confirm by logging in with original password
-    log_detail("10b: Confirming login with restored password (demo123)")
-    response_login = requests.post(
-        f"{BASE_URL}/auth/login",
-        json={"email": MARILIA_EMAIL, "password": MARILIA_PASSWORD_ORIGINAL}
-    )
-    
-    if response_login.status_code == 200:
-        log_test(10, "Password successfully restored to demo123", "PASS")
-        log_detail(f"Login confirmed with original password")
-        return True
-    else:
-        log_test(10, f"Failed to login with restored password: {response_login.status_code}", "FAIL")
+
+def delete_category(token: str, category_id: str) -> bool:
+    """Delete a category"""
+    try:
+        resp = requests.delete(
+            f"{BASE_URL}/categories/{category_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10
+        )
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"DELETE /categories error: {e}")
         return False
 
-def main():
-    print(f"\n{BLUE}{'='*80}{RESET}")
-    print(f"{BLUE}Backend API Test: Password Recovery via Security Question{RESET}")
-    print(f"{BLUE}App: Aurea Finance | Base URL: {BASE_URL}{RESET}")
-    print(f"{BLUE}{'='*80}{RESET}\n")
+
+def run_tests():
+    result = TestResult()
     
-    results = []
+    print("="*80)
+    print("BACKEND TEST: Categories by kind (expense/income/both)")
+    print("="*80)
     
-    # Step 1: Login marilia
-    token = test_step_1_login_marilia()
-    results.append(("Step 1: Login marilia", token is not None))
-    if not token:
-        print(f"\n{RED}CRITICAL: Cannot proceed without login token{RESET}")
-        sys.exit(1)
-    
-    print()
-    
-    # Step 2: Set security question
-    result = test_step_2_set_security_question(token)
-    results.append(("Step 2: Set security question", result))
-    print()
-    
-    # Step 3: Verify has_security_question in /auth/me
-    result = test_step_3_verify_has_security_question(token)
-    results.append(("Step 3: Verify /auth/me", result))
-    print()
-    
-    # Step 4: Get security question for existing user
-    result = test_step_4_get_security_question_existing()
-    results.append(("Step 4: Get security question (existing)", result))
-    print()
-    
-    # Step 5: Get security question for non-existent user
-    result = test_step_5_get_security_question_nonexistent()
-    results.append(("Step 5: Get security question (non-existent)", result))
-    print()
-    
-    # Step 6: Reset with wrong answer
-    result = test_step_6_reset_wrong_answer()
-    results.append(("Step 6: Reset with wrong answer", result))
-    print()
-    
-    # Step 7: Reset with correct answer (case-insensitive)
-    result = test_step_7_reset_correct_answer_case_insensitive()
-    results.append(("Step 7: Reset with correct answer", result))
-    print()
-    
-    # Step 8: Confirm password change
-    new_token = test_step_8_confirm_password_change()
-    results.append(("Step 8: Confirm password change", new_token is not None))
-    print()
-    
-    # Step 9: Account without security question
-    result = test_step_9_account_without_security_question()
-    results.append(("Step 9: Account without security question", result))
-    print()
-    
-    # Step 10: RESTORE password
-    result = test_step_10_restore_password()
-    results.append(("Step 10: RESTORE password", result))
-    print()
-    
-    # Summary
-    print(f"\n{BLUE}{'='*80}{RESET}")
-    print(f"{BLUE}TEST SUMMARY{RESET}")
-    print(f"{BLUE}{'='*80}{RESET}\n")
-    
-    passed = sum(1 for _, result in results if result)
-    total = len(results)
-    
-    for step_name, result in results:
-        status = f"{GREEN}✓ PASS{RESET}" if result else f"{RED}✗ FAIL{RESET}"
-        print(f"{status} - {step_name}")
-    
-    print(f"\n{BLUE}{'='*80}{RESET}")
-    if passed == total:
-        print(f"{GREEN}ALL TESTS PASSED: {passed}/{total}{RESET}")
-        print(f"{BLUE}{'='*80}{RESET}\n")
-        sys.exit(0)
+    # Test 1: Login with wendy@demo.com
+    print("\n[Test 1] Login with wendy@demo.com / demo123")
+    wendy_token = login(WENDY_EMAIL, WENDY_PASSWORD)
+    if wendy_token:
+        result.add_pass("Test 1: Login wendy", f"Token received (length: {len(wendy_token)})")
+        print(f"✓ Login successful, token: {wendy_token[:20]}...")
     else:
-        print(f"{RED}SOME TESTS FAILED: {passed}/{total} passed{RESET}")
-        print(f"{BLUE}{'='*80}{RESET}\n")
-        sys.exit(1)
+        result.add_fail("Test 1: Login wendy", "Failed to get token")
+        print("✗ Login failed")
+        result.print_summary()
+        return False
+    
+    # Test 2: GET /categories - verify 5 default income categories
+    print("\n[Test 2] GET /categories - verify 5 default income categories")
+    categories = get_categories(wendy_token)
+    if categories is None:
+        result.add_fail("Test 2: GET /categories", "Failed to fetch categories")
+        result.print_summary()
+        return False
+    
+    print(f"Total categories: {len(categories)}")
+    
+    # Filter income categories
+    income_cats = [c for c in categories if c.get("kind") == "income"]
+    print(f"Income categories found: {len(income_cats)}")
+    
+    # Check for default income categories
+    default_income_cats = [c for c in income_cats if c.get("is_default") == True]
+    print(f"Default income categories: {len(default_income_cats)}")
+    
+    # Verify each expected income category exists
+    found_names = [c["name"] for c in default_income_cats]
+    print(f"Default income category names: {found_names}")
+    
+    missing = []
+    for expected_name in EXPECTED_INCOME_CATEGORIES:
+        if expected_name not in found_names:
+            missing.append(expected_name)
+    
+    if len(default_income_cats) == 5 and len(missing) == 0:
+        result.add_pass("Test 2: Default income categories", 
+                       f"All 5 default income categories present: {', '.join(EXPECTED_INCOME_CATEGORIES)}")
+        print("✓ All 5 default income categories found with kind='income' and is_default=true")
+    else:
+        result.add_fail("Test 2: Default income categories", 
+                       f"Expected 5, found {len(default_income_cats)}. Missing: {missing}")
+        print(f"✗ Expected 5 default income categories, found {len(default_income_cats)}")
+        if missing:
+            print(f"  Missing: {missing}")
+    
+    # Verify all have kind='income'
+    wrong_kind = [c["name"] for c in default_income_cats if c.get("kind") != "income"]
+    if wrong_kind:
+        result.add_fail("Test 2: Income category kind", 
+                       f"Categories with wrong kind: {wrong_kind}")
+        print(f"✗ Some default income categories have wrong kind: {wrong_kind}")
+    else:
+        result.add_pass("Test 2: Income category kind", "All default income categories have kind='income'")
+        print("✓ All default income categories have kind='income'")
+    
+    # Test 3: POST /categories with kind='expense' (Gasolina)
+    print("\n[Test 3] POST /categories - create 'Gasolina' with kind='expense'")
+    gasolina = create_category(wendy_token, "Gasolina", "#E5A83B", "expense")
+    if gasolina and gasolina.get("kind") == "expense":
+        result.add_pass("Test 3: Create expense category", 
+                       f"Created 'Gasolina' with kind='expense', id={gasolina['id']}")
+        print(f"✓ Created 'Gasolina' with kind='expense', id={gasolina['id']}")
+        gasolina_id = gasolina["id"]
+    else:
+        result.add_fail("Test 3: Create expense category", 
+                       f"Failed to create or wrong kind: {gasolina}")
+        print(f"✗ Failed to create 'Gasolina' or wrong kind")
+        gasolina_id = None
+    
+    # Test 4: POST /categories with kind='income' (13o Salario)
+    print("\n[Test 4] POST /categories - create '13o Salario' with kind='income'")
+    decimo = create_category(wendy_token, "13o Salario", "#2C7A51", "income")
+    if decimo and decimo.get("kind") == "income":
+        result.add_pass("Test 4: Create income category", 
+                       f"Created '13o Salario' with kind='income', id={decimo['id']}")
+        print(f"✓ Created '13o Salario' with kind='income', id={decimo['id']}")
+        decimo_id = decimo["id"]
+    else:
+        result.add_fail("Test 4: Create income category", 
+                       f"Failed to create or wrong kind: {decimo}")
+        print(f"✗ Failed to create '13o Salario' or wrong kind")
+        decimo_id = None
+    
+    # Verify new categories appear in GET /categories
+    print("\n[Test 4b] Verify new categories appear in GET /categories")
+    categories_after = get_categories(wendy_token)
+    if categories_after:
+        gasolina_found = any(c["id"] == gasolina_id for c in categories_after) if gasolina_id else False
+        decimo_found = any(c["id"] == decimo_id for c in categories_after) if decimo_id else False
+        
+        if gasolina_found and decimo_found:
+            result.add_pass("Test 4b: New categories in list", 
+                           "Both new categories appear in GET /categories")
+            print("✓ Both new categories appear in GET /categories")
+        else:
+            result.add_fail("Test 4b: New categories in list", 
+                           f"Gasolina found: {gasolina_found}, 13o Salario found: {decimo_found}")
+            print(f"✗ New categories not found in list")
+    
+    # Test 5: PUT /categories - change Gasolina kind to 'both'
+    if gasolina_id:
+        print("\n[Test 5] PUT /categories - change 'Gasolina' kind to 'both'")
+        updated = update_category(wendy_token, gasolina_id, "Gasolina", "#E5A83B", "both")
+        if updated:
+            # Verify the change
+            categories_updated = get_categories(wendy_token)
+            gasolina_updated = next((c for c in categories_updated if c["id"] == gasolina_id), None)
+            if gasolina_updated and gasolina_updated.get("kind") == "both":
+                result.add_pass("Test 5: Update category kind", 
+                               "Changed 'Gasolina' kind from 'expense' to 'both'")
+                print("✓ Successfully changed 'Gasolina' kind to 'both'")
+            else:
+                result.add_fail("Test 5: Update category kind", 
+                               f"Update returned 200 but kind not changed: {gasolina_updated}")
+                print(f"✗ Update returned 200 but kind not changed")
+        else:
+            result.add_fail("Test 5: Update category kind", "PUT request failed")
+            print("✗ PUT request failed")
+    else:
+        result.add_warning("Test 5: Update category kind", "Skipped (Gasolina not created)")
+        print("⚠ Test 5 skipped (Gasolina not created)")
+    
+    # Test 6: DELETE /categories - delete 13o Salario
+    if decimo_id:
+        print("\n[Test 6] DELETE /categories - delete '13o Salario'")
+        deleted = delete_category(wendy_token, decimo_id)
+        if deleted:
+            # Verify it's gone
+            categories_after_delete = get_categories(wendy_token)
+            decimo_still_exists = any(c["id"] == decimo_id for c in categories_after_delete)
+            if not decimo_still_exists:
+                result.add_pass("Test 6: Delete category", 
+                               "Successfully deleted '13o Salario', verified it's gone")
+                print("✓ Successfully deleted '13o Salario', verified it's gone")
+            else:
+                result.add_fail("Test 6: Delete category", 
+                               "DELETE returned 200 but category still exists")
+                print("✗ DELETE returned 200 but category still exists")
+        else:
+            result.add_fail("Test 6: Delete category", "DELETE request failed")
+            print("✗ DELETE request failed")
+    else:
+        result.add_warning("Test 6: Delete category", "Skipped (13o Salario not created)")
+        print("⚠ Test 6 skipped (13o Salario not created)")
+    
+    # Test 7: Idempotency - verify no duplicates of default income categories
+    print("\n[Test 7] Idempotency - verify no duplicates of default income categories")
+    categories_final = get_categories(wendy_token)
+    if categories_final:
+        # Count occurrences of each default income category name
+        income_name_counts = {}
+        for cat in categories_final:
+            if cat.get("kind") == "income" and cat.get("is_default") == True:
+                name = cat["name"]
+                income_name_counts[name] = income_name_counts.get(name, 0) + 1
+        
+        duplicates = {name: count for name, count in income_name_counts.items() if count > 1}
+        
+        if not duplicates:
+            result.add_pass("Test 7: Idempotency", 
+                           f"No duplicates found. Each default income category appears exactly once: {income_name_counts}")
+            print(f"✓ No duplicates found. Each default income category appears exactly once")
+            print(f"  Counts: {income_name_counts}")
+        else:
+            result.add_fail("Test 7: Idempotency", 
+                           f"Duplicates found: {duplicates}")
+            print(f"✗ Duplicates found: {duplicates}")
+    else:
+        result.add_fail("Test 7: Idempotency", "Failed to fetch categories")
+        print("✗ Failed to fetch categories for idempotency check")
+    
+    # Test 8: User isolation - verify wendy's categories don't appear for marilia
+    print("\n[Test 8] User isolation - verify wendy's categories don't appear for marilia")
+    marilia_token = login(MARILIA_EMAIL, MARILIA_PASSWORD)
+    if marilia_token:
+        result.add_pass("Test 8a: Login marilia", "Token received")
+        print(f"✓ Login marilia successful")
+        
+        marilia_categories = get_categories(marilia_token)
+        if marilia_categories is not None:
+            # Check if Gasolina (wendy's custom category) appears in marilia's list
+            gasolina_in_marilia = any(c.get("name") == "Gasolina" and c.get("id") == gasolina_id 
+                                      for c in marilia_categories) if gasolina_id else False
+            
+            if not gasolina_in_marilia:
+                result.add_pass("Test 8b: User isolation", 
+                               "Wendy's custom 'Gasolina' category does NOT appear in Marilia's list")
+                print("✓ User isolation verified: Wendy's custom categories don't appear for Marilia")
+            else:
+                result.add_fail("Test 8b: User isolation", 
+                               "Wendy's 'Gasolina' category appears in Marilia's list")
+                print("✗ User isolation FAILED: Wendy's categories appear for Marilia")
+            
+            # Verify marilia also has the 5 default income categories
+            marilia_income_defaults = [c for c in marilia_categories 
+                                      if c.get("kind") == "income" and c.get("is_default") == True]
+            if len(marilia_income_defaults) == 5:
+                result.add_pass("Test 8c: Marilia default categories", 
+                               "Marilia also has 5 default income categories")
+                print("✓ Marilia also has 5 default income categories")
+            else:
+                result.add_warning("Test 8c: Marilia default categories", 
+                                  f"Expected 5, found {len(marilia_income_defaults)}")
+                print(f"⚠ Marilia has {len(marilia_income_defaults)} default income categories (expected 5)")
+        else:
+            result.add_fail("Test 8b: User isolation", "Failed to fetch Marilia's categories")
+            print("✗ Failed to fetch Marilia's categories")
+    else:
+        result.add_fail("Test 8a: Login marilia", "Failed to get token")
+        print("✗ Login marilia failed")
+    
+    # Print summary
+    success = result.print_summary()
+    return success
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        success = run_tests()
+        sys.exit(0 if success else 1)
+    except Exception as e:
+        print(f"\n✗ Test execution failed with exception: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

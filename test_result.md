@@ -105,6 +105,20 @@
 user_problem_statement: "Adicionar conta/carteira em recorrências e parcelamentos; parcelamentos devem entrar nas despesas do relatório anual; deletar registros em lote (bulk) em Lançamentos; ao deletar recorrência, apagar lançamentos futuros gerados por ela; transferência entre carteiras. Parcela só deduz da carteira quando confirmada (paga); pendente rola para o mês seguinte."
 
 backend:
+  - task: "FEATURE: Categorias por tipo (kind expense/income/both) + seed automático de receitas"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Mudanças sem alterar contrato: (1) DEFAULT_CATEGORIES agora inclui 5 categorias de receita padrão (Salário, Freelance/Extra, Investimentos, Presente/Reembolso, Outras receitas) com kind='income'; novos usuários ganham 11 expense + 5 income. (2) Backfill no startup: para cada usuário existente, se uma categoria padrão income (por nome) não existir, é inserida com is_default=true (idempotente — não duplica em restarts). CategoryIn já aceitava kind expense|income|both. TESTAR (auth wendy@demo.com/demo123): (a) GET /categories agora contém Salário/Freelance/Investimentos com kind='income'; (b) POST /categories {name:'Gasolina', kind:'expense'} → kind=expense; (c) POST /categories {name:'13o Salario', kind:'income'} → kind=income; (d) PUT /categories/{cid} alterando kind → persiste; (e) DELETE ok; (f) backfill idempotente (rodar nada novo após restart)."
+        - working: true
+          agent: "testing"
+          comment: "✓ ALL 12 TESTS PASSED - FEATURE FULLY WORKING. Comprehensive test completed with all scenarios from review request: (1) Login wendy@demo.com/demo123 → Bearer token received. (2) GET /categories correctly returns 5 default income categories (Salário, Freelance / Extra, Investimentos, Presente / Reembolso, Outras receitas) all with kind='income' and is_default=true. (3) POST /categories {name:'Gasolina', color:'#E5A83B', kind:'expense'} → 200 OK, returned kind='expense', id=0ab3d76a-6b9b-4a2c-9c1b-f04dbc052238. (4) POST /categories {name:'13o Salario', color:'#2C7A51', kind:'income'} → 200 OK, returned kind='income', id=ed0dbdcb-ce28-45a1-b07b-efd5c719cfe8. (5) Both new categories appear in subsequent GET /categories. (6) PUT /categories/{gasolina_id} changing kind to 'both' → 200 OK, GET confirms kind='both'. (7) DELETE /categories/{13o_salario_id} → 200 OK, GET confirms category removed. (8) IDEMPOTENCY VERIFIED: Each default income category appears exactly once per user (counts: Salário=1, Freelance/Extra=1, Investimentos=1, Presente/Reembolso=1, Outras receitas=1). No duplicates found. (9) USER ISOLATION VERIFIED: Login marilia@demo.com/demo123 successful, GET /categories shows marilia also has 5 default income categories, but wendy's custom 'Gasolina' category does NOT appear in marilia's list. All requirements met. Feature production-ready."
   - task: "FEATURE: Recuperação de senha por pergunta de segurança (sem integração)"
     implemented: true
     working: true
@@ -293,12 +307,12 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 4
+  test_sequence: 5
   run_ui: false
 
 test_plan:
   current_focus:
-    - "UI: Contas a Receber - marcar como recebido gera receita e credita carteira"
+    - "FEATURE: Categorias por tipo (kind expense/income/both) + seed de receitas"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -332,3 +346,8 @@ agent_communication:
       message: "✓ BUGFIX VERIFIED - RECURRENCE EDIT NO LONGER DUPLICATES TRANSACTIONS. Tested comprehensive scenario with 10 verification steps following exact user requirements. ALL 4 CRITICAL TESTS PASSED: (1) Created monthly recurrence (amount=100, description='Assinatura X', starting 2026-06-26). (2) Materialized 3 transactions (1 paid today, 2 pending future). (3) Edited recurrence 3 times (amount→250, description→'Assinatura Y'). (4) ✅ NO DUPLICATES: Count remained at 3 transactions (initial=3, after edits=3). (5) ✅ PENDING UPDATED: All 2 pending transactions correctly updated to new values (amount=250.0, description='Assinatura Y'). (6) ✅ PAID PRESERVED: Paid transaction (today) correctly kept original values as historical record (amount=100.0, description='Assinatura X'). (7) ✅ IDEMPOTENCY: Re-querying same months didn't create duplicates. (8) ✅ NEXT_RUN EDIT: Editing next_run back to already-materialized date didn't create duplicates. Implementation verified: materialize_recurrences checks for existing (recurrence_id, date) before inserting (idempotent), and PUT /recurrences updates pending transactions instead of duplicating. Bug fix is production-ready."
     - agent: "testing"
       message: "✓ FEATURE VERIFIED - PASSWORD RECOVERY VIA SECURITY QUESTION FULLY WORKING. Tested comprehensive scenario with all 10 steps from review request. ALL TESTS PASSED: (1) Login marilia@demo.com/demo123 successful, token received. (2) Set security question 'Qual o nome do seu primeiro animal de estimação?' with answer 'Rex' → 200 OK. (3) GET /auth/me correctly shows has_security_question=true and security_question populated. (4) GET /auth/security-question?email=marilia@demo.com (public endpoint, no auth) correctly returns the question. (5) GET /auth/security-question?email=naoexiste@demo.com correctly returns {question: null} (no information leakage for non-existent accounts). (6) Reset with WRONG answer → 400 'Resposta de segurança incorreta'. (7) Reset with CORRECT answer ' REX ' (case-insensitive with spaces) → 200 OK, password changed to nova123. (8) Login with new password nova123 works (200), login with old password demo123 fails (401) - password change confirmed. (9) New test user without security question: GET returns {question: null}, reset attempt → 400 'Recuperação por pergunta não disponível para esta conta'. (10) Password RESTORED to demo123 using reset flow, login confirmed. User isolation verified: wendy@demo.com unaffected, marilia's question intact. Security implementation correct: case-insensitive matching, trim/normalization (strip+lower), bcrypt hashing, no info leak. Feature production-ready."
+
+    - agent: "main"
+      message: "Nova feature: Categorias por tipo. Testar APENAS BACKEND (auth wendy@demo.com/demo123): (1) GET /categories agora deve incluir 5 categorias income (Salário, Freelance/Extra, Investimentos, Presente/Reembolso, Outras receitas) com kind='income'; (2) POST /categories {name:'Gasolina', kind:'expense'} → kind=expense; (3) POST /categories {name:'13o Salario', kind:'income'} → kind=income; (4) PUT /categories/{cid} alterando kind para 'both' → persiste; (5) DELETE de categoria criada ok; (6) backfill idempotente: rodar GET antes/depois NÃO deve criar duplicados (mesmas 5 income categories permanecem). NÃO testar frontend ainda."
+    - agent: "testing"
+      message: "✓ FEATURE VERIFIED - CATEGORIES BY KIND (expense/income/both) FULLY WORKING. Tested all 8 scenarios from review request with comprehensive verification. ALL 12 TESTS PASSED: (1) Login wendy@demo.com/demo123 → Bearer token received. (2) GET /categories correctly returns 5 default income categories (Salário, Freelance / Extra, Investimentos, Presente / Reembolso, Outras receitas) all with kind='income' and is_default=true. (3) POST /categories {name:'Gasolina', color:'#E5A83B', kind:'expense'} → 200 OK, returned kind='expense'. (4) POST /categories {name:'13o Salario', color:'#2C7A51', kind:'income'} → 200 OK, returned kind='income'. (5) Both new categories appear in subsequent GET /categories. (6) PUT /categories/{gasolina_id} changing kind to 'both' → 200 OK, GET confirms kind='both' persisted. (7) DELETE /categories/{13o_salario_id} → 200 OK, GET confirms category removed. (8) IDEMPOTENCY VERIFIED: Each default income category appears exactly once per user (Salário=1, Freelance/Extra=1, Investimentos=1, Presente/Reembolso=1, Outras receitas=1). No duplicates found even after backfill on startup. (9) USER ISOLATION VERIFIED: Login marilia@demo.com/demo123 successful, marilia has her own 5 default income categories, but wendy's custom 'Gasolina' category does NOT appear in marilia's list. Backfill mechanism working correctly (idempotent, no duplicates on restart). Feature production-ready."
