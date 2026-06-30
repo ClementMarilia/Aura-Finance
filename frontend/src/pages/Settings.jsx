@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Trash2, Plus, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const NOTIF_LABELS = {
   shared_expense_added: { title: "Despesas compartilhadas", desc: "Quando você é adicionado a uma nova despesa." },
@@ -98,6 +99,14 @@ export default function Settings() {
   return (
     <div className="space-y-6 max-w-2xl" data-testid="settings-page">
       <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Configurações</h1>
+
+      <div className="card-soft" data-testid="theme-section">
+        <h3 className="text-lg font-semibold mb-1" style={{ fontFamily: "Outfit" }}>Aparência</h3>
+        <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
+          Escolha como o app deve aparecer para você. Selecione &ldquo;Sistema&rdquo; para seguir automaticamente as preferências do seu celular ou computador.
+        </p>
+        <ThemeToggle />
+      </div>
 
       <div className="card-soft" data-testid="notif-prefs-section">
         <h3 className="text-lg font-semibold mb-1" style={{ fontFamily: "Outfit" }}>Notificações</h3>

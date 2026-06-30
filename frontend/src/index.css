@@ -8,8 +8,10 @@
   --bg: #F9F8F6;
   --surface: #FFFFFF;
   --surface-muted: #F1EFE7;
+  --surface-elevated: #FFFFFF;
   --primary: #1E3F33;
   --primary-hover: #2C5C4A;
+  --primary-fg: #6FB597;
   --secondary: #D96C5B;
   --text-main: #1A1C1A;
   --text-muted: #6B7068;
@@ -17,6 +19,23 @@
   --success: #2C7A51;
   --warning: #E5A83B;
   --danger: #D9453B;
+}
+
+html.dark {
+  --bg: #0F1311;
+  --surface: #1A1F1B;
+  --surface-muted: #232A26;
+  --surface-elevated: #20261F;
+  --primary: #6FB597;
+  --primary-hover: #8AC9B0;
+  --primary-fg: #0F1311;
+  --secondary: #E48A78;
+  --text-main: #ECEEEA;
+  --text-muted: #9CA29C;
+  --border: #2A3128;
+  --success: #4FD49B;
+  --warning: #F1B85A;
+  --danger: #F26B61;
 }
 
 @layer base {
@@ -47,15 +66,45 @@
     --chart-5: 40 27% 70%;
     --radius: 0.75rem;
   }
+
+  html.dark {
+    --background: 132 11% 7%;
+    --foreground: 60 7% 92%;
+    --card: 138 8% 12%;
+    --card-foreground: 60 7% 92%;
+    --popover: 138 8% 12%;
+    --popover-foreground: 60 7% 92%;
+    --primary: 153 35% 57%;
+    --primary-foreground: 132 11% 7%;
+    --secondary: 138 8% 18%;
+    --secondary-foreground: 60 7% 92%;
+    --muted: 138 8% 18%;
+    --muted-foreground: 90 4% 62%;
+    --accent: 138 8% 22%;
+    --accent-foreground: 60 7% 92%;
+    --destructive: 3 80% 60%;
+    --destructive-foreground: 60 7% 92%;
+    --border: 138 8% 18%;
+    --input: 138 8% 18%;
+    --ring: 153 35% 57%;
+    --chart-1: 153 35% 57%;
+    --chart-2: 8 70% 65%;
+    --chart-3: 39 80% 60%;
+    --chart-4: 153 20% 60%;
+    --chart-5: 40 30% 70%;
+  }
 }
 
 @layer base {
   * { @apply border-border; }
+  html, body {
+    background-color: var(--bg);
+    color: var(--text-main);
+  }
   body {
     @apply bg-background text-foreground;
     font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: var(--bg);
-    color: var(--text-main);
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Outfit', sans-serif;
@@ -65,14 +114,18 @@
 
 @layer components {
   .card-soft {
-    @apply bg-white rounded-2xl border border-[#E5E4E0] p-6;
+    @apply rounded-2xl border p-6;
+    background-color: var(--surface);
+    border-color: var(--border);
+    color: var(--text-main);
   }
   .stat-value {
     @apply text-3xl font-semibold tracking-tight;
     font-family: 'Outfit', sans-serif;
   }
   .stat-label {
-    @apply text-sm text-[#6B7068];
+    @apply text-sm;
+    color: var(--text-muted);
   }
   .pill {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
@@ -82,8 +135,128 @@
   .pill-cancelled { @apply bg-gray-100 text-gray-500; }
 }
 
+/* ============================================================
+   DARK MODE OVERRIDES
+   Reescreve classes Tailwind com cores hardcoded ao ativar .dark.
+   Ordem: do mais específico (cores exatas) para o mais genérico.
+   ============================================================ */
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* Backgrounds claros → escuros */
+html.dark .bg-white { background-color: var(--surface) !important; }
+html.dark .bg-\[\#F9F8F6\] { background-color: var(--bg) !important; }
+html.dark .bg-\[\#F8F6EE\] { background-color: var(--surface-elevated) !important; }
+html.dark .bg-\[\#F1EFE7\] { background-color: var(--surface-muted) !important; }
+html.dark .bg-\[\#E8EFE9\] { background-color: rgba(111, 181, 151, 0.12) !important; }
+html.dark .bg-\[\#FAFAF7\] { background-color: var(--bg) !important; }
+
+/* Bordas */
+html.dark .border-\[\#E5E4E0\] { border-color: var(--border) !important; }
+html.dark .border-\[\#D6D3CA\] { border-color: var(--border) !important; }
+
+/* Textos */
+html.dark .text-\[\#1A1C1A\] { color: var(--text-main) !important; }
+html.dark .text-\[\#6B7068\] { color: var(--text-muted) !important; }
+html.dark .text-\[\#A8ABA0\] { color: var(--text-muted) !important; }
+
+/* Verde primário escuro original → verde claro no dark */
+html.dark .text-\[\#1E3F33\] { color: var(--primary) !important; }
+html.dark .text-\[\#2C5C4A\] { color: var(--primary-hover) !important; }
+html.dark .bg-\[\#1E3F33\] { background-color: var(--primary) !important; color: var(--primary-fg) !important; }
+html.dark .bg-\[\#2C5C4A\] { background-color: var(--primary-hover) !important; color: var(--primary-fg) !important; }
+html.dark .hover\:bg-\[\#2C5C4A\]:hover { background-color: var(--primary-hover) !important; color: var(--primary-fg) !important; }
+html.dark .hover\:text-\[\#1E3F33\]:hover { color: var(--primary) !important; }
+html.dark .border-\[\#1E3F33\] { border-color: var(--primary) !important; }
+
+/* Gradiente hero do dashboard (mantém legibilidade no dark) */
+html.dark .from-\[\#1E3F33\] { --tw-gradient-from: var(--primary) var(--tw-gradient-from-position) !important; }
+html.dark .to-\[\#2C5C4A\] { --tw-gradient-to: var(--primary-hover) var(--tw-gradient-to-position) !important; }
+
+/* Coral / acento secundário */
+html.dark .text-\[\#D96C5B\] { color: var(--secondary) !important; }
+html.dark .bg-\[\#D96C5B\] { background-color: var(--secondary) !important; color: #1A1C1A !important; }
+html.dark .hover\:bg-\[\#C25848\]:hover { background-color: #D97461 !important; }
+html.dark .text-\[\#D9453B\] { color: var(--danger) !important; }
+html.dark .hover\:text-\[\#D9453B\]:hover { color: var(--danger) !important; }
+html.dark .text-\[\#E5A83B\] { color: var(--warning) !important; }
+
+/* Tints suaves (50) → versões com transparência */
+html.dark .bg-emerald-50 { background-color: rgba(34, 197, 94, 0.15) !important; color: #6FE3A3 !important; }
+html.dark .bg-rose-50 { background-color: rgba(244, 63, 94, 0.15) !important; color: #F88193 !important; }
+html.dark .bg-amber-50 { background-color: rgba(245, 158, 11, 0.15) !important; color: #FBC46A !important; }
+html.dark .bg-orange-50 { background-color: rgba(249, 115, 22, 0.15) !important; color: #FBA068 !important; }
+html.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.15) !important; color: #7AB0F5 !important; }
+html.dark .bg-red-50,
+html.dark .bg-red-50\/60 { background-color: rgba(220, 38, 38, 0.12) !important; }
+html.dark .bg-gray-100 { background-color: rgba(255, 255, 255, 0.06) !important; }
+
+html.dark .border-emerald-200 { border-color: rgba(34, 197, 94, 0.3) !important; }
+html.dark .border-rose-200 { border-color: rgba(244, 63, 94, 0.3) !important; }
+html.dark .border-amber-200 { border-color: rgba(245, 158, 11, 0.3) !important; }
+
+/* Hover muted */
+html.dark .hover\:bg-\[\#F1EFE7\]:hover { background-color: var(--surface-muted) !important; }
+html.dark .hover\:bg-\[\#F8F6EE\]:hover { background-color: var(--surface-elevated) !important; }
+
+/* Pills */
+html.dark .pill-paid { background-color: rgba(34, 197, 94, 0.18) !important; color: #6FE3A3 !important; }
+html.dark .pill-pending { background-color: rgba(245, 158, 11, 0.18) !important; color: #FBC46A !important; }
+html.dark .pill-cancelled { background-color: rgba(255, 255, 255, 0.08) !important; color: #9CA29C !important; }
+
+/* Verde / vermelho / âmbar 600/700 (texto) — mantém legíveis */
+html.dark .text-emerald-600,
+html.dark .text-emerald-700 { color: #6FE3A3 !important; }
+html.dark .text-rose-600,
+html.dark .text-rose-700 { color: #F88193 !important; }
+html.dark .text-amber-600,
+html.dark .text-amber-700 { color: #FBC46A !important; }
+html.dark .text-blue-600 { color: #7AB0F5 !important; }
+
+/* Backgrounds 600 (botões verdes/vermelhos sólidos) ficam um pouco mais vivos */
+html.dark .bg-emerald-600 { background-color: #16A34A !important; }
+html.dark .bg-rose-600 { background-color: #E11D48 !important; }
+html.dark .hover\:bg-emerald-100:hover { background-color: rgba(34, 197, 94, 0.25) !important; }
+
+/* Inputs e foco */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: var(--surface-muted);
+  color: var(--text-main);
+  border-color: var(--border);
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
 /* Recharts tooltip */
 .recharts-default-tooltip {
   border-radius: 0.75rem !important;
   border: 1px solid var(--border) !important;
+  background-color: var(--surface) !important;
+  color: var(--text-main) !important;
+}
+html.dark .recharts-default-tooltip {
+  background-color: var(--surface-elevated) !important;
+}
+html.dark .recharts-cartesian-grid line {
+  stroke: var(--border) !important;
+}
+html.dark .recharts-text { fill: var(--text-muted) !important; }
+
+/* Sonner toast (notificações) */
+html.dark [data-sonner-toaster] [data-sonner-toast] {
+  background: var(--surface-elevated) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border) !important;
+}
+
+/* Animação suave de transição entre temas */
+html, body, .card-soft, button, input, select, textarea, [class*="border-"], [class*="bg-"] {
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }

@@ -4,6 +4,7 @@ import {
   Users, FolderOpen, Scale, FileBarChart, UserCircle, Settings, LogOut, Wallet, Bell, Target, Repeat
 } from "lucide-react";import { useAuth } from "@/context/AuthContext";
 import NotificationsBell from "@/components/NotificationsBell";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "Painel", end: true },
@@ -71,6 +72,7 @@ export default function Layout() {
             </div>
           </button>
           <NotificationsBell />
+          <ThemeToggle variant="icon" />
           <button
             onClick={() => navigate("/perfil")}
             data-testid="profile-button"
@@ -91,6 +93,7 @@ export default function Layout() {
           </div>
           <div className="flex items-center gap-2">
             <NotificationsBell />
+            <ThemeToggle variant="icon" />
             <button onClick={() => navigate("/perfil")} data-testid="mobile-profile-button"
               className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium"
               style={{ backgroundColor: user?.avatar_color || "#1E3F33" }}>
