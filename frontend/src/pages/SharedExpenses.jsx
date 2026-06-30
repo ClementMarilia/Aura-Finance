@@ -184,53 +184,39 @@ export default function SharedExpenses() {
         </Button>
       </div>
 
-      {/* Resumo: quanto cada pessoa te deve / você deve no total */}
-      {summary.length > 0 && (
-        <div className="card-soft" data-testid="settle-summary-card">
-          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <Scale size={18} className="text-[#1E3F33]" />
-              <h3 className="text-base font-semibold" style={{ fontFamily: "Outfit" }}>Resumo dos acertos</h3>
+      {/* Banner compacto de acertos pendentes (atalho para a página /acertos) */}
+      {summary.length > 0 && (() => {
+        const credits = summary.filter(s => s.net > 0);
+        const debts = summary.filter(s => s.net < 0);
+        return (
+          <Link
+            to="/acertos"
+            data-testid="settle-summary-banner"
+            className="card-soft block hover:bg-[#F8F6EE] transition py-3 px-4"
+          >
+            <div className="flex items-center gap-3 flex-wrap">
+              <Scale size={16} className="text-[#1E3F33] flex-shrink-0" />
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm flex-1 min-w-0">
+                {credits.map(s => (
+                  <span key={s.user?.id} className="text-emerald-700" data-testid={`banner-credit-${s.user?.id}`}>
+                    <strong>{(s.user?.name || "").split(" ")[0]}</strong> te deve{" "}
+                    <strong>{fmtMoney(s.net, curr)}</strong>
+                  </span>
+                ))}
+                {debts.map(s => (
+                  <span key={s.user?.id} className="text-rose-700" data-testid={`banner-debt-${s.user?.id}`}>
+                    Você deve <strong>{fmtMoney(Math.abs(s.net), curr)}</strong>{" "}
+                    para <strong>{(s.user?.name || "").split(" ")[0]}</strong>
+                  </span>
+                ))}
+              </div>
+              <span className="text-xs text-[#1E3F33] hover:underline flex items-center gap-1 flex-shrink-0">
+                Ver acertos <ArrowRight size={12} />
+              </span>
             </div>
-            <Link to="/acertos" className="text-xs text-[#1E3F33] hover:underline flex items-center gap-1" data-testid="settle-summary-link">
-              Ver detalhes <ArrowRight size={12} />
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {summary.map(s => {
-              const positive = s.net > 0; // alguém te deve
-              return (
-                <div
-                  key={s.user?.id}
-                  data-testid={`settle-summary-${s.user?.id}`}
-                  className={`flex items-center justify-between p-3 rounded-xl border ${
-                    positive
-                      ? "bg-emerald-50 border-emerald-200"
-                      : "bg-rose-50 border-rose-200"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Initials name={s.user?.name} color={s.user?.avatar_color} size={32} />
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">{s.user?.name}</div>
-                      <div className={`text-xs ${positive ? "text-emerald-700" : "text-rose-700"}`}>
-                        {positive ? "te deve" : "você deve"}
-                      </div>
-                    </div>
-                  </div>
-                  <div className={`text-lg font-semibold ${positive ? "text-emerald-700" : "text-rose-700"}`}
-                       style={{ fontFamily: "Outfit" }}>
-                    {fmtMoney(Math.abs(s.net), curr)}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <p className="text-xs text-[#6B7068] mt-2">
-            Valores líquidos somando todas as despesas em aberto. Para quitar tudo de uma vez, use a página <Link to="/acertos" className="underline">Acertos</Link>.
-          </p>
-        </div>
-      )}
+          </Link>
+        );
+      })()}
 
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditing(null); setParticipants([]); } }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
