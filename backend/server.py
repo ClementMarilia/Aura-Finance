@@ -1288,7 +1288,7 @@ async def settle_participant(sid: str, user_id: str, user=Depends(get_current_us
             f"{debtor['name'] if debtor else 'Alguém'} marcou {fmt_eur(amount)} como pago em '{se['title']}'.",
             "/acertos", {"expense_id": sid},
         )
-    return {"ok": True, "status": status}
+    return {"ok": True, "status": status, "paid_back": new_paid}
 
 
 # ---------- Notifications ----------

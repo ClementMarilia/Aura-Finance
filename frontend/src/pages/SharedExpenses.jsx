@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api, { fmtMoney, fmtDate, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, UserPlus, X, Check, Pencil } from "lucide-react";
+import { Plus, Trash2, UserPlus, X, Check, Pencil, ArrowRight, Scale } from "lucide-react";
 import { toast } from "sonner";
 
 function Initials({ name, color, size = 28 }) {
@@ -30,6 +31,7 @@ export default function SharedExpenses() {
   const curr = user?.currency || "EUR";
   const [list, setList] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [summary, setSummary] = useState([]); // {user, net}
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null); // expense being edited or null
   const [participants, setParticipants] = useState([]);
@@ -37,7 +39,14 @@ export default function SharedExpenses() {
   const [form, setForm] = useState(emptyForm(user));
   const [confirmDelete, setConfirmDelete] = useState(null); // expense id
 
-  const load = () => api.get("/shared-expenses").then(r => setList(r.data));
+  const load = async () => {
+    const [a, b] = await Promise.all([
+      api.get("/shared-expenses"),
+      api.get("/settlements"),
+    ]);
+    setList(a.data);
+    setSummary(b.data.summary || []);
+  };
   useEffect(() => { load(); api.get("/groups").then(r => setGroups(r.data)); }, []);
 
   const openNew = () => {
@@ -141,7 +150,14 @@ export default function SharedExpenses() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const togglePaid = async (sid, uid) => { await api.post(`/shared-expenses/${sid}/settle/${uid}`); load(); };
+  const togglePaid = async (sid, uid) => {
+    try {
+      const r = await api.post(`/shared-expenses/${sid}/settle/${uid}`);
+      const isPaid = r.data?.paid_back;
+      toast.success(isPaid ? "Acerto confirmado" : "Acerto reaberto");
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
 
   const doDelete = async () => {
     try {
@@ -167,6 +183,54 @@ export default function SharedExpenses() {
           <Plus size={16} className="mr-1" /> Nova despesa
         </Button>
       </div>
+
+      {/* Resumo: quanto cada pessoa te deve / você deve no total */}
+      {summary.length > 0 && (
+        <div className="card-soft" data-testid="settle-summary-card">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Scale size={18} className="text-[#1E3F33]" />
+              <h3 className="text-base font-semibold" style={{ fontFamily: "Outfit" }}>Resumo dos acertos</h3>
+            </div>
+            <Link to="/acertos" className="text-xs text-[#1E3F33] hover:underline flex items-center gap-1" data-testid="settle-summary-link">
+              Ver detalhes <ArrowRight size={12} />
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {summary.map(s => {
+              const positive = s.net > 0; // alguém te deve
+              return (
+                <div
+                  key={s.user?.id}
+                  data-testid={`settle-summary-${s.user?.id}`}
+                  className={`flex items-center justify-between p-3 rounded-xl border ${
+                    positive
+                      ? "bg-emerald-50 border-emerald-200"
+                      : "bg-rose-50 border-rose-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Initials name={s.user?.name} color={s.user?.avatar_color} size={32} />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{s.user?.name}</div>
+                      <div className={`text-xs ${positive ? "text-emerald-700" : "text-rose-700"}`}>
+                        {positive ? "te deve" : "você deve"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className={`text-lg font-semibold ${positive ? "text-emerald-700" : "text-rose-700"}`}
+                       style={{ fontFamily: "Outfit" }}>
+                    {fmtMoney(Math.abs(s.net), curr)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xs text-[#6B7068] mt-2">
+            Valores líquidos somando todas as despesas em aberto. Para quitar tudo de uma vez, use a página <Link to="/acertos" className="underline">Acertos</Link>.
+          </p>
+        </div>
+      )}
 
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditing(null); setParticipants([]); } }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
@@ -339,23 +403,48 @@ export default function SharedExpenses() {
               <div className="mt-4 space-y-2">
                 {e.participants.map(p => {
                   const isPayer = p.user_id === e.payer_id;
+                  const iAmPayer = e.payer_id === user.id;       // eu recebo
+                  const iAmThisDebtor = p.user_id === user.id;   // eu devo
+                  let actionLabel = "Marcar pago";
+                  let actionTitle = "Confirmar pagamento";
+                  if (iAmPayer && !isPayer) {
+                    actionLabel = p.paid_back ? "Recebido" : "Confirmar recebimento";
+                    actionTitle = "Confirmar que recebi este valor";
+                  } else if (iAmThisDebtor) {
+                    actionLabel = p.paid_back ? "Pago" : "Já paguei";
+                    actionTitle = "Marcar que já paguei minha parte";
+                  } else if (!isPayer) {
+                    actionLabel = p.paid_back ? "Pago" : "Marcar pago";
+                  }
                   return (
-                    <div key={p.user_id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-[#F1EFE7]">
+                    <div key={p.user_id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-[#F1EFE7]" data-testid={`participant-row-${e.id}-${p.user_id}`}>
                       <Initials name={p.user?.name} color={p.user?.avatar_color} />
-                      <div className="flex-1 text-sm">
-                        <div className="font-medium">{p.user?.name}{isPayer && <span className="ml-2 text-xs text-emerald-600">(pagador)</span>}</div>
-                        <div className="text-xs text-[#6B7068]">
-                          {isPayer ? "Não deve nada" : (p.paid_back ? "Pago" : `Deve ${fmtMoney(p.owed, curr)} para ${e.payer?.name}`)}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm truncate">
+                          {p.user?.name}
+                          {isPayer && <span className="ml-2 text-xs text-emerald-600">(pagou tudo)</span>}
                         </div>
+                        <div className="text-xs text-[#6B7068]">
+                          {isPayer
+                            ? `Adiantou ${fmtMoney(e.amount, curr)} pelo grupo`
+                            : (p.paid_back ? "Acerto confirmado" : `Deve para ${e.payer?.name}`)}
+                        </div>
+                      </div>
+                      {/* Valor da parte da pessoa em destaque */}
+                      <div className={`text-base font-semibold whitespace-nowrap ${
+                        isPayer ? "text-[#1E3F33]" : p.paid_back ? "text-emerald-600 line-through opacity-60" : "text-rose-600"
+                      }`} style={{ fontFamily: "Outfit" }} data-testid={`participant-amount-${e.id}-${p.user_id}`}>
+                        {fmtMoney(p.owed || 0, curr)}
                       </div>
                       {!isPayer && (
                         <button onClick={() => togglePaid(e.id, p.user_id)} data-testid={`settle-${e.id}-${p.user_id}`}
-                          className={`px-3 py-1.5 rounded-lg text-xs ${
+                          title={actionTitle}
+                          className={`px-3 py-1.5 rounded-lg text-xs whitespace-nowrap ${
                             p.paid_back
                               ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                               : "bg-[#1E3F33] text-white hover:bg-[#2C5C4A]"
                           }`}>
-                          {p.paid_back ? <><Check size={12} className="inline mr-1" />Pago</> : "Marcar pago"}
+                          {p.paid_back ? <><Check size={12} className="inline mr-1" />{actionLabel}</> : actionLabel}
                         </button>
                       )}
                     </div>
