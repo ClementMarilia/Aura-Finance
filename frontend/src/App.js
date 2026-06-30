@@ -21,6 +21,7 @@ import Notifications from "@/pages/Notifications";
 import Goals from "@/pages/Goals";
 import Recurrences from "@/pages/Recurrences";
 import Wallets from "@/pages/Wallets";
+import InstallPrompt from "@/components/InstallPrompt";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -37,11 +38,12 @@ function PublicOnly({ children }) {
 }
 
 function App() {
-  useEffect(() => { document.title = "Controle Financeiro"; }, []);
+  useEffect(() => { document.title = "Aurea — Controle Financeiro"; }, []);
   return (
     <AuthProvider>
       <BrowserRouter>
         <Toaster position="top-right" richColors />
+        <InstallPrompt />
         <Routes>
           <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
           <Route path="/cadastro" element={<PublicOnly><Register /></PublicOnly>} />
