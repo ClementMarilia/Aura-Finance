@@ -47,6 +47,48 @@ export default function SharedExpenses() {
     setOpen(true);
   };
 
+  // Quando seleciona um grupo, injeta automaticamente os membros como participantes
+  const applyGroup = (groupId) => {
+    setForm(prev => ({ ...prev, group_id: groupId }));
+    if (!groupId) return;
+    const g = groups.find(x => x.id === groupId);
+    if (!g) return;
+    setParticipants(prev => {
+      const existing = new Map(prev.map(p => [p.user.id, p]));
+      (g.members || []).forEach(m => {
+        if (!existing.has(m.id)) existing.set(m.id, { user: m, amount: "", percent: "" });
+      });
+      // garante o próprio usuário sempre
+      if (!existing.has(user.id)) existing.set(user.id, { user, amount: "", percent: "" });
+      return Array.from(existing.values());
+    });
+  };
+
+  // Preview de quanto cada um deve (somente UI, baseado nos valores do form)
+  const previewSplit = () => {
+    const total = parseFloat(form.amount) || 0;
+    if (!total || participants.length === 0) return {};
+    const out = {};
+    if (form.split_type === "equal") {
+      const share = +(total / participants.length).toFixed(2);
+      participants.forEach((p, idx) => {
+        // arredonda residual no último
+        if (idx === participants.length - 1) {
+          const sumSoFar = +(share * (participants.length - 1)).toFixed(2);
+          out[p.user.id] = +(total - sumSoFar).toFixed(2);
+        } else out[p.user.id] = share;
+      });
+    } else if (form.split_type === "manual") {
+      participants.forEach(p => { out[p.user.id] = parseFloat(p.amount) || 0; });
+    } else if (form.split_type === "percent") {
+      participants.forEach(p => {
+        const pct = parseFloat(p.percent) || 0;
+        out[p.user.id] = +((total * pct) / 100).toFixed(2);
+      });
+    }
+    return out;
+  };
+
   const openEdit = (e) => {
     setEditing(e);
     setForm({
@@ -144,12 +186,16 @@ export default function SharedExpenses() {
                 <Input value={form.category} data-testid="shared-category-input"
                   onChange={e => setForm({ ...form, category: e.target.value })} /></div>
               <div><Label>Grupo (opcional)</Label>
-                <Select value={form.group_id} onValueChange={v => setForm({ ...form, group_id: v })}>
+                <Select value={form.group_id} onValueChange={applyGroup}>
                   <SelectTrigger data-testid="shared-group-select"><SelectValue placeholder="Nenhum" /></SelectTrigger>
                   <SelectContent>
                     {groups.map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
                   </SelectContent>
-                </Select></div>
+                </Select>
+                {form.group_id && (
+                  <p className="text-xs text-[#6B7068] mt-1">Os membros do grupo foram adicionados automaticamente como participantes.</p>
+                )}
+              </div>
             </div>
 
             <div>
@@ -161,30 +207,36 @@ export default function SharedExpenses() {
                   className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl"><UserPlus size={16} /></Button>
               </div>
               <div className="mt-3 space-y-2">
-                {participants.map(p => (
-                  <div key={p.user.id} className="flex items-center gap-2 p-2 bg-[#F1EFE7] rounded-lg">
-                    <Initials name={p.user.name} color={p.user.avatar_color} />
-                    <div className="flex-1 text-sm">
-                      <div className="font-medium">{p.user.name}</div>
-                      <div className="text-xs text-[#6B7068]">{p.user.email}</div>
+                {(() => {
+                  const preview = previewSplit();
+                  return participants.map(p => (
+                    <div key={p.user.id} className="flex items-center gap-2 p-2 bg-[#F1EFE7] rounded-lg">
+                      <Initials name={p.user.name} color={p.user.avatar_color} />
+                      <div className="flex-1 text-sm min-w-0">
+                        <div className="font-medium truncate">{p.user.name}</div>
+                        <div className="text-xs text-[#6B7068] truncate">{p.user.email}</div>
+                      </div>
+                      {form.split_type === "manual" && (
+                        <Input type="number" step="0.01" placeholder="valor" className="w-24"
+                          value={p.amount}
+                          onChange={e => setParticipants(participants.map(x => x.user.id === p.user.id ? { ...x, amount: e.target.value } : x))} />
+                      )}
+                      {form.split_type === "percent" && (
+                        <Input type="number" step="0.01" placeholder="%" className="w-20"
+                          value={p.percent}
+                          onChange={e => setParticipants(participants.map(x => x.user.id === p.user.id ? { ...x, percent: e.target.value } : x))} />
+                      )}
+                      <div className="text-sm font-semibold text-[#1E3F33] w-20 text-right" data-testid={`preview-share-${p.user.id}`}>
+                        {fmtMoney(preview[p.user.id] || 0, curr)}
+                      </div>
+                      {p.user.id !== user.id && (
+                        <button type="button" onClick={() => removeParticipant(p.user.id)} className="text-[#6B7068] hover:text-[#D9453B]">
+                          <X size={16} />
+                        </button>
+                      )}
                     </div>
-                    {form.split_type === "manual" && (
-                      <Input type="number" step="0.01" placeholder="valor" className="w-24"
-                        value={p.amount}
-                        onChange={e => setParticipants(participants.map(x => x.user.id === p.user.id ? { ...x, amount: e.target.value } : x))} />
-                    )}
-                    {form.split_type === "percent" && (
-                      <Input type="number" step="0.01" placeholder="%" className="w-20"
-                        value={p.percent}
-                        onChange={e => setParticipants(participants.map(x => x.user.id === p.user.id ? { ...x, percent: e.target.value } : x))} />
-                    )}
-                    {p.user.id !== user.id && (
-                      <button type="button" onClick={() => removeParticipant(p.user.id)} className="text-[#6B7068] hover:text-[#D9453B]">
-                        <X size={16} />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
             </div>
 
@@ -240,6 +292,25 @@ export default function SharedExpenses() {
                   </div>
                   <div className="text-sm text-[#6B7068]">
                     {e.category} · {fmtDate(e.date)} · pago por <strong>{e.payer?.name}</strong>
+                  </div>
+                  {/* Resumo em 1 linha: quanto cada um deve */}
+                  <div className="mt-1.5 text-xs text-[#6B7068] flex flex-wrap gap-x-3 gap-y-0.5" data-testid={`shared-summary-${e.id}`}>
+                    {e.participants.map(p => {
+                      const isPayer = p.user_id === e.payer_id;
+                      const name = (p.user?.name || "").split(" ")[0];
+                      if (isPayer) {
+                        return (
+                          <span key={p.user_id} className="text-emerald-700">
+                            <strong>{name}</strong> {fmtMoney(p.owed || 0, curr)} (pagou)
+                          </span>
+                        );
+                      }
+                      return (
+                        <span key={p.user_id} className={p.paid_back ? "text-emerald-600" : ""}>
+                          <strong>{name}</strong> {fmtMoney(p.owed || 0, curr)}{p.paid_back ? " ✓" : ""}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
