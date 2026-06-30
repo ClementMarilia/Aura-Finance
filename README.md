@@ -1,6 +1,6 @@
-# Aurea — Controle Financeiro Pessoal e Compartilhado
+# Aura Finance — Controle Financeiro Pessoal e Compartilhado
 
-Aurea é um **PWA (Progressive Web App)** em pt-BR de finanças pessoais e compartilhadas. Cada usuário gerencia receitas, despesas, parcelamentos, recorrências, metas e carteiras — e ao mesmo tempo participa de **grupos** (Casa, Viagem, etc.) com **divisão automática de despesas** e **acertos** (quem deve a quem). Pode ser **instalado na tela inicial** do celular e desktop como um app nativo.
+Aura Finance é um **PWA (Progressive Web App)** em pt-BR de finanças pessoais e compartilhadas. Cada usuário gerencia receitas, despesas, parcelamentos, recorrências, metas e carteiras — e ao mesmo tempo participa de **grupos** (Casa, Viagem, etc.) com **divisão automática de despesas** e **acertos** (quem deve a quem). Pode ser **instalado na tela inicial** do celular e desktop como um app nativo.
 
 > Stack: **React 19 + FastAPI + MongoDB**, autenticação JWT, moeda padrão **EUR (€)**. UI **com modo claro/escuro/automático**.
 
@@ -81,7 +81,7 @@ Cada card no Dashboard navega direto para a tela com filtro aplicado, mostrando 
 ## PWA & Dark Mode
 
 ### 📱 Instalável como app nativo
-O Aurea é um **PWA completo**:
+O Aura Finance é um **PWA completo**:
 
 - **Manifest** (`/manifest.json`) com nome, ícones, atalhos e cores.
 - **Service Worker** (`/service-worker.js`) com estratégia:
@@ -89,7 +89,7 @@ O Aurea é um **PWA completo**:
   - **`/api/*`**: **nunca cacheado** (dados financeiros sempre frescos)
   - **Offline**: devolve a shell em cache se a rede cair
 - **Ícones PNG reais** em 192px, 512px (`any` + `maskable`) + apple-touch-icon 180px + favicons.
-- **Banner não-intrusivo** ("Instalar Aurea") no canto inferior:
+- **Banner não-intrusivo** ("Instalar Aura Finance") no canto inferior:
   - 🤖 **Android/Chrome**: usa `beforeinstallprompt` (1-clique).
   - 🍎 **iOS Safari**: mostra instrução manual ("Compartilhar → Adicionar à Tela de Início").
   - Dispensável por 14 dias via `localStorage`.
@@ -170,7 +170,7 @@ No mobile, o avatar aparece compacto (só a inicial), mas o dropdown é o mesmo.
 │   │   │   ├── Layout.jsx           # sidebar limpa + header c/ UserMenu
 │   │   │   ├── UserMenu.jsx         # avatar dropdown (Perfil/Configurações/Sair)
 │   │   │   ├── ThemeToggle.jsx      # 2 variantes: icon (cíclico) + segmented
-│   │   │   ├── InstallPrompt.jsx    # banner "Instalar Aurea"
+│   │   │   ├── InstallPrompt.jsx    # banner "Instalar Aura Finance"
 │   │   │   ├── NotificationsBell.jsx, ConfirmDialog.jsx
 │   │   │   └── ui/                  # shadcn/ui
 │   │   ├── lib/api.js               # axios + interceptor JWT
@@ -363,7 +363,7 @@ O frontend é deployado na **Vercel** automaticamente após push para o GitHub:
 
 1. Faça suas mudanças no preview do Emergent.
 2. Use o botão **"Save to Github"** no chat → push automático.
-3. A Vercel detecta o commit, faz `yarn build` (`NODE_ENV=production`) → o **Service Worker ativa** e o **banner "Instalar Aurea" passa a aparecer**.
+3. A Vercel detecta o commit, faz `yarn build` (`NODE_ENV=production`) → o **Service Worker ativa** e o **banner "Instalar Aura Finance" passa a aparecer**.
 4. Variáveis de ambiente em produção (`REACT_APP_BACKEND_URL`, `MONGO_URL`, `JWT_SECRET`, `DB_NAME`, `SEED_DEMO`) ficam no painel da Vercel / serviço de hospedagem do backend.
 
 > O backfill das categorias de receita roda automaticamente no próximo boot do backend em produção (idempotente).
@@ -378,4 +378,4 @@ O frontend é deployado na **Vercel** automaticamente após push para o GitHub:
 
 ---
 
-© Aurea — controle financeiro pessoal e compartilhado · PWA instalável · light/dark/sistema.
+© Aura Finance — controle financeiro pessoal e compartilhado · PWA instalável · light/dark/sistema.

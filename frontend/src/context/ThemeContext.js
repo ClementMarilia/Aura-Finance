@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 /**
  * ThemeProvider — gerencia o tema do app.
  * 3 opções: "light", "dark", "system" (segue o SO).
- * Persiste em localStorage ("aurea_theme").
+ * Persiste em localStorage ("aura_theme"; lê "aurea_theme" como fallback de versão anterior).
  */
 const ThemeContext = createContext({
   theme: "system",
@@ -11,7 +11,8 @@ const ThemeContext = createContext({
   resolvedTheme: "light",
 });
 
-const STORAGE_KEY = "aurea_theme";
+const STORAGE_KEY = "aura_theme";
+const LEGACY_KEY = "aurea_theme";
 
 function applyTheme(theme) {
   const html = document.documentElement;
@@ -30,7 +31,11 @@ function applyTheme(theme) {
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => {
     if (typeof window === "undefined") return "system";
-    try { return localStorage.getItem(STORAGE_KEY) || "system"; } catch (_) { return "system"; }
+    try {
+      // Lê a chave nova; se ausente, tenta a legada (migração transparente)
+      const v = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY);
+      return v || "system";
+    } catch (_) { return "system"; }
   });
   const [resolvedTheme, setResolvedTheme] = useState("light");
 

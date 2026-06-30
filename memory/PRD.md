@@ -1,4 +1,4 @@
-# PRD - Aurea: Controle Financeiro Pessoal e Compartilhado
+# PRD - Aura Finance: Controle Financeiro Pessoal e Compartilhado
 
 ## Original Problem Statement
 Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Cada usuário tem controle privado + participa de despesas compartilhadas com cálculo automático de acertos. Stack adaptada: React + FastAPI + MongoDB. Auth JWT customizado e-mail/senha. Moeda padrão EUR. Seed automático com 3 usuários (Wendy, Marilia, Nathalia / demo123) + despesa Mercado €222 dividida igualmente.

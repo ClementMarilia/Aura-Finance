@@ -84,7 +84,7 @@ export default function Login() {
             <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
               <Wallet size={20} />
             </div>
-            <span className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Aurea</span>
+            <span className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Aura Finance</span>
           </div>
           <div>
             <h1 className="text-4xl lg:text-5xl font-semibold leading-tight" style={{ fontFamily: "Outfit" }}>

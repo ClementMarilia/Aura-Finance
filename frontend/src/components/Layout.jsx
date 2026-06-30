@@ -41,7 +41,7 @@ export default function Layout() {
             <Wallet size={18} />
           </div>
           <div>
-            <div className="font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Aurea</div>
+            <div className="font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Aura Finance</div>
             <div className="text-xs text-[#6B7068]">Controle Financeiro</div>
           </div>
         </div>
@@ -73,7 +73,7 @@ export default function Layout() {
             <div className="w-8 h-8 rounded-lg bg-[#1E3F33] flex items-center justify-center text-white">
               <Wallet size={16} />
             </div>
-            <span className="font-semibold" style={{ fontFamily: "Outfit" }}>Aurea</span>
+            <span className="font-semibold" style={{ fontFamily: "Outfit" }}>Aura Finance</span>
           </div>
           <div className="flex items-center gap-1">
             <NotificationsBell />

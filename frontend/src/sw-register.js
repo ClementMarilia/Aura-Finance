@@ -27,7 +27,7 @@ export function registerSW() {
       })
       .catch((err) => {
         // Silencioso — PWA é progressive enhancement, app funciona sem SW
-        console.warn("[Aurea] SW registration failed:", err);
+        console.warn("[Aura Finance] SW registration failed:", err);
       });
 
     // Reload uma única vez quando o SW novo assumir controle

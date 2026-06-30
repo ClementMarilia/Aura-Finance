@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { Download, X, Share } from "lucide-react";
 
 /**
- * Banner não-intrusivo que sugere instalar o Aurea como app.
+ * Banner não-intrusivo que sugere instalar o Aura Finance como app.
  * - Android/Chrome: usa o evento beforeinstallprompt (instalação 1-clique).
  * - iOS Safari: mostra instrução manual (Compartilhar → Adicionar à Tela Inicial).
  * - Esconde quando já está em modo standalone (já instalado).
  * - Pode ser dispensado por 14 dias via localStorage.
  */
-const DISMISS_KEY = "aurea_pwa_dismissed_at";
+const DISMISS_KEY = "aura_pwa_dismissed_at";
+const LEGACY_DISMISS_KEY = "aurea_pwa_dismissed_at";
 const DISMISS_DAYS = 14;
 
 function isStandalone() {
@@ -26,7 +27,10 @@ function isIOS() {
 
 function isDismissed() {
   try {
-    const ts = parseInt(localStorage.getItem(DISMISS_KEY) || "0", 10);
+    const ts = parseInt(
+      localStorage.getItem(DISMISS_KEY) || localStorage.getItem(LEGACY_DISMISS_KEY) || "0",
+      10,
+    );
     if (!ts) return false;
     const days = (Date.now() - ts) / 86400000;
     return days < DISMISS_DAYS;
@@ -84,7 +88,7 @@ export default function InstallPrompt() {
         <Download size={20} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="font-semibold" style={{ fontFamily: "Outfit" }}>Instalar Aurea</div>
+        <div className="font-semibold" style={{ fontFamily: "Outfit" }}>Instalar Aura Finance</div>
         {iosHint ? (
           <div className="text-sm opacity-90 mt-0.5">
             Toque em <Share size={14} className="inline mb-1" /> abaixo e depois em <strong>“Adicionar à Tela de Início”</strong> para abrir como um app.

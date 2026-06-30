@@ -1,10 +1,10 @@
-/* Aurea PWA Service Worker
+/* Aura Finance PWA Service Worker
  * Estratégia simples e segura para SPA + API:
  *  - HTML/JS/CSS estático: cache + revalidação em background
  *  - API (/api/...): SEMPRE rede (nunca cachear dados financeiros)
  *  - Offline: se rede falhar para navegação, devolve a shell em cache
  */
-const VERSION = "aurea-v1";
+const VERSION = "aura-v1";
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
