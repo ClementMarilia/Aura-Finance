@@ -55,14 +55,36 @@ export default function Layout() {
               <span>{n.label}</span>
             </NavLink>
           ))}
+
+          {/* Seção Conta */}
+          <div className="mt-4 pt-3 border-t border-[#E5E4E0]">
+            <div className="text-[10px] uppercase tracking-wider px-3 mb-1 text-[#A8ABA0]">Conta</div>
+            <NavLink to="/perfil" className={linkCls} data-testid="nav-perfil">
+              <UserCircle size={18} />
+              <span>Perfil</span>
+            </NavLink>
+            <NavLink to="/configuracoes" className={linkCls} data-testid="nav-configuracoes">
+              <Settings size={18} />
+              <span>Configurações</span>
+            </NavLink>
+            <button
+              type="button"
+              onClick={logout}
+              data-testid="nav-logout"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"
+            >
+              <LogOut size={18} />
+              <span>Sair</span>
+            </button>
+          </div>
         </nav>
         <div className="border-t border-[#E5E4E0] pt-3 mt-3 flex items-center gap-2 min-w-0">
           <button
             onClick={() => navigate("/perfil")}
             data-testid="profile-button"
-            className="flex items-center gap-2 flex-1 hover:bg-[#F1EFE7] hover:text-[#1E3F33] rounded-lg p-2 text-left"
+            className="flex items-center gap-2 flex-1 hover:bg-[#F1EFE7] hover:text-[#1E3F33] rounded-lg p-2 text-left min-w-0 overflow-hidden"
           >
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium"
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0"
               style={{ backgroundColor: user?.avatar_color || "#1E3F33" }}>
               {initials || "U"}
             </div>
@@ -73,12 +95,6 @@ export default function Layout() {
           </button>
           <NotificationsBell />
           <ThemeToggle variant="icon" />
-          <button
-            onClick={() => navigate("/perfil")}
-            data-testid="profile-button"
-            className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden hover:bg-[#F1EFE7] hover:text-[#1E3F33] rounded-lg p-2 text-left"
-            >
-          </button>
         </div>
       </aside>
 
