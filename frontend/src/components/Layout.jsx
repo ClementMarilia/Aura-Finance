@@ -1,10 +1,11 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
-  Users, FolderOpen, Scale, FileBarChart, UserCircle, Settings, LogOut, Wallet, Bell, Target, Repeat
-} from "lucide-react";import { useAuth } from "@/context/AuthContext";
+  Users, FolderOpen, Scale, FileBarChart, Wallet, Bell, Target, Repeat, Settings,
+} from "lucide-react";
 import NotificationsBell from "@/components/NotificationsBell";
 import ThemeToggle from "@/components/ThemeToggle";
+import UserMenu from "@/components/UserMenu";
 
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "Painel", end: true },
@@ -23,11 +24,6 @@ const nav = [
 ];
 
 export default function Layout() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
-  const initials = (user?.name || "").split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase();
-
   const linkCls = ({ isActive }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 ${
       isActive
@@ -36,9 +32,10 @@ export default function Layout() {
     }`;
 
   return (
-    <div className="min-h-screen flex bg-[#F9F8F6]">
+    <div className="min-h-screen flex" style={{ background: "var(--bg)" }}>
       {/* Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-[#E5E4E0] p-4">
+      <aside className="hidden md:flex flex-col w-64 border-r p-4"
+        style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
         <div className="flex items-center gap-2 px-2 py-4 mb-4">
           <div className="w-9 h-9 rounded-xl bg-[#1E3F33] flex items-center justify-center text-white">
             <Wallet size={18} />
@@ -55,66 +52,33 @@ export default function Layout() {
               <span>{n.label}</span>
             </NavLink>
           ))}
-
-          {/* Seção Conta */}
-          <div className="mt-4 pt-3 border-t border-[#E5E4E0]">
-            <div className="text-[10px] uppercase tracking-wider px-3 mb-1 text-[#A8ABA0]">Conta</div>
-            <NavLink to="/perfil" className={linkCls} data-testid="nav-perfil">
-              <UserCircle size={18} />
-              <span>Perfil</span>
-            </NavLink>
-            <NavLink to="/configuracoes" className={linkCls} data-testid="nav-configuracoes">
-              <Settings size={18} />
-              <span>Configurações</span>
-            </NavLink>
-            <button
-              type="button"
-              onClick={logout}
-              data-testid="nav-logout"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"
-            >
-              <LogOut size={18} />
-              <span>Sair</span>
-            </button>
-          </div>
         </nav>
-        <div className="border-t border-[#E5E4E0] pt-3 mt-3 flex items-center gap-2 min-w-0">
-          <button
-            onClick={() => navigate("/perfil")}
-            data-testid="profile-button"
-            className="flex items-center gap-2 flex-1 hover:bg-[#F1EFE7] hover:text-[#1E3F33] rounded-lg p-2 text-left min-w-0 overflow-hidden"
-          >
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0"
-              style={{ backgroundColor: user?.avatar_color || "#1E3F33" }}>
-              {initials || "U"}
-            </div>
-            <div className="text-sm min-w-0 overflow-hidden">
-              <div className="font-medium text-[#1A1C1A] truncate">{user?.name}</div>
-              <div className="text-xs text-[#6B7068] truncate">{user?.email}</div>
-            </div>
-          </button>
-          <NotificationsBell />
-          <ThemeToggle variant="icon" />
-        </div>
       </aside>
 
       {/* Main */}
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-[#E5E4E0]">
+        {/* Desktop header — avatar/menu sempre visível no topo direito */}
+        <header className="hidden md:flex items-center justify-end gap-2 px-6 py-3 border-b"
+          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+          data-testid="desktop-header">
+          <NotificationsBell />
+          <ThemeToggle variant="icon" />
+          <UserMenu />
+        </header>
+
+        {/* Mobile header */}
+        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b"
+          style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-[#1E3F33] flex items-center justify-center text-white">
               <Wallet size={16} />
             </div>
             <span className="font-semibold" style={{ fontFamily: "Outfit" }}>Aurea</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <NotificationsBell />
             <ThemeToggle variant="icon" />
-            <button onClick={() => navigate("/perfil")} data-testid="mobile-profile-button"
-              className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium"
-              style={{ backgroundColor: user?.avatar_color || "#1E3F33" }}>
-              {initials || "U"}
-            </button>
+            <UserMenu compact />
           </div>
         </header>
 
@@ -123,7 +87,8 @@ export default function Layout() {
         </div>
 
         {/* Bottom mobile nav */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#E5E4E0] flex justify-around py-2 z-30">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t flex justify-around py-2 z-30"
+          style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
           {nav.slice(0, 5).map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end}
               className={({ isActive }) => `flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] ${
