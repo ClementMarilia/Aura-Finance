@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Wallet } from "lucide-react";
+import Logo from "@/components/Logo";
 
 export default function Login() {
   const { login, formatApiError } = useAuth();
@@ -80,10 +80,8 @@ export default function Login() {
           className="absolute inset-0 w-full h-full object-cover opacity-60"
         />
         <div className="relative z-10 p-12 flex flex-col justify-between text-white">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
-              <Wallet size={20} />
-            </div>
+          <div className="flex items-center gap-3">
+            <img src="/logo-mark-dark.png" alt="Aura Finance" className="h-12 w-auto drop-shadow-lg" />
             <span className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Aura Finance</span>
           </div>
           <div>

@@ -6,6 +6,7 @@ import {
 import NotificationsBell from "@/components/NotificationsBell";
 import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
+import Logo from "@/components/Logo";
 
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "Painel", end: true },
@@ -36,14 +37,8 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-64 border-r p-4"
         style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
-        <div className="flex items-center gap-2 px-2 py-4 mb-4">
-          <div className="w-9 h-9 rounded-xl bg-[#1E3F33] flex items-center justify-center text-white">
-            <Wallet size={18} />
-          </div>
-          <div>
-            <div className="font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Aura Finance</div>
-            <div className="text-xs text-[#6B7068]">Controle Financeiro</div>
-          </div>
+        <div className="flex items-center justify-center py-4 mb-4">
+          <Logo variant="full" className="h-16 w-auto" />
         </div>
         <nav className="flex flex-col gap-1 flex-1">
           {nav.map((n) => (
@@ -69,12 +64,7 @@ export default function Layout() {
         {/* Mobile header */}
         <header className="md:hidden flex items-center justify-between px-4 py-3 border-b"
           style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#1E3F33] flex items-center justify-center text-white">
-              <Wallet size={16} />
-            </div>
-            <span className="font-semibold" style={{ fontFamily: "Outfit" }}>Aura Finance</span>
-          </div>
+          <Logo variant="full" className="h-9 w-auto" />
           <div className="flex items-center gap-1">
             <NotificationsBell />
             <ThemeToggle variant="icon" />
