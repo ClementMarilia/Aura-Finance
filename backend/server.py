@@ -532,6 +532,7 @@ async def list_transactions(
     year: Optional[int] = None, month: Optional[int] = None,
     category_id: Optional[str] = None, status: Optional[str] = None,
     type: Optional[str] = None, account_id: Optional[str] = None,
+    include_carryover: bool = True,
 ):
     horizon = month_end_date(year, month) if (year and month) else None
     await materialize_recurrences(user["id"], horizon)
@@ -562,7 +563,7 @@ async def list_transactions(
 
     # Roll-over: include real transactions still pending from previous months
     # (so the user sees them in the current view and can confirm payment)
-    if year and month and status in (None, "pending"):
+    if year and month and status in (None, "pending") and include_carryover:
         overdue_q = {
             "user_id": user["id"],
             "status": "pending",
@@ -599,6 +600,8 @@ async def list_transactions(
             {"due_date": {"$gte": vstart, "$lt": vend}},
             {"due_date": {"$lt": vstart}, "status": "pending"},
         ]}
+        if not include_carryover:
+            iq = {"user_id": user["id"], "due_date": {"$gte": vstart, "$lt": vend}}
         parcels = await db.installments.find(iq, {"_id": 0}).to_list(2000)
         if status:
             parcels = [p for p in parcels if p["status"] == status]
@@ -785,6 +788,10 @@ def _advance(d: date, freq: str) -> date:
         return d + timedelta(days=7)
     if freq == "yearly":
         return _add_months(d, 12)
+    if freq == "semiannual":
+        return _add_months(d, 6)
+    if freq == "quarterly":
+        return _add_months(d, 3)
     return _add_months(d, 1)
 
 
@@ -839,7 +846,7 @@ class RecurrenceIn(BaseModel):
     account_id: Optional[str] = None
     payment_method: Optional[str] = None
     description: str = ""
-    frequency: Literal["weekly", "monthly", "yearly"] = "monthly"
+    frequency: Literal["weekly", "monthly", "quarterly", "semiannual", "yearly"] = "monthly"
     next_run: str
     active: bool = True
 
@@ -1696,7 +1703,7 @@ async def dashboard(user=Depends(get_current_user), year: Optional[int] = None, 
     }
 
     # Fixed (recurring) monthly average — normalizes weekly/yearly to monthly
-    _FREQ_FACTOR = {"weekly": 52 / 12, "monthly": 1.0, "yearly": 1 / 12}
+    _FREQ_FACTOR = {"weekly": 52 / 12, "monthly": 1.0, "quarterly": 1 / 3, "semiannual": 1 / 6, "yearly": 1 / 12}
     recs = await db.recurrences.find(
         {"user_id": user["id"], "active": True}, {"_id": 0}).to_list(500)
     fixed_monthly_expense = round(sum(

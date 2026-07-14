@@ -143,3 +143,49 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - wendy@demo.com / demo123
 - marilia@demo.com / demo123
 - nathalia@demo.com / demo123
+
+---
+## Iteração — Melhorias Premium (Jun 2026, sessão de melhorias sobre app publicado)
+
+Código importado do GitHub (ClementMarilia/Aura-Finance) para o ambiente. Backend .env configurado com JWT_SECRET + SEED_DEMO=true. `yarn install` executado (jspdf/recharts/etc.).
+
+### Implementado (testado 100% backend+frontend, iteration_10.json)
+1. **Menu mobile completo**: barra inferior com 4 abas primárias + botão "Mais" (data-testid=mobile-nav-more) que abre um Sheet (mobile-more-sheet) com TODAS as telas + Perfil/Configurações/Sair. (Layout.jsx)
+2. **Frequências Trimestral + Semestral**: adicionadas em Recorrências e como opção "Repetir" no diálogo de Lançamentos. Backend: `_advance()` (+3/+6 meses), RecurrenceIn.frequency Literal, `_FREQ_FACTOR` do dashboard. (server.py, Recurrences.jsx, Transactions.jsx)
+3. **Somente mês selecionado**: GET /transactions aceita `include_carryover` (default True, preserva comportamento antigo); frontend envia `false` → esconde itens de carry-over/atrasados de outros meses. (server.py, Transactions.jsx)
+4. **Persistência do mês**: localStorage `aura_period` compartilhado entre Dashboard e Lançamentos. (Dashboard.jsx, Transactions.jsx)
+5. **Refresh premium/minimalista (claro+escuro)**: tipografia Outfit (headings, mais leve) + Manrope (corpo/dados, tabular-nums); paleta refinada (creme/verde profundo claro; obsidiana/jade escuro); headers com glassmorphism; cards e labels refinados. (index.css, ThemeContext.js, Layout.jsx)
+
+### Observações
+- Anexos/comprovantes usam Emergent Object Storage — NÃO configurado neste ambiente (sem EMERGENT_LLM_KEY); upload de comprovante pode falhar (pré-existente, fora de escopo).
+- Item LOW cosmético: data-testid do "Painel" é `*-home` (fallback) em vez de `*-painel` — não afeta funcionamento.
+
+### Backlog / Próximos
+- P2: alinhar testids `*-home` → `*-painel`.
+- P2: configurar EMERGENT_LLM_KEY para reativar anexos.
+- P2: aprofundar refino visual página a página (tabelas, badges) conforme design_guidelines.json.
+
+---
+## Iteração — Next Actions aplicadas (Jun 2026)
+
+- **Anexos/comprovantes ATIVADOS**: adicionado EMERGENT_LLM_KEY ao backend/.env → Emergent Object Storage inicializa ("Object storage initialized"). Upload de comprovante (JPG/PNG/WEBP/GIF/PDF) validado end-to-end via API (retorna file_id + path). IA NÃO implementada (usuário optou por não usar por enquanto).
+- **Refino visual premium (global, aditivo)** em index.css: números com tabular-nums (valores/saldos), hover sutil em linhas de tabela, foco premium (ring verde) em inputs/selects/textarea, feedback tátil (active:scale) nos botões primários, pills de status com borda sutil, cabeçalhos de tabela em peso 500 + tracking, scrollbar minimalista. Aplica-se a todas as telas (Lançamentos, Relatórios, Acertos, Carteiras, etc.).
+
+Backlog atualizado:
+- P2: alinhar testids `*-home` → `*-painel` (cosmético).
+- P2 (opcional): resumo mensal inteligente com IA no Painel (usuário adiar).
+
+---
+## Iteração — Refino tela-a-tela + testids (Jun 2026) — testado 100% (iteration_11.json)
+
+- **Barra de filtros de Lançamentos redesenhada**: header "Filtros" + grade rotulada (labels uppercase) com selects rounded-xl consistentes + botão "Limpar" (clear-filters-btn). Mesmos data-testids e lógica; comportamento "só o mês selecionado" preservado.
+- **Cards de Relatórios (DeltaCard) redesenhados**: número em peso leve + tabular-nums, pill de variação percentual (verde/vermelho) e texto "vs ano anterior", hover com leve elevação.
+- **Testids alinhados**: `nav-painel`, `mobile-nav-painel`, `more-nav-painel` (antes `*-home`).
+- Regressão OK: novo lançamento, "Repetir" (recorrência), tema claro/escuro, navegação, upload/remover comprovante (Object Storage ativo).
+
+---
+## Iteração — Tela de Login redesenhada (Jun 2026) — testado 100% (iteration_12.json)
+
+- **Login dark minimalista** (estilo referência SPACEFOX): fundo quase preto com brilho radial, wordmark "AURA" centralizado + logo mark, inputs com linha inferior (underline), botão "ENTRAR" full-width com borda, links "Esqueci minha senha" / "Criar conta" e círculo decorativo (spinner+check) embaixo.
+- Lógica 100% preservada: login, falha de senha, recuperação por pergunta de segurança e cadastro. Todos os data-testids mantidos.
+- Nota: inputs nativos com fundo transparente inline (evita overrides de `html.dark input`). Página de login é sempre dark, independente do tema do app.

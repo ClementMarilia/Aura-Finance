@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend-only regression on redesigned dark /login for Aura Finance. All 5 requested flows PASS: login success (wendy@demo.com/demo123 -> dashboard-root), login failure stays on /login, forgot-password dialog opens with correct testids and shows expected 'sem pergunta de segurança' toast for Wendy, register link navigates to /cadastro, and logout from user-menu returns to the redesigned /login.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/login", "issues": ["Cosmetic only: small check-circle glyph visible below 'Criar conta' link (bottom center of card) with no apparent purpose in the redesigned dark layout — verify if intentional decorative element or leftover."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Recharts ResizeObserver warnings (width/height -1) still appear on Dashboard — non-blocking but noisy; consider ensuring chart containers have explicit minHeight.",
+    "WebSocket /api/ws/notifications fails to establish (repeated warnings) — may indicate ingress not proxying WS or token handshake mismatch."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "wendy@demo.com / demo123 (from request)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Redesigned dark /login verified end-to-end. All existing data-testids preserved (login-email-input, login-password-input, login-submit-button, forgot-password-link, forgot-step-email, forgot-email-input, forgot-continue-button, link-register). Logout via user-menu-trigger -> user-menu-logout works. Forgot toast for Wendy correctly reads 'Esta conta não tem pergunta de segurança configurada. Configure no Perfil após entrar.'"
+}

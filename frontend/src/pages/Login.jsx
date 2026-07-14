@@ -7,7 +7,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import Logo from "@/components/Logo";
+import { Check } from "lucide-react";
+
+function Field({ id, label, type, value, onChange, testid, placeholder, autoComplete }) {
+  return (
+    <div className="text-left">
+      <label htmlFor={id} className="block text-[11px] tracking-[0.18em] uppercase text-white/40 mb-2">
+        {label}
+      </label>
+      <input
+        id={id}
+        data-testid={testid}
+        type={type}
+        value={value}
+        onChange={onChange}
+        required
+        autoComplete={autoComplete}
+        placeholder={placeholder}
+        style={{ background: "transparent", color: "rgba(255,255,255,0.9)", borderColor: "rgba(255,255,255,0.15)" }}
+        className="w-full border-0 border-b placeholder-white/20 text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#6FB597]"
+      />
+    </div>
+  );
+}
 
 export default function Login() {
   const { login, formatApiError } = useAuth();
@@ -72,63 +94,62 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-[#F9F8F6]">
-      <div className="hidden md:flex md:w-1/2 relative bg-[#1E3F33] overflow-hidden">
-        <img
-          src="https://images.pexels.com/photos/3184178/pexels-photo-3184178.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
-          alt="Friends sharing"
-          className="absolute inset-0 w-full h-full object-cover opacity-60"
-        />
-        <div className="relative z-10 p-12 flex flex-col justify-between text-white">
-          <div className="flex items-center gap-3">
-            <img src="/logo-mark-dark.png" alt="Aura Finance" className="h-12 w-auto drop-shadow-lg" />
-            <span className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Aura Finance</span>
-          </div>
-          <div>
-            <h1 className="text-4xl lg:text-5xl font-semibold leading-tight" style={{ fontFamily: "Outfit" }}>
-              Suas finanças,<br/>juntas ou separadas.
-            </h1>
-            <p className="mt-4 text-white/85 max-w-md">
-              Controle pessoal privado, despesas compartilhadas com cálculo automático de acertos.
-            </p>
-          </div>
+    <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ background: "#070A09" }}>
+      {/* Soft radial sphere glow */}
+      <div aria-hidden className="pointer-events-none absolute inset-0"
+        style={{ background: "radial-gradient(circle at 50% 52%, rgba(111,181,151,0.10), rgba(30,63,51,0.05) 32%, transparent 60%)" }} />
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        style={{
+          width: "min(94vw, 860px)", height: "min(94vw, 860px)",
+          background: "radial-gradient(circle, rgba(255,255,255,0.045), rgba(255,255,255,0.015) 46%, transparent 68%)",
+          boxShadow: "inset 0 0 140px rgba(255,255,255,0.025)",
+        }} />
+      <div aria-hidden className="pointer-events-none absolute -bottom-40 left-1/2 -translate-x-1/2 rounded-full"
+        style={{ width: "70vw", height: "70vw", background: "radial-gradient(circle, rgba(111,181,151,0.06), transparent 60%)" }} />
+
+      <div className="relative z-10 w-full max-w-sm px-6 text-center auth-in">
+        {/* Wordmark */}
+        <div className="mb-16 flex items-center justify-center gap-3">
+          <img src="/logo-mark-dark.png" alt="" className="h-7 w-auto opacity-90"
+            onError={(e) => { e.currentTarget.style.display = "none"; }} />
+          <span className="text-white/90 text-lg font-light whitespace-nowrap" style={{ fontFamily: "Outfit", letterSpacing: "0.3em" }}>
+            AURA FINANCE
+          </span>
         </div>
-      </div>
 
-      <div className="flex-1 flex items-center justify-center p-6 md:p-12">
-        <div className="w-full max-w-sm">
-          <h2 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Entrar</h2>
-          <p className="text-[#6B7068] mt-1 text-sm">Acesse seu painel financeiro</p>
+        <form onSubmit={submit} className="space-y-7">
+          <Field id="email" label="E-mail" type="email" value={email} testid="login-email-input"
+            autoComplete="email" placeholder="voce@exemplo.com"
+            onChange={(e) => setEmail(e.target.value)} />
+          <Field id="password" label="Senha" type="password" value={password} testid="login-password-input"
+            autoComplete="current-password" placeholder="••••••••"
+            onChange={(e) => setPassword(e.target.value)} />
 
-          <form onSubmit={submit} className="mt-8 space-y-4">
-            <div>
-              <Label htmlFor="email">E-mail</Label>
-              <Input id="email" data-testid="login-email-input" type="email" value={email}
-                onChange={(e) => setEmail(e.target.value)} required className="mt-1.5" placeholder="voce@exemplo.com" />
-            </div>
-            <div>
-              <Label htmlFor="password">Senha</Label>
-              <Input id="password" data-testid="login-password-input" type="password" value={password}
-                onChange={(e) => setPassword(e.target.value)} required className="mt-1.5" placeholder="••••••••" />
-            </div>
-            <Button type="submit" disabled={loading} data-testid="login-submit-button"
-              className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] text-white rounded-xl py-5">
-              {loading ? "Entrando..." : "Entrar"}
-            </Button>
-          </form>
+          <button type="submit" disabled={loading} data-testid="login-submit-button"
+            className="w-full mt-2 rounded-xl border border-white/12 bg-white/[0.04] hover:bg-white/[0.09] active:scale-[0.99] text-white/85 text-xs tracking-[0.28em] uppercase py-4 transition-colors duration-200 disabled:opacity-50">
+            {loading ? "Entrando..." : "Entrar"}
+          </button>
+        </form>
 
-          <div className="mt-3 text-center">
-            <button type="button" onClick={openForgot} data-testid="forgot-password-link"
-              className="text-sm text-[#1E3F33] hover:underline">
-              Esqueci minha senha
-            </button>
-          </div>
+        <div className="mt-6 text-xs text-white/40">
+          <button type="button" onClick={openForgot} data-testid="forgot-password-link"
+            className="hover:text-white/75 transition-colors">
+            Esqueci minha senha
+          </button>
+        </div>
 
-          <div className="mt-6 text-sm text-center text-[#6B7068]">
-            Não tem conta?{" "}
-            <Link to="/cadastro" className="text-[#1E3F33] font-medium hover:underline" data-testid="link-register">
-              Criar conta
-            </Link>
+        <div className="mt-3 text-xs text-white/40">
+          Não tem conta?{" "}
+          <Link to="/cadastro" className="text-white/70 hover:text-white transition-colors" data-testid="link-register">
+            Criar conta
+          </Link>
+        </div>
+
+        {/* Decorative spinner-check */}
+        <div className="mt-16 flex justify-center">
+          <div className="relative w-9 h-9 rounded-full border border-white/10 flex items-center justify-center">
+            <span className="absolute inset-0 rounded-full border-t border-[#6FB597]/70 animate-spin" style={{ animationDuration: "2.6s" }} />
+            <Check size={13} className="text-white/45" />
           </div>
         </div>
       </div>

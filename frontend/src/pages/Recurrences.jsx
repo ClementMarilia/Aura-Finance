@@ -37,7 +37,7 @@ export default function Recurrences() {
     api.get("/accounts").then(r => setAccs(r.data || []));
   }, []);
 
-  const FACTOR = { weekly: 52 / 12, monthly: 1, yearly: 1 / 12 };
+  const FACTOR = { weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, semiannual: 1 / 6, yearly: 1 / 12 };
   const monthly = (type) => items
     .filter(r => r.active && r.type === type)
     .reduce((s, r) => s + r.amount * (FACTOR[r.frequency] || 1), 0);
@@ -194,6 +194,8 @@ export default function Recurrences() {
                   <SelectContent>
                     <SelectItem value="weekly">Semanal</SelectItem>
                     <SelectItem value="monthly">Mensal</SelectItem>
+                    <SelectItem value="quarterly">Trimestral</SelectItem>
+                    <SelectItem value="semiannual">Semestral</SelectItem>
                     <SelectItem value="yearly">Anual</SelectItem>
                   </SelectContent>
                 </Select>
