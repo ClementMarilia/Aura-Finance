@@ -9,13 +9,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat, CreditCard, Check } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat, CreditCard, Check, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 
 const STATUS_LABEL = { paid: "Pago", pending: "Pendente", cancelled: "Cancelado" };
 const TYPE_LABEL = { income: "Receita", expense: "Despesa", transfer: "Transferência" };
 const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const PERIOD_KEY = "aura_period";
+function readSavedPeriod() {
+  try { return JSON.parse(localStorage.getItem(PERIOD_KEY)) || null; } catch { return null; }
+}
 
 export default function Transactions() {
   const { user } = useAuth();
@@ -25,14 +29,18 @@ export default function Transactions() {
   const [accs, setAccs] = useState([]);
   const now = new Date();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [filter, setFilter] = useState(() => ({
-    status: searchParams.get("status") || "",
-    type: searchParams.get("type") || "",
-    category_id: searchParams.get("category_id") || "",
-    year: searchParams.get("year") || "",
-    month: searchParams.get("month") || "",
-    account_id: searchParams.get("account_id") || "",
-  }));
+  const [filter, setFilter] = useState(() => {
+    const saved = readSavedPeriod();
+    const d = new Date();
+    return {
+      status: searchParams.get("status") || "",
+      type: searchParams.get("type") || "",
+      category_id: searchParams.get("category_id") || "",
+      year: searchParams.get("year") || saved?.year || String(d.getFullYear()),
+      month: searchParams.get("month") || saved?.month || String(d.getMonth() + 1),
+      account_id: searchParams.get("account_id") || "",
+    };
+  });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
@@ -56,6 +64,7 @@ export default function Transactions() {
       description: "",
       notes: "",
       status: "paid",
+      repeat: "none",
     };
   }
 
@@ -74,15 +83,24 @@ export default function Transactions() {
   // React to URL changes (when user navigates from another page like Dashboard)
   const sp = searchParams.toString();
   useEffect(() => {
+    const saved = readSavedPeriod();
+    const d = new Date();
     setFilter({
       status: searchParams.get("status") || "",
       type: searchParams.get("type") || "",
       category_id: searchParams.get("category_id") || "",
-      year: searchParams.get("year") || "",
-      month: searchParams.get("month") || "",
+      year: searchParams.get("year") || saved?.year || String(d.getFullYear()),
+      month: searchParams.get("month") || saved?.month || String(d.getMonth() + 1),
       account_id: searchParams.get("account_id") || "",
     });
   }, [sp]);
+
+  // Persist last month/year selection so it is kept across navigation
+  useEffect(() => {
+    if (filter.year && filter.month) {
+      try { localStorage.setItem(PERIOD_KEY, JSON.stringify({ year: filter.year, month: filter.month })); } catch (_) {}
+    }
+  }, [filter.year, filter.month]);
 
   const clearFilters = () => {
     setFilter({ status: "", type: "", category_id: "", year: "", month: "", account_id: "" });
@@ -107,6 +125,23 @@ export default function Transactions() {
   const submit = async (e) => {
     e.preventDefault();
     try {
+      // Recurring payment created straight from Lançamentos
+      if (!editing && form.repeat && form.repeat !== "none" && form.type !== "transfer") {
+        await api.post("/recurrences", {
+          type: form.type,
+          amount: parseFloat(form.amount) || 0,
+          category_id: form.category_id || null,
+          account_id: form.account_id || null,
+          payment_method: form.payment_method || null,
+          description: form.description,
+          frequency: form.repeat,
+          next_run: form.date,
+          active: true,
+        });
+        toast.success("Pagamento recorrente criado");
+        setOpen(false); setEditing(null); setForm(defaultForm()); load();
+        return;
+      }
       const body = {
         ...form,
         amount: parseFloat(form.amount),
@@ -314,6 +349,25 @@ export default function Transactions() {
                   <Input value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}
                     placeholder="Ex: Cartão de crédito" data-testid="tx-payment-input" />
                 </div>
+                {!editing && form.type !== "transfer" && (
+                <div className="col-span-2">
+                  <Label>Repetir (pagamento recorrente)</Label>
+                  <Select value={form.repeat} onValueChange={(v) => setForm({ ...form, repeat: v })}>
+                    <SelectTrigger data-testid="tx-repeat-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Não repetir</SelectItem>
+                      <SelectItem value="weekly">Semanal</SelectItem>
+                      <SelectItem value="monthly">Mensal</SelectItem>
+                      <SelectItem value="quarterly">Trimestral</SelectItem>
+                      <SelectItem value="semiannual">Semestral</SelectItem>
+                      <SelectItem value="yearly">Anual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {form.repeat !== "none" && (
+                    <p className="text-xs text-[#6B7068] mt-1">Cria uma recorrência a partir desta data. Gerencie em Recorrências.</p>
+                  )}
+                </div>
+                )}
                 <div className="col-span-2">
                   <Label>Descrição</Label>
                   <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} data-testid="tx-description-input" />
@@ -332,52 +386,76 @@ export default function Transactions() {
         </div>
       </div>
 
-      <div className="card-soft p-4">
-        <div className="flex flex-wrap gap-3 items-center">
-          <select value={filter.type} onChange={e => setFilter({ ...filter, type: e.target.value })}
-            data-testid="filter-type" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todos os tipos</option>
-            <option value="income">Receita</option>
-            <option value="expense">Despesa</option>
-            <option value="transfer">Transferência</option>
-          </select>
-          <select value={filter.status} onChange={e => setFilter({ ...filter, status: e.target.value })}
-            data-testid="filter-status" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todos status</option>
-            <option value="paid">Pago</option>
-            <option value="pending">Pendente</option>
-            <option value="cancelled">Cancelado</option>
-          </select>
-          <select value={filter.category_id} onChange={e => setFilter({ ...filter, category_id: e.target.value })}
-            data-testid="filter-category" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todas categorias</option>
-            {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={filter.month} onChange={e => setFilter({ ...filter, month: e.target.value, year: e.target.value && !filter.year ? String(now.getFullYear()) : filter.year })}
-            data-testid="filter-month" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todos os meses</option>
-            {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-          </select>
-          <select value={filter.year} onChange={e => setFilter({ ...filter, year: e.target.value })}
-            data-testid="filter-year" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todos os anos</option>
-            {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <select value={filter.account_id} onChange={e => setFilter({ ...filter, account_id: e.target.value })}
-            data-testid="filter-account" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todas as contas</option>
-            {accs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+      <div className="card-soft p-4 md:p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
+            <SlidersHorizontal size={16} />
+            <span className="text-xs uppercase font-medium tracking-[0.06em]">Filtros</span>
+          </div>
           {hasActiveFilters && (
             <button
               type="button"
               onClick={clearFilters}
               data-testid="clear-filters-btn"
-              className="text-sm text-[#1E3F33] hover:text-[#D9453B] underline px-2 py-2"
+              className="inline-flex items-center gap-1 text-xs font-medium text-[#6B7068] hover:text-[#D9453B] rounded-lg px-2.5 py-1.5 hover:bg-rose-50 transition-colors"
             >
-              Limpar filtros
+              <X size={14} /> Limpar
             </button>
           )}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Tipo</label>
+            <select value={filter.type} onChange={e => setFilter({ ...filter, type: e.target.value })}
+              data-testid="filter-type" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todos</option>
+              <option value="income">Receita</option>
+              <option value="expense">Despesa</option>
+              <option value="transfer">Transferência</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Status</label>
+            <select value={filter.status} onChange={e => setFilter({ ...filter, status: e.target.value })}
+              data-testid="filter-status" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todos</option>
+              <option value="paid">Pago</option>
+              <option value="pending">Pendente</option>
+              <option value="cancelled">Cancelado</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Categoria</label>
+            <select value={filter.category_id} onChange={e => setFilter({ ...filter, category_id: e.target.value })}
+              data-testid="filter-category" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todas</option>
+              {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Mês</label>
+            <select value={filter.month} onChange={e => setFilter({ ...filter, month: e.target.value, year: e.target.value && !filter.year ? String(now.getFullYear()) : filter.year })}
+              data-testid="filter-month" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todos</option>
+              {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Ano</label>
+            <select value={filter.year} onChange={e => setFilter({ ...filter, year: e.target.value })}
+              data-testid="filter-year" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todos</option>
+              {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Carteira</label>
+            <select value={filter.account_id} onChange={e => setFilter({ ...filter, account_id: e.target.value })}
+              data-testid="filter-account" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todas</option>
+              {accs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 

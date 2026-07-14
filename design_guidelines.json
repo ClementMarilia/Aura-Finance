@@ -1,116 +1,125 @@
 {
-  "theme_archetype": "1 (Organic & Earthy)",
-  "theme_mode": "LIGHT",
-  "domain": "Finance, Personal & Shared Financial Control",
+  "theme": "Premium Minimalist Finance",
+  "archetype": "Organic & Earthy mixed with Luxury",
   "typography": {
     "headings": {
-      "font_family": "Outfit",
-      "weight_strategy": "Medium to Bold",
-      "tracking": "tracking-tight",
-      "forbidden": [
-        "Inter",
-        "Roboto",
-        "Open Sans"
-      ]
+      "family": "Outfit",
+      "weights": ["300", "400", "500"],
+      "usage": "Use tight letter spacing (tracking-tight or tracking-tighter). Avoid bold/black for a more elegant, editorial look. Use font-light (300) for massive numbers, font-medium (500) for card titles.",
+      "sizes": {
+        "h1": "text-4xl sm:text-5xl lg:text-5xl tracking-tighter",
+        "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight",
+        "h3": "text-xl sm:text-2xl",
+        "h4": "text-lg sm:text-xl"
+      }
     },
     "body": {
-      "font_family": "IBM Plex Sans",
-      "weight_strategy": "Regular",
-      "tracking": "tracking-normal"
-    },
-    "hierarchy": {
-      "h1": "text-4xl sm:text-5xl",
-      "h2": "text-2xl sm:text-3xl",
-      "h3": "text-xl sm:text-2xl",
-      "h4": "text-lg sm:text-xl",
-      "body": "text-base",
-      "small": "text-sm"
+      "family": "Manrope",
+      "usage": "Extremely crisp geometric font, perfect for dense financial data and numbers. Use tabular-nums for tables and balances.",
+      "sizes": {
+        "default": "text-sm sm:text-base text-muted-foreground",
+        "small_labels": "text-xs tracking-[0.05em] uppercase text-muted-foreground font-medium"
+      }
     }
   },
   "colors": {
-    "background": "#F9F8F6",
-    "surface": "#FFFFFF",
-    "surface_muted": "#F1EFE7",
-    "primary": "#1E3F33",
-    "primary_hover": "#2C5C4A",
-    "secondary": "#D96C5B",
-    "secondary_hover": "#C25848",
-    "text_main": "#1A1C1A",
-    "text_muted": "#6B7068",
-    "border": "#E5E4E0",
-    "status": {
-      "success": "#2C7A51",
-      "warning": "#E5A83B",
-      "danger": "#D9453B",
-      "info": "#3B82F6"
+    "light": {
+      "background": "43 27% 96%",
+      "foreground": "153 10% 12%",
+      "card": "0 0% 100%",
+      "card-foreground": "153 10% 12%",
+      "popover": "0 0% 100%",
+      "popover-foreground": "153 10% 12%",
+      "primary": "154 46% 16%",
+      "primary-foreground": "43 27% 96%",
+      "secondary": "43 15% 90%",
+      "secondary-foreground": "154 46% 16%",
+      "muted": "43 15% 92%",
+      "muted-foreground": "153 6% 45%",
+      "accent": "152 41% 92%",
+      "accent-foreground": "154 46% 16%",
+      "border": "153 10% 90%",
+      "input": "153 10% 90%",
+      "ring": "154 46% 16%",
+      "success": "142 71% 45%",
+      "warning": "38 92% 50%",
+      "danger": "0 84% 60%"
     },
-    "chart_palette": [
-      "#1E3F33",
-      "#D96C5B",
-      "#E5A83B",
-      "#7EA193",
-      "#C7BCA1"
-    ]
+    "dark": {
+      "background": "150 14% 4%",
+      "foreground": "43 27% 92%",
+      "card": "150 14% 7%",
+      "card-foreground": "43 27% 92%",
+      "popover": "150 14% 7%",
+      "popover-foreground": "43 27% 92%",
+      "primary": "152 41% 60%",
+      "primary-foreground": "150 14% 4%",
+      "secondary": "150 14% 12%",
+      "secondary-foreground": "43 27% 92%",
+      "muted": "150 14% 10%",
+      "muted-foreground": "150 10% 60%",
+      "accent": "152 41% 20%",
+      "accent-foreground": "152 41% 90%",
+      "border": "150 14% 14%",
+      "input": "150 14% 14%",
+      "ring": "152 41% 60%",
+      "success": "142 60% 45%",
+      "warning": "38 92% 50%",
+      "danger": "0 70% 55%"
+    }
   },
-  "spacing_and_layout": {
-    "philosophy": "Generous Spacing, Calm UI. No walls of data.",
-    "container_padding": "p-6 md:p-8",
-    "grid_strategy": "Control Room Grid for Dashboard (grid-cols-1 md:grid-cols-3 lg:grid-cols-4) with gap-6.",
-    "alignment": "Left-align for numbers, tables, and dense data. Center only for empty states or hero headers."
+  "charts_palette": {
+    "light": ["#163A2B", "#2D6A4F", "#52B788", "#95D5B2", "#D8F3DC"],
+    "dark": ["#6FB597", "#4A8F73", "#2D6A4F", "#1B4332", "#081C15"],
+    "guidance": "Use Recharts. Minimalist axes (no grid lines or very faint stroke-dasharray). Use standard solid colors avoiding heavy gradients. Maintain high contrast for data lines/bars."
+  },
+  "surfaces_and_shadows": {
+    "cards": "Flat background. Light mode: subtle 1px border (border-black/5), no default shadow. Hover state: subtle lift (-translate-y-0.5) and soft shadow (shadow-sm). Dark mode: 1px border (border-white/5), flat.",
+    "headers": "MUST use Glassmorphism to prevent text clash when scrolling. Light: bg-white/70 backdrop-blur-xl border-b border-black/5. Dark: bg-black/60 backdrop-blur-xl border-b border-white/5. NEVER use completely transparent backgrounds.",
+    "modals": "Use Shadcn Dialog/Sheet. Ensure generous padding (p-8) and close buttons are subtly placed.",
+    "border_radius": "Subtle roundness. Use rounded-xl for main cards, rounded-lg for inner elements/buttons. Avoid extreme pill shapes except for status badges."
+  },
+  "layouts": {
+    "dashboard_grid": "Bento Grid Strategy. Use grid-cols-1 md:grid-cols-3 lg:grid-cols-4. Gap strategy: gap-6. Hero balance card spans col-span-full md:col-span-2. Use generous internal padding for cards (p-6 or p-8).",
+    "spacing_scale": "Use 2-3x more spacing than default. Emphasize whitespace. Use py-12 to py-20 between major sections.",
+    "mobile_first": "Always start with flex-col or grid-cols-1. Ensure tables are wrapped in a horizontally scrollable container."
   },
   "components": {
-    "cards": {
-      "style": "Flat, solid background, 1px border (border-[#E5E4E0]), rounded-2xl. No heavy drop shadows.",
-      "hover_state": "Slight lift (-translate-y-1) and subtle shadow (shadow-md) for interactive cards."
-    },
-    "buttons": {
-      "primary": "Solid #1E3F33 background, white text, rounded-xl.",
-      "secondary": "Outline border-[#E5E4E0], text-[#1A1C1A], hover:bg-[#F1EFE7]",
-      "interaction": "Scale down slightly on active (active:scale-95)."
-    },
-    "inputs_and_forms": {
-      "style": "Shadcn defaults customized with rounded-lg, border-[#E5E4E0], focus:ring-2 focus:ring-[#1E3F33].",
-      "labels": "text-sm font-medium text-[#1A1C1A] mb-1.5"
-    },
-    "tables": {
-      "style": "Clean, row borders only (border-b), ample cell padding (py-3 px-4). Status pills for 'Pago/Pendente'."
-    },
-    "navigation": {
-      "sidebar": "Left sidebar on desktop, bottom tab bar on mobile. Active states indicated by #1E3F33 text and background tint."
-    }
+    "buttons": "Premium minimal. Primary: Solid dark green (light mode) / Soft jade (dark mode). Secondary: Outline with transparent background, hover state with subtle tinted gray.",
+    "tables": "Shadcn Table. Remove vertical borders. Subtly tinted row hover state. Align numeric data to the right using tabular-nums.",
+    "forms": "Shadcn form components. Inputs must have clear focus states (ring-2) with primary color. Labels must be small, uppercase, and slightly muted."
   },
-  "motion_and_interaction": {
-    "transitions": "transition-all duration-200 ease-in-out",
-    "loading": "Skeleton loaders (animate-pulse) with #F1EFE7 background.",
-    "modals": "Fade in with scale (opacity-0 scale-95 to opacity-100 scale-100)."
+  "interactions_and_motion": {
+    "hover": "All clickable elements must have a distinct hover state. Text colors on hover must be explicitly defined (e.g. hover:text-primary).",
+    "transitions": "Use specific properties (e.g., transition-colors duration-200), NEVER use 'transition-all'.",
+    "active": "Use active:scale-95 for buttons to provide tactile feedback."
   },
-  "icons_and_assets": {
-    "icon_library": "lucide-react",
-    "icon_style": "Outline, stroke-width 2, sizes 16px to 24px."
+  "accessibility": {
+    "contrast": "Ensure APCA/WCAG AA compliance. Check text over colored backgrounds.",
+    "testing": "All interactive and key informational elements MUST include a data-testid attribute (e.g., data-testid='hero-balance', data-testid='transaction-filter').",
+    "focus": "Maintain clear focus rings (focus:ring-2 focus:ring-offset-2) for keyboard navigation."
   },
-  "media_and_images": {
-    "login_hero": {
-      "url": "https://images.pexels.com/photos/3184178/pexels-photo-3184178.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-      "description": "Friends dining and sharing together, used for the login/registration split-screen layout to convey shared expenses and trust."
-    },
-    "texture_background": {
-      "url": "https://images.pexels.com/photos/10487257/pexels-photo-10487257.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-      "description": "Abstract sand texture used sparingly with low opacity (e.g., 5%) as a background layer for onboarding screens to add tactile warmth."
-    }
+  "instructions_to_main_agent": {
+    "file_type": "Ensure all components and pages are built as .js files, NOT .tsx.",
+    "mobile_menu_fix": "Currently mobile menu hides options. Fix: Implement a bottom tab navigation for 3-4 primary routes, and a 'More' (Mais) button that opens a Shadcn Drawer or Sheet to display the remaining navigation links.",
+    "feature_payments": "Add 'Semestral' and 'Trimestral' options to the recurrences/installments payment frequency dropdowns.",
+    "feature_month_selector": "Update the month selector logic: Lock/hide the month display if no month is actively selected, and persist/maintain the last selected month in the state (use localStorage or URL search params for persistence).",
+    "ui_library": "Use Shadcn/UI for complex interactive components (Dialog, Select, Table, Drawer/Sheet) and customize them using the provided CSS variables."
   },
-  "specific_instructions_for_agent": [
-    "Language MUST be Portuguese (pt-BR).",
-    "Default currency MUST be EUR (€).",
-    "Dashboard must lead with a Single-Metric Focus (e.g., 'Saldo Atual') in the top-left quadrant before showing the 50/20/10/10/10 breakdown or charts.",
-    "Implement the 50/20/10/10/10 budget rule using visual progress bars with the chart_palette colors.",
-    "For shared groups (Casa, Viagem), use the secondary color (#D96C5B) or a distinct palette color to differentiate from personal finances.",
-    "All interactive elements MUST have data-testid attributes formatted in kebab-case (e.g., data-testid='login-submit-button').",
-    "Never use transparent backgrounds over images without a backdrop-blur and a tinted overlay.",
-    "Avoid glassmorphism. Financial apps require solid, trustworthy surfaces.",
-    "Use Shadcn UI for all complex interactive elements (Select, Dialog, Tabs, Calendar) and recharts for visualizations.",
-    "Follow 'Mobile First' strictly. Ensure tables can scroll horizontally on mobile.",
-    "CRITICAL: Generate `.js` and `.jsx` files only. Do not use `.tsx` or TypeScript.",
-    "CRITICAL: Always explicitely set hover text colors when setting hover background colors to maintain accessibility.",
-    "Do not use walls of data; heavily employ progressive disclosure."
+  "GENERAL_UI_UX_DESIGN_GUIDELINES": [
+    "Prioritize optical alignment over strict geometric alignment.",
+    "Never use generic AI icons. Use lucide-react or @phosphor-icons/react for premium minimalist icons.",
+    "Use layered shadows (ambient + direct) where shadow is permitted, but lean towards crisp 1px borders for the minimalist feel.",
+    "Nested radii: Child border radius should be equal to or less than parent radius to maintain concentricity.",
+    "Design for realistic data (handle long names, zero balances gracefully)."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Do not build generic centered layouts or simplistic gradients.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "NEVER apply universal transition ('transition: all'). This breaks transforms.",
+    "NEVER center align the app container (.App { text-align: center; }).",
+    "Use sonner for toasts, located in /app/src/components/ui/sonner.js",
+    "Ensure glass-morphism effects use backdrop filters (backdrop-blur-xl) and an explicit background color with opacity, never completely transparent.",
+    "Use real text/data, NEVER placeholder text."
   ]
 }

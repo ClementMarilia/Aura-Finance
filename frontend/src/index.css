@@ -2,10 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
 
 :root {
-  --bg: #F9F8F6;
+  --bg: #F7F5EF;
   --surface: #FFFFFF;
   --surface-muted: #F1EFE7;
   --surface-elevated: #FFFFFF;
@@ -13,26 +13,26 @@
   --primary-hover: #2C5C4A;
   --primary-fg: #6FB597;
   --secondary: #D96C5B;
-  --text-main: #1A1C1A;
+  --text-main: #16201A;
   --text-muted: #6B7068;
-  --border: #E5E4E0;
+  --border: #EAE7DE;
   --success: #2C7A51;
   --warning: #E5A83B;
   --danger: #D9453B;
 }
 
 html.dark {
-  --bg: #0F1311;
-  --surface: #1A1F1B;
-  --surface-muted: #232A26;
-  --surface-elevated: #20261F;
+  --bg: #0A0E0C;
+  --surface: #121815;
+  --surface-muted: #1A211D;
+  --surface-elevated: #161C18;
   --primary: #6FB597;
   --primary-hover: #8AC9B0;
-  --primary-fg: #0F1311;
+  --primary-fg: #0A0E0C;
   --secondary: #E48A78;
   --text-main: #ECEEEA;
   --text-muted: #9CA29C;
-  --border: #2A3128;
+  --border: #232A26;
   --success: #4FD49B;
   --warning: #F1B85A;
   --danger: #F26B61;
@@ -40,57 +40,57 @@ html.dark {
 
 @layer base {
   :root {
-    --background: 42 25% 97%;
-    --foreground: 90 5% 11%;
+    --background: 43 27% 96%;
+    --foreground: 153 10% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 90 5% 11%;
+    --card-foreground: 153 10% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 90 5% 11%;
-    --primary: 158 35% 18%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 42 30% 92%;
-    --secondary-foreground: 158 35% 18%;
-    --muted: 42 30% 92%;
-    --muted-foreground: 90 4% 42%;
-    --accent: 42 30% 92%;
-    --accent-foreground: 158 35% 18%;
-    --destructive: 3 67% 54%;
+    --popover-foreground: 153 10% 12%;
+    --primary: 154 46% 16%;
+    --primary-foreground: 43 27% 96%;
+    --secondary: 43 15% 90%;
+    --secondary-foreground: 154 46% 16%;
+    --muted: 43 15% 92%;
+    --muted-foreground: 153 6% 45%;
+    --accent: 152 41% 92%;
+    --accent-foreground: 154 46% 16%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 42 14% 89%;
-    --input: 42 14% 89%;
-    --ring: 158 35% 18%;
-    --chart-1: 158 35% 18%;
-    --chart-2: 8 63% 60%;
-    --chart-3: 39 75% 56%;
-    --chart-4: 153 16% 56%;
+    --border: 153 10% 90%;
+    --input: 153 10% 90%;
+    --ring: 154 46% 16%;
+    --chart-1: 158 40% 16%;
+    --chart-2: 152 45% 30%;
+    --chart-3: 148 42% 52%;
+    --chart-4: 141 47% 71%;
     --chart-5: 40 27% 70%;
     --radius: 0.75rem;
   }
 
   html.dark {
-    --background: 132 11% 7%;
-    --foreground: 60 7% 92%;
-    --card: 138 8% 12%;
-    --card-foreground: 60 7% 92%;
-    --popover: 138 8% 12%;
-    --popover-foreground: 60 7% 92%;
-    --primary: 153 35% 57%;
-    --primary-foreground: 132 11% 7%;
-    --secondary: 138 8% 18%;
-    --secondary-foreground: 60 7% 92%;
-    --muted: 138 8% 18%;
-    --muted-foreground: 90 4% 62%;
-    --accent: 138 8% 22%;
-    --accent-foreground: 60 7% 92%;
-    --destructive: 3 80% 60%;
-    --destructive-foreground: 60 7% 92%;
-    --border: 138 8% 18%;
-    --input: 138 8% 18%;
-    --ring: 153 35% 57%;
-    --chart-1: 153 35% 57%;
-    --chart-2: 8 70% 65%;
-    --chart-3: 39 80% 60%;
-    --chart-4: 153 20% 60%;
+    --background: 150 14% 4%;
+    --foreground: 43 27% 92%;
+    --card: 150 14% 7%;
+    --card-foreground: 43 27% 92%;
+    --popover: 150 14% 7%;
+    --popover-foreground: 43 27% 92%;
+    --primary: 152 41% 60%;
+    --primary-foreground: 150 14% 4%;
+    --secondary: 150 14% 12%;
+    --secondary-foreground: 43 27% 92%;
+    --muted: 150 14% 10%;
+    --muted-foreground: 150 10% 60%;
+    --accent: 152 41% 20%;
+    --accent-foreground: 152 41% 90%;
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 43 27% 92%;
+    --border: 150 14% 14%;
+    --input: 150 14% 14%;
+    --ring: 152 41% 60%;
+    --chart-1: 152 41% 60%;
+    --chart-2: 152 40% 45%;
+    --chart-3: 152 45% 30%;
+    --chart-4: 150 40% 22%;
     --chart-5: 40 30% 70%;
   }
 }
@@ -103,12 +103,13 @@ html.dark {
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
     transition: background-color 0.2s ease, color 0.2s ease;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Outfit', sans-serif;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
   }
 }
 
@@ -118,13 +119,15 @@ html.dark {
     background-color: var(--surface);
     border-color: var(--border);
     color: var(--text-main);
+    box-shadow: 0 1px 2px rgba(20, 32, 26, 0.03);
   }
   .stat-value {
-    @apply text-3xl font-semibold tracking-tight;
+    @apply text-3xl font-medium tracking-tight tabular-nums;
     font-family: 'Outfit', sans-serif;
   }
   .stat-label {
-    @apply text-sm;
+    @apply text-xs uppercase font-medium;
+    letter-spacing: 0.06em;
     color: var(--text-muted);
   }
   .pill {
@@ -260,3 +263,50 @@ html.dark [data-sonner-toaster] [data-sonner-toast] {
 html, body, .card-soft, button, input, select, textarea, [class*="border-"], [class*="bg-"] {
   transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
+
+/* ============================================================
+   PREMIUM POLISH — refino minimalista global (aditivo, não quebra nada)
+   ============================================================ */
+
+/* Números financeiros alinhados (colunas de valores e saldos) */
+td.text-right, .stat-value, .tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* Hover sutil nas linhas de tabela */
+table tbody tr { transition: background-color 0.15s ease; }
+table tbody tr:hover { background-color: color-mix(in srgb, var(--surface-muted) 55%, transparent); }
+
+/* Foco premium em campos de formulário e selects nativos */
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+/* Feedback tátil nos botões primários (verde) */
+.bg-\[\#1E3F33\]:not(:disabled) { transition: transform 0.12s ease, filter 0.18s ease, background-color 0.18s ease; }
+.bg-\[\#1E3F33\]:not(:disabled):active { transform: scale(0.98); }
+
+/* Cards com leve elevação no hover (quando a página adiciona a classe hover) */
+.card-soft { transition: box-shadow 0.2s ease, transform 0.2s ease, background-color 0.18s ease, border-color 0.18s ease; }
+
+/* Pills de status mais refinadas (borda sutil) */
+.pill { border: 1px solid transparent; letter-spacing: 0.01em; }
+.pill-paid { border-color: color-mix(in srgb, var(--success) 30%, transparent); }
+.pill-pending { border-color: color-mix(in srgb, var(--warning) 35%, transparent); }
+
+/* Cabeçalho de tabela em caixa alta discreta (premium) */
+table thead th { font-weight: 500; letter-spacing: 0.04em; }
+
+/* Scrollbar minimalista */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9999px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Animação de entrada das telas de autenticação */
+@keyframes auth-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.auth-in { animation: auth-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .auth-in { animation: none; } }

@@ -18,16 +18,21 @@ function DeltaCard({ label, value, prev, curr, invert }) {
   const good = invert ? !up : up;
   const neutral = diff === 0;
   return (
-    <div className="card-soft">
-      <div className="text-sm text-[#6B7068]">{label}</div>
-      <div className="text-3xl font-semibold mt-1" style={{ fontFamily: "Outfit" }}>{fmtMoney(value, curr)}</div>
-      {!neutral && (
-        <div className={`mt-2 text-xs flex items-center gap-1 ${good ? "text-emerald-600" : "text-rose-600"}`}>
-          {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-          {pct}% vs ano anterior ({fmtMoney(prev, curr)})
+    <div className="card-soft hover:shadow-md hover:-translate-y-0.5 transition-[box-shadow,transform] duration-200">
+      <div className="stat-label">{label}</div>
+      <div className="text-3xl md:text-4xl font-light tracking-tight tabular-nums mt-2" style={{ fontFamily: "Outfit" }}>
+        {fmtMoney(value, curr)}
+      </div>
+      {neutral ? (
+        <div className="mt-3 text-xs text-[#6B7068]">igual ao ano anterior</div>
+      ) : (
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${good ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+            {up ? <TrendingUp size={12} /> : <TrendingDown size={12} />} {pct}%
+          </span>
+          <span className="text-xs text-[#6B7068]">vs {fmtMoney(prev, curr)} no ano anterior</span>
         </div>
       )}
-      {neutral && <div className="mt-2 text-xs text-[#6B7068]">igual ao ano anterior</div>}
     </div>
   );
 }
