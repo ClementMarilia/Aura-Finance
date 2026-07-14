@@ -1,0 +1,34 @@
+{
+  "summary": "Iteração 7: validada a feature 'parcelamentos recolhíveis + lançamentos só do mês + atrasadas + pagar in-line'. Backend pytest 3/3 PASSED (test_installments_collapse.py). UI Playwright 100% verde via conta wendy@demo.com: card de Parcelamentos vem RECOLHIDO mostrando 'Próxima: Parcela 1/6 · € 100,00 · vence 10/04/2026 · faltam 6'; clique no purchase-toggle expande para 6 botões installment-* e esconde o purchase-summary; clique novamente colapsa. Em /lancamentos com filter-year=2026 e filter-month=6, somente as parcelas 1/6, 2/6 e 3/6 aparecem (badges 'Parcela' com data-testid tx-installment-badge-*); 4/6, 5/6 e 6/6 estão escondidas (futuras). 1/6 e 2/6 mostram selo 'Atrasada' (tx-overdue-badge-*); 3/6 não. O botão tx-installment-pay-{id} marca a 1/6 como paga (POST /api/installments/{id}/pay), exibe toast 'Parcela paga', remove a linha da lista, e a API confirma status='paid'. Recorrente 'Aluguel' continua exibindo selo 'Recorrente' (regressão OK). Dashboard installments_month_total reflete +100 ao criar 6x €600 começando em abril. Cleanup completo (purchase deletado, listagem zerada). TEST_phone pré-existente da iter_6 NÃO está mais presente — limpo previamente.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "WebSocket /api/ws/notifications", "issues": ["Warning persistente 'WebSocket closed before connection established' (já reportado iter_3-6, não bloqueia)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_installments_collapse.py",
+    "/app/test_reports/pytest/installments_collapse.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py list_transactions (linha 481-510): a query mescla parcelas pendentes < vstart via $or, mas se status filter='paid' for usado, a cláusula 'pending' do $or não é aplicada via Mongo — o filtro 'status' é re-aplicado em Python (linha 487). Funciona, mas é gasto desnecessário (puxa pendentes para descartá-las). Recomendar incorporar status no $or quando filtrado.",
+    "server.py /installments/{iid}/pay (linhas 782-794): marca paid mas não emite notificação/WS de 'parcela paga' (a recorrência tem 'Recorrente' badge e o painel atualiza, mas usuário em outra aba não vê). Considerar emitir notificação via WS para consistência com outros eventos.",
+    "Transactions.jsx (linhas 351-390): o selo 'Atrasada' aparece em vermelho, mas a linha em si não tem destaque (background) — para acessibilidade/scan visual rápido considere aplicar borda/bg sutil quando overdue=true.",
+    "Installments.jsx (linha 124): const remaining = p.installments - paid; — funciona, mas para uma compra com TODAS pagas o resumo cai para 'Tudo pago! 🎉' sem mostrar 'Próxima'. OK, mas o card permanece collapsable mesmo sem parcelas pendentes — vale considerar expandir-by-default ou ocultar a seta quando tudo pago.",
+    "Installments.jsx (linha 132 botão purchase-toggle): o botão envolve o cabeçalho mas os ícones Pencil/Trash (linhas 149-154) ficam fora — boa separação. Sem issue.",
+    "Endpoint POST /api/installments/{iid}/pay é idempotente? Re-paying a já paga retorna 200 mas só re-executa update — testar duplo clique não causa erro mas não há toggle reverso (não pode reverter via /transactions, somente via /parcelamentos togglePay). Coerente com o intent (Lançamentos só confirma, não desconfirma)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_installments_collapse.py"
+  ],
+  "success_rate": {"backend": "100% (3/3)", "frontend": "100% (18/18 asserções no Playwright)"},
+  "test_credentials": "wendy@demo.com / demo123",
+  "seed_data_creation": "Criado e DELETADO: 1 purchase TEST_UI_COLLAPSE (6x €600 começando 2026-04-10) via UI Playwright; e 3 purchases TEST_COLLAPSE_* / TEST_COLLAPSE_PAY_* / TEST_COLLAPSE_DASH_* via pytest, todos limpos no finally. Verificado via API: GET /api/installments/purchases retorna lista vazia ao fim.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Use load_dotenv('/app/frontend/.env') no topo dos pytests (REACT_APP_BACKEND_URL não está no ambiente padrão). O endpoint /api/installments/purchases aceita 'first_date' (não 'start_date'). No Playwright, after-login URL é '/' (Painel) — não use wait_for_url('**/dashboard**'). Filter selects em /lancamentos: filter-month aceita string '6' (não '06'); filter-year aceita '2026'. Para confirmar pagamento via UI use o botão tx-installment-pay-{installment_id} — registra page.on('dialog', ...) ANTES do click se houver confirm (não há atualmente, mas o toast aparece 'Parcela paga').",
+  "rca_of_the_issue": "Não é fix — é validação. Backend (server.py list_transactions linhas 474-510) já mescla parcelas só do mês visualizado + pendentes atrasadas via $or com {due_date<vstart, status:pending}, marcando overdue=true. Frontend Installments.jsx usa state expanded{} controlado por purchase-toggle-{id} e renderiza purchase-summary-{id} apenas quando !isOpen. Transactions.jsx renderiza tx-installment-badge / tx-overdue-badge / tx-installment-pay-{id} para t.source==='installment'. Tudo end-to-end validado em produção."
+}

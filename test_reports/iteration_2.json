@@ -1,0 +1,39 @@
+{
+  "summary": "Onda 4 (exportação CSV/PDF, YoY annual, projeção, insights, Metas CRUD) totalmente verificada. Backend: 9 novos testes pytest passam (21/22 total — única falha é pré-existente em test_settlements_wendy_creditor por poluição de seed de rodadas anteriores, não relacionada à Onda 4). Frontend: login wendy@demo.com OK, Painel mostra insights ('Taxa de poupança 58.8% / € 1470,00' e 'Maior categoria: Moradia 82.5%') e Projeção (média mensal € 245,00, 6 pontos). Relatórios mostra '100% vs ano anterior' nos 3 cards, gráfico com barra 'Despesa 2025', botões CSV e PDF clicáveis sem JS error. Metas: criar (TEST_Meta_E2E € 100/€ 1000), aportar (toast '€ 50,00 adicionado à meta' confirma update), editar/excluir buttons presentes, dialog de confirmação aparece. Lançamentos: tx-export-csv presente e clicável sem JS error.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/settlements (test_settlements_wendy_creditor)", "issue": "Teste pré-existente falha pois rodadas anteriores poluíram dados demo de Wendy (nets agora -25/104 em vez de 74). Não é bug de código, é poluição de seed. Para resetar: limpar coleção shared_expenses ou usuários demo e reiniciar backend com SEED_DEMO=true."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard/Reports charts", "issues": ["Avisos cosméticos do Recharts (width(-1)/height(-1)) na montagem inicial - ResponsiveContainer; já reportado na iteração 1."]},
+      {"screen": "Goals/Reports DialogContent", "issues": ["Aviso a11y do Radix: 'Missing Description or aria-describedby' nos Dialogs (Goals e PDF). Cosmético/acessibilidade — não bloqueia uso."]},
+      {"screen": "WebSocket /api/ws/notifications", "issues": ["Aviso 'WebSocket is closed before the connection is established' aparece esporadicamente. Já reportado em rodadas anteriores; não afeta funcionalidade."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_backend.py", "/app/test_reports/pytest/results.xml"],
+  "action_items": [
+    "(Opcional) Adicionar DialogDescription/aria-describedby aos DialogContent em Goals/Reports para silenciar warning de a11y.",
+    "(Opcional) Resetar/limpar dados demo entre runs ou ajustar test_settlements_wendy_creditor para tolerar poluição."
+  ],
+  "critical_code_review_comments": [
+    "POST /goals/{gid}/contribute aceita amount negativo — pode permitir 'desaportar' valor inadvertidamente. Considerar validação amount > 0.",
+    "PUT /goals/{gid} exige payload completo do GoalIn (todos campos required) — não há PATCH parcial. Aceitável mas restritivo se UI quiser editar 1 campo.",
+    "/reports/projection clampa months para [1,12] (bom). avg é média aritmética dos últimos 6 meses, inclui mês corrente parcial — pode subestimar/superestimar; comportamento documentado seria útil.",
+    "/reports/annual faz 24 queries seriais ao DB (12 do ano + 12 do anterior). Para muitos usuários/dados pode ficar lento; um único aggregate por ano com $group em mês resolveria.",
+    "Endpoint /insights usa cur_exp como denominador em 'share' sem verificar zero (linha 1302 já tem guarda 'else 0' ok). Mensagens em pt-BR consistentes.",
+    "Exportação CSV/PDF é 100% client-side (jsPDF/Blob) — confirmado que botões existem e clicks não geram JS error."
+  ],
+  "updated_files": ["/app/backend/tests/test_backend.py"],
+  "success_rate": {"backend": "100% nos 9 novos testes da Onda 4 (21/22 total — 1 falha pré-existente por poluição de dados)", "frontend": "100% nos fluxos da Onda 4 testados"},
+  "test_credentials": "wendy@demo.com / demo123, marilia@demo.com / demo123, nathalia@demo.com / demo123",
+  "seed_data_creation": "Criou e excluiu meta TEST_Meta_E2E via UI. Backend pytest cria/contribui/edita/exclui meta TEST_Viagem isoladamente.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest cobre Onda 1-4 (auth, transactions, installments, receivables, groups, shared-expenses, settlements, dashboard, change-password, reports/annual YoY, reports/projection, insights, goals CRUD+contribute). Rodar: pytest /app/backend/tests/test_backend.py -v. O teste test_settlements_wendy_creditor depende de seed limpo (Mercado €222 split 3 vias); se rodadas anteriores criaram despesas extras para Wendy, esse teste falha — não é bug.",
+  "rca_of_the_issue": "Não há bug aberto. Falha em test_settlements_wendy_creditor: RCA = dados demo poluídos por testes anteriores que criaram shared expenses adicionais envolvendo Wendy. Mitigação = drop das coleções e relogin do backend (SEED_DEMO=true) para recriar baseline, ou tornar o teste mais robusto verificando presença em vez de valor exato."
+}

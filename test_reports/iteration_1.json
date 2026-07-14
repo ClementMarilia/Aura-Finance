@@ -1,0 +1,36 @@
+{
+  "summary": "Full backend + frontend testing of Aurea Controle Financeiro app. All 13 backend pytest cases pass after fixing a MongoDB ObjectId serialization bug in POST /api/installments/purchases. Frontend login (demo-wendy), dashboard (Saldo €1.470,00 + all cards + evolution + category chart), Despesas Compartilhadas (Mercado €222, Marilia/Nathalia €74 each) and Acertos (Te deve €74,00 each) all render correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/installments/purchases", "issue": "Returned 500 due to ObjectId in insert_many-mutated docs being serialized. Fixed by popping _id from inst_docs after insert_many."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard charts", "issues": ["Recharts width(-1)/height(-1) warnings on initial mount - ResponsiveContainer parent likely has no explicit height before first paint. Cosmetic only, charts render correctly."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_backend.py", "/app/test_reports/pytest/results.xml"],
+  "action_items": [
+    "(Optional) Set minHeight on ResponsiveContainer parent divs to silence Recharts warnings.",
+    "Apply the same _id-after-insert_many pattern review to any other future bulk inserts."
+  ],
+  "critical_code_review_comments": [
+    "compute_splits uses round() per participant - rounding diff applied only to last entry on equal split (handled correctly: 222/3=74.0 exact).",
+    "Receivables toggle endpoint uses 'received' status while ReceivableIn defaults pending - consistent.",
+    "JWT secret is loaded from env (no hardcoded fallback) - good.",
+    "No password/min-length validation on register or change-password - may want to enforce min length 6+.",
+    "No rate limiting / brute force lockout on /api/auth/login (playbook mentions 5-fail lockout) - not implemented."
+  ],
+  "updated_files": ["/app/backend/server.py", "/app/backend/tests/test_backend.py"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% on all tested flows"},
+  "test_credentials": "wendy@demo.com / demo123, marilia@demo.com / demo123, nathalia@demo.com / demo123",
+  "seed_data_creation": "Used existing seed (Mercado €222 shared, Wendy personal txs: salary 2500, rent 850, transport 120, cinema 60 = balance 1470).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file at /app/backend/tests/test_backend.py covers auth, transactions privacy, installments, receivables, groups, shared-expenses, settlements, dashboard, change-password. Run with: pytest /app/backend/tests/test_backend.py -v. Installments 500 bug was fixed in server.py by removing _id from inst_docs after insert_many.",
+  "rca_of_the_issue": "POST /api/installments/purchases returned 500. RCA: motor's insert_many mutates input documents to inject ObjectId _id; FastAPI then failed to serialize ObjectId in the response. Fix: pop('_id', None) from each doc in inst_docs after insert_many before returning."
+}

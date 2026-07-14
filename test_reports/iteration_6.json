@@ -1,0 +1,36 @@
+{
+  "summary": "Validada a 'coerência cross-section' (iteração 6): (1) dashboard mensal soma parcelas + recorrências em expense/balance e expõe installments_month_total; (2) recebíveis escopados por mês (não vazam para outros meses); (3) /transactions mescla parcelas (source='installment', editable=false, descrição 'X (n/total)') e recorrências (source='recurrence'); (4) recorrências materializam ao visitar meses futuros; (5) fixed_monthly_expense continua sendo a média normalizada (regressão OK). Backend pytest 5/5 PASSED. UI Playwright: badges 'Parcela'/'Recorrente' renderizam, parcelas mostram 'vinculado' sem botões de editar/excluir, e cards do Painel exibem Despesa/Saldo (dashboard via API confirma expense=1410 / balance=1090 / installments_month_total=300 com os deltas esperados). Cleanup completo (parcelamento, recorrência e TX materializada removidos).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Lançamentos", "issues": ["Resíduo de iterações anteriores: linhas TEST_phone (1/3), (2/3), (3/3) em Jan/Fev/Mar 2026 visíveis na conta da Wendy — não criadas nesta iteração; convém limpar para não poluir a demo."]},
+      {"screen": "WebSocket /api/ws/notifications", "issues": ["Warning persistente 'WebSocket closed before connection established' (já reportado em iter_3/4/5)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_coherence.py",
+    "/app/test_reports/pytest/coherence.xml"
+  ],
+  "action_items": [
+    "Opcional: limpar resíduos TEST_phone (purchase_id correspondente) da conta wendy@demo.com — não bloqueia."
+  ],
+  "critical_code_review_comments": [
+    "server.py list_transactions (linhas 441-505): para cada chamada de /transactions com filtro mensal, dispara materialize_recurrences e ainda faz 2 queries adicionais (installments + installment_purchases). Combinado com o Dashboard.jsx que chama /dashboard + /transactions paralelamente, há 4 leituras pesadas a cada navegação de mês. Considerar cache em memória curto ou agrupar tudo em /dashboard.",
+    "server.py materialize_recurrences (linhas 626-654): segue sem lock atômico (apontado em iter_4/5). Com a nova lógica que materializa toda vez que o usuário visita meses futuros via /transactions OU /dashboard, o risco de TX duplicada sob concorrência aumenta. Recomendar índice único (user_id, recurrence_id, date) ou findOneAndUpdate atômico em next_run antes de inserir.",
+    "server.py dashboard (linha 1407): receivable_total usa due_date < end[:10] e inclui TUDO antes do fim do mês (incluindo vencidos de meses passados). Comportamento atual é 'mostra também atrasados' — está alinhado ao pedido ('inclui vencidos'), mas vale documentar no endpoint para evitar confusão futura (deveria existir um campo separado 'overdue_total'?).",
+    "list_transactions merge installments (linhas 474-502): se status filter='paid' for usado junto com category_id, a parcela atual usa pur.get('category_id') do purchase, mas o filtro Mongo aplicado em iq apenas verifica status — o filtro de category/account é feito em Python após. OK funcionalmente, mas a paginação implícita (.to_list(2000)) pode esconder parcelas se a coleção crescer. Considerar limitar parcels por purchase ou paginar.",
+    "Transactions.jsx (linha 368-369): linhas com t.editable===false mostram 'vinculado' mas não oferecem affordance para o usuário entender que precisa ir em /parcelamentos para alterar. Sugerir link/tooltip 'Editar em Parcelamentos'."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_coherence.py"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (7/7 verificações no Playwright)"},
+  "test_credentials": "wendy@demo.com / demo123",
+  "seed_data_creation": "Cada teste pytest e o Playwright criam dados com prefixo TEST_COH_ / TEST_UI_COH_ e removem no finally (parcelamento + recorrência + TX materializada). Confirmado via screenshot final e API. Pre-existente: TEST_phone (1/3,2/3,3/3) em Jan-Mar/2026 ainda presente na conta — não removido (não foi criado por mim).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_coherence.py compara DELTAS, então é seguro contra dados pré-existentes. Para rodar: `pytest backend/tests/test_coherence.py -v -o addopts=''` (o pytest.ini força xdist; o override evita race condition em testes que mexem no mesmo usuário). O fluxo Playwright usa fetch via page.evaluate (mesma origem) porque urllib externo recebia 403 de WAF/ingress; mantenha esse padrão para futuras chamadas de API a partir do navegador automatizado.",
+  "rca_of_the_issue": "Não é fix, é validação de feature. Backend: dashboard expense agora = transactions(expense) + sum(installments com due_date no mês) + recorrências já materializadas (via materialize_recurrences chamada com horizon=fim do mês visualizado). Receivables filtram por due_date < end_of_month (inclui vencidos). /transactions injeta parcelas como linhas virtuais (id=installment.id, source='installment', editable=false) e marca TX com recurrence_id como source='recurrence'. UI: Transactions.jsx mostra selos data-testid=tx-installment-badge-{id} e tx-recurrent-badge-{id}, e renderiza 'vinculado' (texto cinza itálico) no lugar dos botões edit/trash para t.editable===false. Tudo verificado em produção com a conta da Wendy."
+}
