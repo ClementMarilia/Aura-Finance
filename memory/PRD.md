@@ -143,3 +143,24 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - wendy@demo.com / demo123
 - marilia@demo.com / demo123
 - nathalia@demo.com / demo123
+
+---
+## Iteração — Melhorias Premium (Jun 2026, sessão de melhorias sobre app publicado)
+
+Código importado do GitHub (ClementMarilia/Aura-Finance) para o ambiente. Backend .env configurado com JWT_SECRET + SEED_DEMO=true. `yarn install` executado (jspdf/recharts/etc.).
+
+### Implementado (testado 100% backend+frontend, iteration_10.json)
+1. **Menu mobile completo**: barra inferior com 4 abas primárias + botão "Mais" (data-testid=mobile-nav-more) que abre um Sheet (mobile-more-sheet) com TODAS as telas + Perfil/Configurações/Sair. (Layout.jsx)
+2. **Frequências Trimestral + Semestral**: adicionadas em Recorrências e como opção "Repetir" no diálogo de Lançamentos. Backend: `_advance()` (+3/+6 meses), RecurrenceIn.frequency Literal, `_FREQ_FACTOR` do dashboard. (server.py, Recurrences.jsx, Transactions.jsx)
+3. **Somente mês selecionado**: GET /transactions aceita `include_carryover` (default True, preserva comportamento antigo); frontend envia `false` → esconde itens de carry-over/atrasados de outros meses. (server.py, Transactions.jsx)
+4. **Persistência do mês**: localStorage `aura_period` compartilhado entre Dashboard e Lançamentos. (Dashboard.jsx, Transactions.jsx)
+5. **Refresh premium/minimalista (claro+escuro)**: tipografia Outfit (headings, mais leve) + Manrope (corpo/dados, tabular-nums); paleta refinada (creme/verde profundo claro; obsidiana/jade escuro); headers com glassmorphism; cards e labels refinados. (index.css, ThemeContext.js, Layout.jsx)
+
+### Observações
+- Anexos/comprovantes usam Emergent Object Storage — NÃO configurado neste ambiente (sem EMERGENT_LLM_KEY); upload de comprovante pode falhar (pré-existente, fora de escopo).
+- Item LOW cosmético: data-testid do "Painel" é `*-home` (fallback) em vez de `*-painel` — não afeta funcionamento.
+
+### Backlog / Próximos
+- P2: alinhar testids `*-home` → `*-painel`.
+- P2: configurar EMERGENT_LLM_KEY para reativar anexos.
+- P2: aprofundar refino visual página a página (tabelas, badges) conforme design_guidelines.json.
