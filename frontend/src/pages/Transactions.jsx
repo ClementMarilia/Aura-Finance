@@ -16,6 +16,10 @@ import { exportCSV } from "@/lib/exporters";
 const STATUS_LABEL = { paid: "Pago", pending: "Pendente", cancelled: "Cancelado" };
 const TYPE_LABEL = { income: "Receita", expense: "Despesa", transfer: "Transferência" };
 const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const PERIOD_KEY = "aura_period";
+function readSavedPeriod() {
+  try { return JSON.parse(localStorage.getItem(PERIOD_KEY)) || null; } catch { return null; }
+}
 
 export default function Transactions() {
   const { user } = useAuth();
@@ -25,14 +29,18 @@ export default function Transactions() {
   const [accs, setAccs] = useState([]);
   const now = new Date();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [filter, setFilter] = useState(() => ({
-    status: searchParams.get("status") || "",
-    type: searchParams.get("type") || "",
-    category_id: searchParams.get("category_id") || "",
-    year: searchParams.get("year") || "",
-    month: searchParams.get("month") || "",
-    account_id: searchParams.get("account_id") || "",
-  }));
+  const [filter, setFilter] = useState(() => {
+    const saved = readSavedPeriod();
+    const d = new Date();
+    return {
+      status: searchParams.get("status") || "",
+      type: searchParams.get("type") || "",
+      category_id: searchParams.get("category_id") || "",
+      year: searchParams.get("year") || saved?.year || String(d.getFullYear()),
+      month: searchParams.get("month") || saved?.month || String(d.getMonth() + 1),
+      account_id: searchParams.get("account_id") || "",
+    };
+  });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
@@ -56,6 +64,7 @@ export default function Transactions() {
       description: "",
       notes: "",
       status: "paid",
+      repeat: "none",
     };
   }
 
@@ -74,15 +83,24 @@ export default function Transactions() {
   // React to URL changes (when user navigates from another page like Dashboard)
   const sp = searchParams.toString();
   useEffect(() => {
+    const saved = readSavedPeriod();
+    const d = new Date();
     setFilter({
       status: searchParams.get("status") || "",
       type: searchParams.get("type") || "",
       category_id: searchParams.get("category_id") || "",
-      year: searchParams.get("year") || "",
-      month: searchParams.get("month") || "",
+      year: searchParams.get("year") || saved?.year || String(d.getFullYear()),
+      month: searchParams.get("month") || saved?.month || String(d.getMonth() + 1),
       account_id: searchParams.get("account_id") || "",
     });
   }, [sp]);
+
+  // Persist last month/year selection so it is kept across navigation
+  useEffect(() => {
+    if (filter.year && filter.month) {
+      try { localStorage.setItem(PERIOD_KEY, JSON.stringify({ year: filter.year, month: filter.month })); } catch (_) {}
+    }
+  }, [filter.year, filter.month]);
 
   const clearFilters = () => {
     setFilter({ status: "", type: "", category_id: "", year: "", month: "", account_id: "" });
@@ -107,6 +125,23 @@ export default function Transactions() {
   const submit = async (e) => {
     e.preventDefault();
     try {
+      // Recurring payment created straight from Lançamentos
+      if (!editing && form.repeat && form.repeat !== "none" && form.type !== "transfer") {
+        await api.post("/recurrences", {
+          type: form.type,
+          amount: parseFloat(form.amount) || 0,
+          category_id: form.category_id || null,
+          account_id: form.account_id || null,
+          payment_method: form.payment_method || null,
+          description: form.description,
+          frequency: form.repeat,
+          next_run: form.date,
+          active: true,
+        });
+        toast.success("Pagamento recorrente criado");
+        setOpen(false); setEditing(null); setForm(defaultForm()); load();
+        return;
+      }
       const body = {
         ...form,
         amount: parseFloat(form.amount),
@@ -314,6 +349,25 @@ export default function Transactions() {
                   <Input value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}
                     placeholder="Ex: Cartão de crédito" data-testid="tx-payment-input" />
                 </div>
+                {!editing && form.type !== "transfer" && (
+                <div className="col-span-2">
+                  <Label>Repetir (pagamento recorrente)</Label>
+                  <Select value={form.repeat} onValueChange={(v) => setForm({ ...form, repeat: v })}>
+                    <SelectTrigger data-testid="tx-repeat-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Não repetir</SelectItem>
+                      <SelectItem value="weekly">Semanal</SelectItem>
+                      <SelectItem value="monthly">Mensal</SelectItem>
+                      <SelectItem value="quarterly">Trimestral</SelectItem>
+                      <SelectItem value="semiannual">Semestral</SelectItem>
+                      <SelectItem value="yearly">Anual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {form.repeat !== "none" && (
+                    <p className="text-xs text-[#6B7068] mt-1">Cria uma recorrência a partir desta data. Gerencie em Recorrências.</p>
+                  )}
+                </div>
+                )}
                 <div className="col-span-2">
                   <Label>Descrição</Label>
                   <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} data-testid="tx-description-input" />

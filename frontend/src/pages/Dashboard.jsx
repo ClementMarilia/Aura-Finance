@@ -22,8 +22,16 @@ export default function Dashboard() {
   const [accounts, setAccounts] = useState([]);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
+    try {
+      const saved = JSON.parse(localStorage.getItem("aura_period"));
+      if (saved?.year && saved?.month) return { year: +saved.year, month: +saved.month };
+    } catch (_) {}
     return { year: d.getFullYear(), month: d.getMonth() + 1 };
   });
+
+  useEffect(() => {
+    try { localStorage.setItem("aura_period", JSON.stringify({ year: period.year, month: period.month })); } catch (_) {}
+  }, [period.year, period.month]);
 
   useEffect(() => {
     api.get("/dashboard", { params: period }).then(r => setData(r.data));

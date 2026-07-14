@@ -24,7 +24,7 @@ function applyTheme(theme) {
   html.classList.toggle("dark", effective === "dark");
   // Atualiza theme-color do navegador (status bar PWA, barra do iOS)
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", effective === "dark" ? "#0F1311" : "#1E3F33");
+  if (meta) meta.setAttribute("content", effective === "dark" ? "#0A0E0C" : "#1E3F33");
   return effective;
 }
 

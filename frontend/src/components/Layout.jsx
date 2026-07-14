@@ -1,12 +1,16 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { useState } from "react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
   Users, FolderOpen, Scale, FileBarChart, Wallet, Bell, Target, Repeat, Settings,
+  Menu, UserCircle, LogOut,
 } from "lucide-react";
 import NotificationsBell from "@/components/NotificationsBell";
 import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
 import Logo from "@/components/Logo";
+import { useAuth } from "@/context/AuthContext";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "Painel", end: true },
@@ -24,13 +28,22 @@ const nav = [
   { to: "/notificacoes", icon: Bell, label: "Notificações" },
 ];
 
+// 4 primary destinations on the mobile bottom bar; everything else lives in "Mais"
+const primaryMobile = nav.slice(0, 4);
+
 export default function Layout() {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
   const linkCls = ({ isActive }) =>
-    `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 ${
+    `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors duration-200 ${
       isActive
         ? "bg-[#F1EFE7] text-[#1E3F33] font-medium"
         : "text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1E3F33]"
     }`;
+
+  const go = (to) => { setMoreOpen(false); navigate(to); };
 
   return (
     <div className="min-h-screen flex" style={{ background: "var(--bg)" }}>
@@ -52,18 +65,18 @@ export default function Layout() {
 
       {/* Main */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Desktop header — avatar/menu sempre visível no topo direito */}
-        <header className="hidden md:flex items-center justify-end gap-2 px-6 py-3 border-b"
-          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+        {/* Desktop header — glass, avatar/menu sempre visível no topo direito */}
+        <header className="hidden md:flex items-center justify-end gap-2 px-6 py-3 border-b sticky top-0 z-20 backdrop-blur-xl"
+          style={{ background: "color-mix(in srgb, var(--surface) 72%, transparent)", borderColor: "var(--border)" }}
           data-testid="desktop-header">
           <NotificationsBell />
           <ThemeToggle variant="icon" />
           <UserMenu />
         </header>
 
-        {/* Mobile header */}
-        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b"
-          style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+        {/* Mobile header — glass */}
+        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b sticky top-0 z-20 backdrop-blur-xl"
+          style={{ background: "color-mix(in srgb, var(--surface) 72%, transparent)", borderColor: "var(--border)" }}>
           <Logo variant="full" className="h-9 w-auto" />
           <div className="flex items-center gap-1">
             <NotificationsBell />
@@ -76,27 +89,59 @@ export default function Layout() {
           <Outlet />
         </div>
 
-        {/* Bottom mobile nav */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t flex justify-around py-2 z-30"
-          style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
-          {nav.slice(0, 5).map((n) => (
+        {/* Bottom mobile nav — 4 primary + Mais */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t flex justify-around py-2 z-30 backdrop-blur-xl"
+          style={{ background: "color-mix(in srgb, var(--surface) 88%, transparent)", borderColor: "var(--border)" }}>
+          {primaryMobile.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end}
-              className={({ isActive }) => `flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] ${
-                isActive ? "text-[#1E3F33]" : "text-[#6B7068]"
+              className={({ isActive }) => `flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] transition-colors ${
+                isActive ? "text-[#1E3F33] font-medium" : "text-[#6B7068]"
               }`}
               data-testid={`mobile-nav-${n.to.replace(/\//g, "") || "home"}`}>
               <n.icon size={18} />
               <span>{n.label.split(" ")[0]}</span>
             </NavLink>
           ))}
-          <NavLink to="/configuracoes"
-            className={({ isActive }) => `flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] ${
-              isActive ? "text-[#1E3F33]" : "text-[#6B7068]"
-            }`}>
-            <Settings size={18} />
+          <button
+            type="button"
+            onClick={() => setMoreOpen(true)}
+            data-testid="mobile-nav-more"
+            className="flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] text-[#6B7068] transition-colors">
+            <Menu size={18} />
             <span>Mais</span>
-          </NavLink>
+          </button>
         </nav>
+
+        {/* Full menu drawer (mobile) */}
+        <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+          <SheetContent side="right" className="w-[86%] max-w-sm overflow-y-auto p-0" data-testid="mobile-more-sheet">
+            <SheetHeader className="px-5 pt-5 pb-3">
+              <SheetTitle style={{ fontFamily: "Outfit" }}>Menu</SheetTitle>
+            </SheetHeader>
+            <nav className="flex flex-col gap-1 px-3 pb-4">
+              {nav.map((n) => (
+                <button key={n.to} onClick={() => go(n.to)} data-testid={`more-nav-${n.to.replace(/\//g, "") || "home"}`}
+                  className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#1E3F33] transition-colors">
+                  <n.icon size={18} className="text-[#6B7068]" />
+                  <span>{n.label}</span>
+                </button>
+              ))}
+              <div className="my-2 border-t" style={{ borderColor: "var(--border)" }} />
+              <button onClick={() => go("/perfil")} data-testid="more-nav-perfil"
+                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#1E3F33] transition-colors">
+                <UserCircle size={18} className="text-[#6B7068]" /> <span>Perfil</span>
+              </button>
+              <button onClick={() => go("/configuracoes")} data-testid="more-nav-configuracoes"
+                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#1E3F33] transition-colors">
+                <Settings size={18} className="text-[#6B7068]" /> <span>Configurações</span>
+              </button>
+              <button onClick={() => { setMoreOpen(false); logout(); }} data-testid="more-nav-logout"
+                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-rose-600 hover:bg-rose-50 transition-colors">
+                <LogOut size={18} /> <span>Sair</span>
+              </button>
+            </nav>
+          </SheetContent>
+        </Sheet>
       </main>
     </div>
   );
