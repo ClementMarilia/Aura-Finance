@@ -263,3 +263,42 @@ html.dark [data-sonner-toaster] [data-sonner-toast] {
 html, body, .card-soft, button, input, select, textarea, [class*="border-"], [class*="bg-"] {
   transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
+
+/* ============================================================
+   PREMIUM POLISH — refino minimalista global (aditivo, não quebra nada)
+   ============================================================ */
+
+/* Números financeiros alinhados (colunas de valores e saldos) */
+td.text-right, .stat-value, .tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* Hover sutil nas linhas de tabela */
+table tbody tr { transition: background-color 0.15s ease; }
+table tbody tr:hover { background-color: color-mix(in srgb, var(--surface-muted) 55%, transparent); }
+
+/* Foco premium em campos de formulário e selects nativos */
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+/* Feedback tátil nos botões primários (verde) */
+.bg-\[\#1E3F33\]:not(:disabled) { transition: transform 0.12s ease, filter 0.18s ease, background-color 0.18s ease; }
+.bg-\[\#1E3F33\]:not(:disabled):active { transform: scale(0.98); }
+
+/* Cards com leve elevação no hover (quando a página adiciona a classe hover) */
+.card-soft { transition: box-shadow 0.2s ease, transform 0.2s ease, background-color 0.18s ease, border-color 0.18s ease; }
+
+/* Pills de status mais refinadas (borda sutil) */
+.pill { border: 1px solid transparent; letter-spacing: 0.01em; }
+.pill-paid { border-color: color-mix(in srgb, var(--success) 30%, transparent); }
+.pill-pending { border-color: color-mix(in srgb, var(--warning) 35%, transparent); }
+
+/* Cabeçalho de tabela em caixa alta discreta (premium) */
+table thead th { font-weight: 500; letter-spacing: 0.04em; }
+
+/* Scrollbar minimalista */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9999px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }

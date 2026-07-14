@@ -164,3 +164,13 @@ Código importado do GitHub (ClementMarilia/Aura-Finance) para o ambiente. Backe
 - P2: alinhar testids `*-home` → `*-painel`.
 - P2: configurar EMERGENT_LLM_KEY para reativar anexos.
 - P2: aprofundar refino visual página a página (tabelas, badges) conforme design_guidelines.json.
+
+---
+## Iteração — Next Actions aplicadas (Jun 2026)
+
+- **Anexos/comprovantes ATIVADOS**: adicionado EMERGENT_LLM_KEY ao backend/.env → Emergent Object Storage inicializa ("Object storage initialized"). Upload de comprovante (JPG/PNG/WEBP/GIF/PDF) validado end-to-end via API (retorna file_id + path). IA NÃO implementada (usuário optou por não usar por enquanto).
+- **Refino visual premium (global, aditivo)** em index.css: números com tabular-nums (valores/saldos), hover sutil em linhas de tabela, foco premium (ring verde) em inputs/selects/textarea, feedback tátil (active:scale) nos botões primários, pills de status com borda sutil, cabeçalhos de tabela em peso 500 + tracking, scrollbar minimalista. Aplica-se a todas as telas (Lançamentos, Relatórios, Acertos, Carteiras, etc.).
+
+Backlog atualizado:
+- P2: alinhar testids `*-home` → `*-painel` (cosmético).
+- P2 (opcional): resumo mensal inteligente com IA no Painel (usuário adiar).
