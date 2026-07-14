@@ -182,3 +182,10 @@ Backlog atualizado:
 - **Cards de Relatórios (DeltaCard) redesenhados**: número em peso leve + tabular-nums, pill de variação percentual (verde/vermelho) e texto "vs ano anterior", hover com leve elevação.
 - **Testids alinhados**: `nav-painel`, `mobile-nav-painel`, `more-nav-painel` (antes `*-home`).
 - Regressão OK: novo lançamento, "Repetir" (recorrência), tema claro/escuro, navegação, upload/remover comprovante (Object Storage ativo).
+
+---
+## Iteração — Tela de Login redesenhada (Jun 2026) — testado 100% (iteration_12.json)
+
+- **Login dark minimalista** (estilo referência SPACEFOX): fundo quase preto com brilho radial, wordmark "AURA" centralizado + logo mark, inputs com linha inferior (underline), botão "ENTRAR" full-width com borda, links "Esqueci minha senha" / "Criar conta" e círculo decorativo (spinner+check) embaixo.
+- Lógica 100% preservada: login, falha de senha, recuperação por pergunta de segurança e cadastro. Todos os data-testids mantidos.
+- Nota: inputs nativos com fundo transparente inline (evita overrides de `html.dark input`). Página de login é sempre dark, independente do tema do app.
