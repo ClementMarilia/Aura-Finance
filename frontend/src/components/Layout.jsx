@@ -55,7 +55,7 @@ export default function Layout() {
         </div>
         <nav className="flex flex-col gap-1 flex-1">
           {nav.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end} className={linkCls} data-testid={`nav-${n.to.replace(/\//g, "") || "home"}`}>
+            <NavLink key={n.to} to={n.to} end={n.end} className={linkCls} data-testid={`nav-${n.to.replace(/\//g, "") || "painel"}`}>
               <n.icon size={18} />
               <span>{n.label}</span>
             </NavLink>
@@ -97,7 +97,7 @@ export default function Layout() {
               className={({ isActive }) => `flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] transition-colors ${
                 isActive ? "text-[#1E3F33] font-medium" : "text-[#6B7068]"
               }`}
-              data-testid={`mobile-nav-${n.to.replace(/\//g, "") || "home"}`}>
+              data-testid={`mobile-nav-${n.to.replace(/\//g, "") || "painel"}`}>
               <n.icon size={18} />
               <span>{n.label.split(" ")[0]}</span>
             </NavLink>
@@ -120,7 +120,7 @@ export default function Layout() {
             </SheetHeader>
             <nav className="flex flex-col gap-1 px-3 pb-4">
               {nav.map((n) => (
-                <button key={n.to} onClick={() => go(n.to)} data-testid={`more-nav-${n.to.replace(/\//g, "") || "home"}`}
+                <button key={n.to} onClick={() => go(n.to)} data-testid={`more-nav-${n.to.replace(/\//g, "") || "painel"}`}
                   className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#1E3F33] transition-colors">
                   <n.icon size={18} className="text-[#6B7068]" />
                   <span>{n.label}</span>

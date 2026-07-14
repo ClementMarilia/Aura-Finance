@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat, CreditCard, Check } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat, CreditCard, Check, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 
@@ -386,52 +386,76 @@ export default function Transactions() {
         </div>
       </div>
 
-      <div className="card-soft p-4">
-        <div className="flex flex-wrap gap-3 items-center">
-          <select value={filter.type} onChange={e => setFilter({ ...filter, type: e.target.value })}
-            data-testid="filter-type" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todos os tipos</option>
-            <option value="income">Receita</option>
-            <option value="expense">Despesa</option>
-            <option value="transfer">Transferência</option>
-          </select>
-          <select value={filter.status} onChange={e => setFilter({ ...filter, status: e.target.value })}
-            data-testid="filter-status" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todos status</option>
-            <option value="paid">Pago</option>
-            <option value="pending">Pendente</option>
-            <option value="cancelled">Cancelado</option>
-          </select>
-          <select value={filter.category_id} onChange={e => setFilter({ ...filter, category_id: e.target.value })}
-            data-testid="filter-category" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todas categorias</option>
-            {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={filter.month} onChange={e => setFilter({ ...filter, month: e.target.value, year: e.target.value && !filter.year ? String(now.getFullYear()) : filter.year })}
-            data-testid="filter-month" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todos os meses</option>
-            {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-          </select>
-          <select value={filter.year} onChange={e => setFilter({ ...filter, year: e.target.value })}
-            data-testid="filter-year" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todos os anos</option>
-            {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <select value={filter.account_id} onChange={e => setFilter({ ...filter, account_id: e.target.value })}
-            data-testid="filter-account" className="bg-white border border-[#E5E4E0] rounded-lg px-3 py-2 text-sm">
-            <option value="">Todas as contas</option>
-            {accs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+      <div className="card-soft p-4 md:p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
+            <SlidersHorizontal size={16} />
+            <span className="text-xs uppercase font-medium tracking-[0.06em]">Filtros</span>
+          </div>
           {hasActiveFilters && (
             <button
               type="button"
               onClick={clearFilters}
               data-testid="clear-filters-btn"
-              className="text-sm text-[#1E3F33] hover:text-[#D9453B] underline px-2 py-2"
+              className="inline-flex items-center gap-1 text-xs font-medium text-[#6B7068] hover:text-[#D9453B] rounded-lg px-2.5 py-1.5 hover:bg-rose-50 transition-colors"
             >
-              Limpar filtros
+              <X size={14} /> Limpar
             </button>
           )}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Tipo</label>
+            <select value={filter.type} onChange={e => setFilter({ ...filter, type: e.target.value })}
+              data-testid="filter-type" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todos</option>
+              <option value="income">Receita</option>
+              <option value="expense">Despesa</option>
+              <option value="transfer">Transferência</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Status</label>
+            <select value={filter.status} onChange={e => setFilter({ ...filter, status: e.target.value })}
+              data-testid="filter-status" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todos</option>
+              <option value="paid">Pago</option>
+              <option value="pending">Pendente</option>
+              <option value="cancelled">Cancelado</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Categoria</label>
+            <select value={filter.category_id} onChange={e => setFilter({ ...filter, category_id: e.target.value })}
+              data-testid="filter-category" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todas</option>
+              {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Mês</label>
+            <select value={filter.month} onChange={e => setFilter({ ...filter, month: e.target.value, year: e.target.value && !filter.year ? String(now.getFullYear()) : filter.year })}
+              data-testid="filter-month" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todos</option>
+              {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Ano</label>
+            <select value={filter.year} onChange={e => setFilter({ ...filter, year: e.target.value })}
+              data-testid="filter-year" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todos</option>
+              {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Carteira</label>
+            <select value={filter.account_id} onChange={e => setFilter({ ...filter, account_id: e.target.value })}
+              data-testid="filter-account" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">Todas</option>
+              {accs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 
