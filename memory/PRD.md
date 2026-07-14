@@ -174,3 +174,11 @@ Código importado do GitHub (ClementMarilia/Aura-Finance) para o ambiente. Backe
 Backlog atualizado:
 - P2: alinhar testids `*-home` → `*-painel` (cosmético).
 - P2 (opcional): resumo mensal inteligente com IA no Painel (usuário adiar).
+
+---
+## Iteração — Refino tela-a-tela + testids (Jun 2026) — testado 100% (iteration_11.json)
+
+- **Barra de filtros de Lançamentos redesenhada**: header "Filtros" + grade rotulada (labels uppercase) com selects rounded-xl consistentes + botão "Limpar" (clear-filters-btn). Mesmos data-testids e lógica; comportamento "só o mês selecionado" preservado.
+- **Cards de Relatórios (DeltaCard) redesenhados**: número em peso leve + tabular-nums, pill de variação percentual (verde/vermelho) e texto "vs ano anterior", hover com leve elevação.
+- **Testids alinhados**: `nav-painel`, `mobile-nav-painel`, `more-nav-painel` (antes `*-home`).
+- Regressão OK: novo lançamento, "Repetir" (recorrência), tema claro/escuro, navegação, upload/remover comprovante (Object Storage ativo).
