@@ -1,11 +1,30 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+
+function Field({ id, label, type, value, onChange, testid, placeholder, minLength, autoComplete }) {
+  return (
+    <div className="text-left">
+      <label htmlFor={id} className="block text-[11px] tracking-[0.18em] uppercase text-white/40 mb-2">
+        {label}
+      </label>
+      <input
+        id={id}
+        data-testid={testid}
+        type={type}
+        value={value}
+        onChange={onChange}
+        required
+        minLength={minLength}
+        autoComplete={autoComplete}
+        placeholder={placeholder}
+        style={{ background: "transparent", color: "rgba(255,255,255,0.9)", borderColor: "rgba(255,255,255,0.15)" }}
+        className="w-full border-0 border-b placeholder-white/20 text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#6FB597]"
+      />
+    </div>
+  );
+}
 
 export default function Register() {
   const { register, formatApiError } = useAuth();
@@ -28,47 +47,71 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-[#F9F8F6]">
-      <div className="w-full max-w-md card-soft">
-        <h2 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Criar conta</h2>
-        <p className="text-[#6B7068] mt-1 text-sm">Comece a controlar suas finanças hoje</p>
+    <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ background: "#070A09" }}>
+      {/* Soft radial sphere glow */}
+      <div aria-hidden className="pointer-events-none absolute inset-0"
+        style={{ background: "radial-gradient(circle at 50% 52%, rgba(111,181,151,0.10), rgba(30,63,51,0.05) 32%, transparent 60%)" }} />
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        style={{
+          width: "min(94vw, 860px)", height: "min(94vw, 860px)",
+          background: "radial-gradient(circle, rgba(255,255,255,0.045), rgba(255,255,255,0.015) 46%, transparent 68%)",
+          boxShadow: "inset 0 0 140px rgba(255,255,255,0.025)",
+        }} />
+      <div aria-hidden className="pointer-events-none absolute -bottom-40 left-1/2 -translate-x-1/2 rounded-full"
+        style={{ width: "70vw", height: "70vw", background: "radial-gradient(circle, rgba(111,181,151,0.06), transparent 60%)" }} />
 
-        <form onSubmit={submit} className="mt-6 space-y-4">
-          <div>
-            <Label>Nome</Label>
-            <Input data-testid="register-name-input" value={form.name} required className="mt-1.5"
-              onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Seu nome" />
+      <div className="relative z-10 w-full max-w-sm px-6 text-center auth-in">
+        {/* Wordmark */}
+        <div className="mb-12 flex items-center justify-center gap-3">
+          <img src="/logo-mark-dark.png" alt="" className="h-7 w-auto opacity-90"
+            onError={(e) => { e.currentTarget.style.display = "none"; }} />
+          <span className="text-white/90 text-lg font-light whitespace-nowrap" style={{ fontFamily: "Outfit", letterSpacing: "0.3em" }}>
+            AURA FINANCE
+          </span>
+        </div>
+
+        <p className="text-white/40 text-xs tracking-[0.12em] uppercase mb-8">Criar conta</p>
+
+        <form onSubmit={submit} className="space-y-6">
+          <Field id="reg-name" label="Nome" type="text" value={form.name} testid="register-name-input"
+            autoComplete="name" placeholder="Seu nome"
+            onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Field id="reg-email" label="E-mail" type="email" value={form.email} testid="register-email-input"
+            autoComplete="email" placeholder="voce@exemplo.com"
+            onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <Field id="reg-password" label="Senha" type="password" value={form.password} testid="register-password-input"
+            autoComplete="new-password" minLength={4} placeholder="••••••••"
+            onChange={(e) => setForm({ ...form, password: e.target.value })} />
+
+          <div className="text-left">
+            <label htmlFor="reg-currency" className="block text-[11px] tracking-[0.18em] uppercase text-white/40 mb-2">
+              Moeda padrão
+            </label>
+            <select
+              id="reg-currency"
+              data-testid="register-currency-select"
+              value={form.currency}
+              onChange={(e) => setForm({ ...form, currency: e.target.value })}
+              style={{ background: "transparent", color: "rgba(255,255,255,0.9)", borderColor: "rgba(255,255,255,0.15)" }}
+              className="w-full border-0 border-b text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#6FB597]"
+            >
+              <option value="EUR" className="text-black">EUR (€)</option>
+              <option value="BRL" className="text-black">BRL (R$)</option>
+              <option value="USD" className="text-black">USD ($)</option>
+            </select>
           </div>
-          <div>
-            <Label>E-mail</Label>
-            <Input data-testid="register-email-input" type="email" value={form.email} required className="mt-1.5"
-              onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="voce@exemplo.com" />
-          </div>
-          <div>
-            <Label>Senha</Label>
-            <Input data-testid="register-password-input" type="password" value={form.password} required minLength={4} className="mt-1.5"
-              onChange={(e) => setForm({ ...form, password: e.target.value })} />
-          </div>
-          <div>
-            <Label>Moeda padrão</Label>
-            <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v })}>
-              <SelectTrigger data-testid="register-currency-select" className="mt-1.5"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="EUR">EUR (€)</SelectItem>
-                <SelectItem value="BRL">BRL (R$)</SelectItem>
-                <SelectItem value="USD">USD ($)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <Button type="submit" disabled={loading} data-testid="register-submit-button"
-            className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] text-white rounded-xl py-5">
+
+          <button type="submit" disabled={loading} data-testid="register-submit-button"
+            className="w-full mt-2 rounded-xl border border-white/12 bg-white/[0.04] hover:bg-white/[0.09] active:scale-[0.99] text-white/85 text-xs tracking-[0.28em] uppercase py-4 transition-colors duration-200 disabled:opacity-50">
             {loading ? "Criando..." : "Criar conta"}
-          </Button>
+          </button>
         </form>
 
-        <div className="mt-6 text-sm text-center text-[#6B7068]">
+        <div className="mt-6 text-xs text-white/40">
           Já tem conta?{" "}
-          <Link to="/login" className="text-[#1E3F33] font-medium hover:underline" data-testid="link-login">Entrar</Link>
+          <Link to="/login" className="text-white/70 hover:text-white transition-colors" data-testid="link-login">
+            Entrar
+          </Link>
         </div>
       </div>
     </div>

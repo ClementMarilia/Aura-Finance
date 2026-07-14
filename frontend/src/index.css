@@ -302,3 +302,11 @@ table thead th { font-weight: 500; letter-spacing: 0.04em; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9999px; }
 *::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Animação de entrada das telas de autenticação */
+@keyframes auth-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.auth-in { animation: auth-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .auth-in { animation: none; } }

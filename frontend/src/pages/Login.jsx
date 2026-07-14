@@ -107,13 +107,13 @@ export default function Login() {
       <div aria-hidden className="pointer-events-none absolute -bottom-40 left-1/2 -translate-x-1/2 rounded-full"
         style={{ width: "70vw", height: "70vw", background: "radial-gradient(circle, rgba(111,181,151,0.06), transparent 60%)" }} />
 
-      <div className="relative z-10 w-full max-w-sm px-6 text-center">
+      <div className="relative z-10 w-full max-w-sm px-6 text-center auth-in">
         {/* Wordmark */}
         <div className="mb-16 flex items-center justify-center gap-3">
           <img src="/logo-mark-dark.png" alt="" className="h-7 w-auto opacity-90"
             onError={(e) => { e.currentTarget.style.display = "none"; }} />
-          <span className="text-white/90 text-xl font-light" style={{ fontFamily: "Outfit", letterSpacing: "0.42em" }}>
-            AURA
+          <span className="text-white/90 text-lg font-light whitespace-nowrap" style={{ fontFamily: "Outfit", letterSpacing: "0.3em" }}>
+            AURA FINANCE
           </span>
         </div>
 
