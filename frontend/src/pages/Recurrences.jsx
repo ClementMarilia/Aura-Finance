@@ -153,7 +153,7 @@ export default function Recurrences() {
               </div>
               <div className="mt-4 flex items-center justify-between">
                 <span className={`text-2xl font-semibold ${r.type === "income" ? "text-emerald-600" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }}>
-                  {r.type === "income" ? "+" : "-"}{fmtMoney(r.amount, curr)}
+                  {r.type === "income" ? "+" : "-"}{fmtMoney(r.amount, r.currency || curr)}
                 </span>
                 <span className={`text-xs ${r.active ? "text-emerald-700" : "text-[#6B7068]"}`}>{r.active ? "Ativa" : "Pausada"}</span>
               </div>

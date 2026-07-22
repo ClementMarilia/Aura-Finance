@@ -65,6 +65,9 @@ export default function Transactions() {
       notes: "",
       status: "paid",
       repeat: "none",
+      exchange_rate: "",
+      target_amount: "",
+      rate_source: "automatic",
     };
   }
 
@@ -78,6 +81,42 @@ export default function Transactions() {
     api.get("/categories").then(r => setCats(r.data));
     api.get("/accounts").then(r => setAccs(r.data));
   }, []);
+
+  const sourceAccount = form.type === "transfer"
+    ? accs.find(a => a.id === form.from_account_id)
+    : accs.find(a => a.id === form.account_id);
+  const targetAccount = form.type === "transfer"
+    ? accs.find(a => a.id === form.to_account_id)
+    : null;
+  const sourceCurrency = sourceAccount?.currency || curr;
+  const targetCurrency = targetAccount?.currency || curr;
+  const rateContext = `${form.type}|${form.account_id}|${form.from_account_id}|${form.to_account_id}|${form.date}`;
+  const editingRateContext = editing
+    ? `${editing.type}|${editing.account_id || ""}|${editing.from_account_id || ""}|${editing.to_account_id || ""}|${editing.date}`
+    : "";
+
+  useEffect(() => {
+    if (!open || !sourceAccount || (form.type === "transfer" && !targetAccount)) return;
+    if (editing && rateContext === editingRateContext) return;
+    let active = true;
+    api.get("/exchange-rates/quote", { params: {
+      from_currency: sourceCurrency,
+      to_currency: targetCurrency,
+      date: form.date,
+    }}).then(response => {
+      if (!active) return;
+      const rate = Number(response.data.rate || 1);
+      setForm(previous => ({
+        ...previous,
+        exchange_rate: String(rate),
+        target_amount: previous.type === "transfer" && previous.amount
+          ? String((Number(previous.amount) * rate).toFixed(2))
+          : previous.target_amount,
+        rate_source: "automatic",
+      }));
+    }).catch(err => { if (active) toast.error(formatApiError(err)); });
+    return () => { active = false; };
+  }, [open, editing, form.type, form.account_id, form.from_account_id, form.to_account_id, form.date, sourceCurrency, targetCurrency, sourceAccount, targetAccount, rateContext, editingRateContext]);
   useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id, filter.year, filter.month, filter.account_id]);
 
   // React to URL changes (when user navigates from another page like Dashboard)
@@ -116,6 +155,9 @@ export default function Transactions() {
       from_account_id: t.from_account_id || "", to_account_id: t.to_account_id || "",
       payment_method: t.payment_method || "", description: t.description || "",
       notes: t.notes || "", status: t.status,
+      exchange_rate: String(t.type === "transfer" ? (t.transfer_exchange_rate || 1) : (t.exchange_rate_to_base || 1)),
+      target_amount: String(t.target_amount ?? t.amount),
+      rate_source: t.rate_source === "manual" ? "manual" : "automatic",
     });
     setOpen(true);
   };
@@ -134,6 +176,8 @@ export default function Transactions() {
           account_id: form.account_id || null,
           payment_method: form.payment_method || null,
           description: form.description,
+          currency: sourceCurrency,
+          exchange_rate: parseFloat(form.exchange_rate) || 1,
           frequency: form.repeat,
           next_run: form.date,
           active: true,
@@ -149,6 +193,10 @@ export default function Transactions() {
         account_id: form.account_id || null,
         from_account_id: form.type === "transfer" ? (form.from_account_id || null) : null,
         to_account_id: form.type === "transfer" ? (form.to_account_id || null) : null,
+        currency: sourceCurrency,
+        exchange_rate: parseFloat(form.exchange_rate) || 1,
+        target_amount: form.type === "transfer" ? (parseFloat(form.target_amount) || 0) : null,
+        rate_source: form.rate_source,
       };
       if (editing) {
         await api.put(`/transactions/${editing.id}`, body);
@@ -234,10 +282,11 @@ export default function Transactions() {
     if (items.length === 0) { toast.error("Nada para exportar"); return; }
     exportCSV(
       `lancamentos_${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Data", "Descrição", "Categoria", "Tipo", "Status", "Valor"],
+      ["Data", "Descrição", "Categoria", "Tipo", "Status", "Valor original", "Moeda", "Valor na moeda-base", "Moeda-base"],
       items.map(t => [
         t.date, t.description || "", cats.find(c => c.id === t.category_id)?.name || "",
-        TYPE_LABEL[t.type], STATUS_LABEL[t.status], t.amount,
+        TYPE_LABEL[t.type], STATUS_LABEL[t.status], t.amount, t.currency || curr,
+        t.type === "transfer" ? "" : (t.base_amount ?? t.amount), t.type === "transfer" ? "" : curr,
       ]),
     );
   };
@@ -290,9 +339,14 @@ export default function Transactions() {
                   <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required data-testid="tx-date-input" />
                 </div>
                 <div>
-                  <Label>Valor</Label>
+                  <Label>Valor ({sourceCurrency})</Label>
                   <Input type="number" step="0.01" value={form.amount}
-                    onChange={e => setForm({ ...form, amount: e.target.value })} required data-testid="tx-amount-input" />
+                    onChange={e => {
+                      const amount = e.target.value;
+                      const target = form.type === "transfer" && amount && form.exchange_rate
+                        ? (Number(amount) * Number(form.exchange_rate)).toFixed(2) : form.target_amount;
+                      setForm({ ...form, amount, target_amount: target });
+                    }} required data-testid="tx-amount-input" />
                 </div>
                 {form.type !== "transfer" && (
                 <div>
@@ -331,6 +385,34 @@ export default function Transactions() {
                       {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+                )}
+                {sourceAccount && (sourceCurrency !== targetCurrency || form.type === "transfer") && (
+                <div className="col-span-2 grid grid-cols-2 gap-3 rounded-xl bg-[#F1EFE7] p-3">
+                  <div>
+                    <Label>Cotação ({targetCurrency} por {sourceCurrency})</Label>
+                    <Input type="number" step="0.000001" value={form.exchange_rate} required data-testid="tx-exchange-rate-input"
+                      onChange={e => {
+                        const rate = e.target.value;
+                        const target = form.type === "transfer" && rate && form.amount
+                          ? (Number(form.amount) * Number(rate)).toFixed(2) : form.target_amount;
+                        setForm({ ...form, exchange_rate: rate, target_amount: target, rate_source: "manual" });
+                      }} />
+                  </div>
+                  {form.type === "transfer" && (
+                    <div>
+                      <Label>Valor recebido ({targetCurrency})</Label>
+                      <Input type="number" step="0.01" value={form.target_amount} required data-testid="tx-target-amount-input"
+                        onChange={e => {
+                          const target = e.target.value;
+                          const rate = target && form.amount ? Number(target) / Number(form.amount) : "";
+                          setForm({ ...form, target_amount: target, exchange_rate: rate ? String(rate) : "", rate_source: "manual" });
+                        }} />
+                    </div>
+                  )}
+                  <p className="col-span-2 text-xs text-[#6B7068]">
+                    {form.rate_source === "automatic" ? "Cotação sugerida automaticamente; ajuste pelo valor real do banco se necessário." : "Cotação ajustada manualmente."}
+                  </p>
                 </div>
                 )}
                 {form.type === "transfer" && (
@@ -542,7 +624,13 @@ export default function Transactions() {
                   <td className={`py-3 px-4 text-right font-medium ${
                     t.type === "income" ? "text-emerald-600" : t.type === "expense" ? "text-rose-600" : "text-[#1A1C1A]"
                   }`}>
-                    {t.type === "expense" ? "-" : t.type === "income" ? "+" : ""}{fmtMoney(t.amount, curr)}
+                    <div>{t.type === "expense" ? "-" : t.type === "income" ? "+" : ""}{fmtMoney(t.amount, t.currency || curr)}</div>
+                    {t.type === "transfer" && t.target_currency && (
+                      <div className="text-xs text-[#6B7068]">→ {fmtMoney(t.target_amount ?? t.amount, t.target_currency)}</div>
+                    )}
+                    {t.type !== "transfer" && (t.currency || curr) !== curr && (
+                      <div className="text-xs text-[#6B7068]">≈ {fmtMoney(t.base_amount || 0, curr)}</div>
+                    )}
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex gap-1 justify-end items-center">
@@ -610,7 +698,7 @@ export default function Transactions() {
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
         title="Excluir lançamento?"
-        description={confirmDel ? `"${confirmDel.description || "Sem descrição"}" - ${fmtMoney(confirmDel.amount, curr)}. Esta ação não pode ser desfeita.` : ""}
+        description={confirmDel ? `"${confirmDel.description || "Sem descrição"}" - ${fmtMoney(confirmDel.amount, confirmDel.currency || curr)}. Esta ação não pode ser desfeita.` : ""}
         onConfirm={remove}
         testId="tx-confirm-delete"
       />

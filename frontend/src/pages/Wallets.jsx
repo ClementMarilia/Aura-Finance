@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { fmtMoney, formatApiError } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ const TYPES = [
 ];
 const typeMeta = (t) => TYPES.find(x => x.value === t) || TYPES[0];
 
-const emptyForm = { name: "", type: "checking", initial_balance: "" };
+const emptyForm = { name: "", type: "checking", initial_balance: "", currency: "EUR" };
 
 export default function Wallets() {
   const { user } = useAuth();
@@ -33,9 +33,39 @@ export default function Wallets() {
   const [transferOpen, setTransferOpen] = useState(false);
   const emptyTransfer = {
     from_account_id: "", to_account_id: "", amount: "",
+    target_amount: "", exchange_rate: "", rate_source: "automatic",
     date: new Date().toISOString().slice(0, 10), description: "",
   };
   const [transfer, setTransfer] = useState(emptyTransfer);
+
+  const fromAccount = list.find(a => a.id === transfer.from_account_id);
+  const toAccount = list.find(a => a.id === transfer.to_account_id);
+
+  useEffect(() => {
+    if (!transferOpen || !fromAccount || !toAccount) return;
+    let active = true;
+    const loadQuote = async () => {
+      try {
+        const response = await api.get("/exchange-rates/quote", { params: {
+          from_currency: fromAccount.currency || curr,
+          to_currency: toAccount.currency || curr,
+          date: transfer.date,
+        }});
+        if (!active) return;
+        const rate = Number(response.data.rate || 1);
+        setTransfer(previous => ({
+          ...previous,
+          exchange_rate: String(rate),
+          target_amount: previous.amount ? String((Number(previous.amount) * rate).toFixed(2)) : "",
+          rate_source: "automatic",
+        }));
+      } catch (err) {
+        if (active) toast.error(formatApiError(err));
+      }
+    };
+    loadQuote();
+    return () => { active = false; };
+  }, [transferOpen, transfer.from_account_id, transfer.to_account_id, transfer.date, fromAccount, toAccount, curr]);
 
   const load = () => api.get("/accounts").then(r => setList(r.data || []));
   useEffect(() => { load(); }, []);
@@ -54,6 +84,9 @@ export default function Wallets() {
         type: "transfer",
         date: transfer.date,
         amount: parseFloat(transfer.amount) || 0,
+        target_amount: parseFloat(transfer.target_amount) || 0,
+        exchange_rate: parseFloat(transfer.exchange_rate) || 1,
+        rate_source: transfer.rate_source,
         from_account_id: transfer.from_account_id,
         to_account_id: transfer.to_account_id,
         description: transfer.description || "Transferência entre carteiras",
@@ -64,18 +97,18 @@ export default function Wallets() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const total = list.reduce((s, a) => s + (a.balance || 0), 0);
+  const total = list.reduce((s, a) => s + (a.balance_base ?? a.balance ?? 0), 0);
 
-  const openNew = () => { setEditing(null); setForm(emptyForm); setOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ ...emptyForm, currency: curr }); setOpen(true); };
   const openEdit = (a) => {
     setEditing(a);
-    setForm({ name: a.name, type: a.type, initial_balance: String(a.initial_balance ?? 0) });
+    setForm({ name: a.name, type: a.type, initial_balance: String(a.initial_balance ?? 0), currency: a.currency || curr });
     setOpen(true);
   };
 
   const save = async (e) => {
     e.preventDefault();
-    const payload = { name: form.name, type: form.type, initial_balance: parseFloat(form.initial_balance) || 0 };
+    const payload = { name: form.name, type: form.type, initial_balance: parseFloat(form.initial_balance) || 0, currency: form.currency };
     try {
       if (editing) { await api.put(`/accounts/${editing.id}`, payload); toast.success("Carteira atualizada"); }
       else { await api.post("/accounts", payload); toast.success("Carteira criada"); }
@@ -137,8 +170,11 @@ export default function Wallets() {
               <div className="mt-4">
                 <div className="text-sm text-[#6B7068]">Saldo atual</div>
                 <div className={`text-2xl font-semibold ${a.balance >= 0 ? "text-[#1E3F33]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid={`wallet-balance-${a.id}`}>
-                  {fmtMoney(a.balance || 0, curr)}
+                  {fmtMoney(a.balance || 0, a.currency || curr)}
                 </div>
+                {(a.currency || curr) !== curr && (
+                  <div className="text-xs text-[#6B7068] mt-1">≈ {fmtMoney(a.balance_base || 0, curr)} na moeda-base</div>
+                )}
               </div>
             </div>
           );
@@ -154,13 +190,22 @@ export default function Wallets() {
               <Input value={form.name} required data-testid="wallet-name-input"
                 onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: Nubank, Poupança, Tesouro" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <Label>Tipo</Label>
                 <Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}>
                   <SelectTrigger data-testid="wallet-type-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Moeda</Label>
+                <Select value={form.currency} onValueChange={v => setForm({ ...form, currency: v })}>
+                  <SelectTrigger data-testid="wallet-currency-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map(currency => <SelectItem key={currency.value} value={currency.value}>{currency.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -187,7 +232,7 @@ export default function Wallets() {
               <Select value={transfer.from_account_id} onValueChange={v => setTransfer({ ...transfer, from_account_id: v })}>
                 <SelectTrigger data-testid="transfer-from-select"><SelectValue placeholder="Carteira de origem" /></SelectTrigger>
                 <SelectContent>
-                  {list.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({fmtMoney(a.balance || 0, curr)})</SelectItem>)}
+                  {list.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({fmtMoney(a.balance || 0, a.currency || curr)})</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -196,15 +241,19 @@ export default function Wallets() {
               <Select value={transfer.to_account_id} onValueChange={v => setTransfer({ ...transfer, to_account_id: v })}>
                 <SelectTrigger data-testid="transfer-to-select"><SelectValue placeholder="Carteira de destino" /></SelectTrigger>
                 <SelectContent>
-                  {list.filter(a => a.id !== transfer.from_account_id).map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({fmtMoney(a.balance || 0, curr)})</SelectItem>)}
+                  {list.filter(a => a.id !== transfer.from_account_id).map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({fmtMoney(a.balance || 0, a.currency || curr)})</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Valor</Label>
+                <Label>Valor enviado {fromAccount ? `(${fromAccount.currency || curr})` : ""}</Label>
                 <Input type="number" step="0.01" value={transfer.amount} required data-testid="transfer-amount-input"
-                  onChange={e => setTransfer({ ...transfer, amount: e.target.value })} />
+                  onChange={e => {
+                    const amount = e.target.value;
+                    const target = amount && transfer.exchange_rate ? (Number(amount) * Number(transfer.exchange_rate)).toFixed(2) : "";
+                    setTransfer({ ...transfer, amount, target_amount: target });
+                  }} />
               </div>
               <div>
                 <Label>Data</Label>
@@ -212,6 +261,31 @@ export default function Wallets() {
                   onChange={e => setTransfer({ ...transfer, date: e.target.value })} />
               </div>
             </div>
+            {fromAccount && toAccount && (
+              <div className="grid grid-cols-2 gap-3 rounded-xl bg-[#F1EFE7] p-3">
+                <div>
+                  <Label>Cotação ({toAccount.currency || curr} por {fromAccount.currency || curr})</Label>
+                  <Input type="number" step="0.000001" value={transfer.exchange_rate} required data-testid="transfer-rate-input"
+                    onChange={e => {
+                      const rate = e.target.value;
+                      const target = rate && transfer.amount ? (Number(transfer.amount) * Number(rate)).toFixed(2) : "";
+                      setTransfer({ ...transfer, exchange_rate: rate, target_amount: target, rate_source: "manual" });
+                    }} />
+                </div>
+                <div>
+                  <Label>Valor recebido ({toAccount.currency || curr})</Label>
+                  <Input type="number" step="0.01" value={transfer.target_amount} required data-testid="transfer-target-amount-input"
+                    onChange={e => {
+                      const target = e.target.value;
+                      const rate = target && transfer.amount ? Number(target) / Number(transfer.amount) : "";
+                      setTransfer({ ...transfer, target_amount: target, exchange_rate: rate ? String(rate) : "", rate_source: "manual" });
+                    }} />
+                </div>
+                <p className="col-span-2 text-xs text-[#6B7068]">
+                  {transfer.rate_source === "automatic" ? "Cotação sugerida automaticamente. Você pode substituir pelo valor real do banco." : "Cotação ajustada manualmente."}
+                </p>
+              </div>
+            )}
             <div>
               <Label>Descrição (opcional)</Label>
               <Input value={transfer.description} data-testid="transfer-description-input"

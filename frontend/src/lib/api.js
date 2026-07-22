@@ -5,6 +5,13 @@ export const API = `${BACKEND_URL}/api`;
 
 const api = axios.create({ baseURL: API });
 
+export const CURRENCIES = [
+  { value: "EUR", label: "EUR (€)" },
+  { value: "BRL", label: "BRL (R$)" },
+  { value: "USD", label: "USD ($)" },
+  { value: "CHF", label: "CHF (Fr)" },
+];
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) config.headers.Authorization = `Bearer ${token}`;

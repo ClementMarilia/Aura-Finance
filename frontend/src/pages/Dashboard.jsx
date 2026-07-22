@@ -41,10 +41,10 @@ export default function Dashboard() {
     api.get("/insights").then(r => setInsights(r.data || [])).catch(() => {});
     api.get("/reports/projection", { params: { months: 6 } }).then(r => setProjection(r.data)).catch(() => {});
     api.get("/accounts").then(r => setAccounts(r.data || [])).catch(() => {});
-  }, []);
+  }, [user?.currency]);
 
   const curr = user?.currency || "EUR";
-  const patrimonio = accounts.reduce((s, a) => s + (a.balance || 0), 0);
+  const patrimonio = accounts.reduce((s, a) => s + (a.balance_base ?? a.balance ?? 0), 0);
   const ym = `year=${period.year}&month=${period.month}`;
 
   if (!data) return <div className="text-[#6B7068]">Carregando painel...</div>;
@@ -184,8 +184,11 @@ export default function Dashboard() {
                 <div className="text-sm text-[#6B7068]">{a.name}</div>
                 <div className={`text-xl font-semibold mt-1 ${a.balance >= 0 ? "text-[#1E3F33]" : "text-rose-600"}`}
                   style={{ fontFamily: "Outfit" }}>
-                  {fmtMoney(a.balance, curr)}
+                  {fmtMoney(a.balance, a.currency || curr)}
                 </div>
+                {(a.currency || curr) !== curr && (
+                  <div className="text-xs text-[#6B7068] mt-1">≈ {fmtMoney(a.balance_base || 0, curr)}</div>
+                )}
                 <div className="text-xs text-[#6B7068] mt-1">Ver lançamentos →</div>
               </Link>
             ))}

@@ -172,7 +172,7 @@ export default function Installments() {
                   <div>
                     <div className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{p.description}</div>
                     <div className="text-sm text-[#6B7068]">
-                      {p.installments}x · {fmtMoney(p.total_amount, curr)} · Pagas: {paid}/{p.installments}
+                      {p.installments}x · {fmtMoney(p.total_amount, p.currency || curr)} · Pagas: {paid}/{p.installments}
                       {p.account_id && accs.find(a => a.id === p.account_id) && (
                         <> · {accs.find(a => a.id === p.account_id).name}</>
                       )}
@@ -180,7 +180,7 @@ export default function Installments() {
                     {!isOpen && (
                       <div className="text-xs text-[#1E3F33] mt-1" data-testid={`purchase-summary-${p.id}`}>
                         {next
-                          ? <>Próxima: <b>Parcela {next.number}/{next.total}</b> · {fmtMoney(next.amount, curr)} · vence {fmtDate(next.due_date)} · faltam {remaining}</>
+                          ? <>Próxima: <b>Parcela {next.number}/{next.total}</b> · {fmtMoney(next.amount, p.currency || curr)} · vence {fmtDate(next.due_date)} · faltam {remaining}</>
                           : <>Tudo pago! 🎉</>}
                       </div>
                     )}
@@ -205,7 +205,7 @@ export default function Installments() {
                         : "bg-white border-[#E5E4E0] hover:bg-[#F1EFE7]"
                     }`}>
                     <div className="text-xs opacity-80">Parcela {i.number}/{i.total}</div>
-                    <div className="font-semibold text-sm mt-1">{fmtMoney(i.amount, curr)}</div>
+                    <div className="font-semibold text-sm mt-1">{fmtMoney(i.amount, p.currency || curr)}</div>
                     <div className="text-xs opacity-80 mt-1">{fmtDate(i.due_date)}</div>
                     <div className="text-xs mt-2 flex items-center gap-1">
                       {i.status === "paid" ? <><Check size={12} /> Pago</> : "Pendente"}
