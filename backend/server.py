@@ -2182,6 +2182,201 @@ async def annual_report(year: int, user=Depends(get_current_user)):
     }
 
 
+def _change_percent(current: float, previous: float) -> Optional[float]:
+    if previous == 0:
+        return None if current == 0 else 100.0
+    return round(((current - previous) / abs(previous)) * 100, 1)
+
+
+def build_monthly_report(
+    year: int,
+    month: int,
+    items: List[dict],
+    categories: List[dict],
+    base_currency: str,
+) -> dict:
+    """Build one canonical monthly report used by the UI and exports."""
+    base = normalize_currency(base_currency)
+    category_map = {c["id"]: c for c in categories}
+    detailed = []
+    for item in items:
+        if item.get("type") not in ("income", "expense"):
+            continue
+        row = dict(item)
+        row["currency"] = normalize_currency(row.get("currency"), base)
+        row["base_amount"] = round(amount_in_currency(row, base), 2)
+        category = category_map.get(row.get("category_id"), {})
+        row["category"] = category.get("name", "Sem categoria")
+        row["category_color"] = category.get("color", "#6B7068")
+        row["source"] = row.get("source") or (
+            "recurrence" if row.get("recurrence_id") else "manual")
+        row["is_fixed"] = row["source"] == "recurrence"
+        row["is_installment"] = row["source"] == "installment"
+        detailed.append(row)
+
+    detailed.sort(key=lambda row: (row.get("date", ""), row.get("created_at", "")), reverse=True)
+    entries = [row for row in detailed if row["type"] == "income"]
+    expenses = [row for row in detailed if row["type"] == "expense"]
+
+    def total(rows, status=None):
+        selected = rows if status is None else [row for row in rows if row.get("status") == status]
+        return round(sum(row["base_amount"] for row in selected), 2)
+
+    income_total = total(entries)
+    expense_total = total(expenses)
+    paid_income = total(entries, "paid")
+    paid_expense = total(expenses, "paid")
+    pending_income = total(entries, "pending")
+    pending_expense = total(expenses, "pending")
+    balance = round(income_total - expense_total, 2)
+    realized_balance = round(paid_income - paid_expense, 2)
+
+    fixed_expense = round(sum(row["base_amount"] for row in expenses if row["is_fixed"]), 2)
+    installment_expense = round(sum(row["base_amount"] for row in expenses if row["is_installment"]), 2)
+    variable_expense = round(
+        sum(row["base_amount"] for row in expenses if not row["is_fixed"] and not row["is_installment"]), 2)
+
+    category_totals = defaultdict(float)
+    category_colors = {}
+    for row in expenses:
+        category_totals[row["category"]] += row["base_amount"]
+        category_colors[row["category"]] = row["category_color"]
+    category_breakdown = [
+        {
+            "category": name,
+            "amount": round(amount, 2),
+            "percent": round((amount / expense_total) * 100, 1) if expense_total else 0,
+            "color": category_colors[name],
+        }
+        for name, amount in sorted(category_totals.items(), key=lambda value: -value[1])
+    ]
+
+    largest_expense = max(expenses, key=lambda row: row["base_amount"], default=None)
+    top_category = category_breakdown[0] if category_breakdown else None
+    return {
+        "period": {"year": year, "month": month},
+        "base_currency": base,
+        "summary": {
+            "income": income_total,
+            "expense": expense_total,
+            "balance": balance,
+            "balance_status": "positive" if balance > 0 else "negative" if balance < 0 else "neutral",
+            "paid_income": paid_income,
+            "paid_expense": paid_expense,
+            "pending_income": pending_income,
+            "pending_expense": pending_expense,
+            "realized_balance": realized_balance,
+            "savings_rate": round((balance / income_total) * 100, 1) if income_total else None,
+            "transaction_count": len(detailed),
+        },
+        "expense_profile": {
+            "fixed": fixed_expense,
+            "variable": variable_expense,
+            "installments": installment_expense,
+        },
+        "largest_expense": largest_expense,
+        "top_category": top_category,
+        "category_breakdown": category_breakdown,
+        "entries": entries,
+        "expenses": expenses,
+    }
+
+
+async def _monthly_report_items(user: dict, year: int, month: int) -> List[dict]:
+    await materialize_recurrences(user["id"], month_end_date(year, month))
+    start, end = month_range(year, month)
+    rows = await db.transactions.find(
+        {
+            "user_id": user["id"],
+            "date": {"$gte": start[:10], "$lt": end[:10]},
+            "status": {"$ne": "cancelled"},
+            "type": {"$in": ["income", "expense"]},
+        },
+        {"_id": 0},
+    ).to_list(10000)
+    for row in rows:
+        row["source"] = "recurrence" if row.get("recurrence_id") else "manual"
+
+    installments = await db.installments.find(
+        {
+            "user_id": user["id"],
+            "due_date": {"$gte": start[:10], "$lt": end[:10]},
+            "status": {"$ne": "cancelled"},
+        },
+        {"_id": 0},
+    ).to_list(5000)
+    if installments:
+        purchase_ids = list({item["purchase_id"] for item in installments})
+        purchases = await db.installment_purchases.find(
+            {"id": {"$in": purchase_ids}}, {"_id": 0}).to_list(2000)
+        purchase_map = {purchase["id"]: purchase for purchase in purchases}
+        for item in installments:
+            purchase = purchase_map.get(item["purchase_id"], {})
+            rows.append({
+                "id": item["id"],
+                "type": "expense",
+                "date": item["due_date"],
+                "amount": item.get("amount", 0),
+                "status": item.get("status", "pending"),
+                "description": purchase.get("description", "Parcela"),
+                "category_id": purchase.get("category_id"),
+                "account_id": purchase.get("account_id"),
+                "payment_method": purchase.get("payment_method"),
+                "currency": purchase.get("currency"),
+                "exchange_rates": purchase.get("exchange_rates"),
+                "base_currency_at_creation": purchase.get("base_currency_at_creation"),
+                "exchange_rate_to_base": purchase.get("exchange_rate_to_base"),
+                "rate_date": purchase.get("rate_date"),
+                "source": "installment",
+                "purchase_id": item["purchase_id"],
+                "installment_number": item.get("number"),
+                "installment_total": item.get("total"),
+            })
+
+    currencies = await account_currency_map(user)
+    base = normalize_currency(user.get("currency"))
+    for row in rows:
+        row["currency"] = normalize_currency(
+            row.get("currency"), currencies.get(row.get("account_id"), base))
+    return rows
+
+
+@api.get("/reports/monthly")
+async def monthly_report(
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    user=Depends(get_current_user),
+):
+    categories = await db.categories.find(
+        {"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    current_items = await _monthly_report_items(user, year, month)
+    current = build_monthly_report(
+        year, month, current_items, categories, user.get("currency", "EUR"))
+
+    previous_month = month - 1
+    previous_year = year
+    if previous_month == 0:
+        previous_month = 12
+        previous_year -= 1
+    previous_items = await _monthly_report_items(user, previous_year, previous_month)
+    previous = build_monthly_report(
+        previous_year, previous_month, previous_items, categories, user.get("currency", "EUR"))
+    current_summary = current["summary"]
+    previous_summary = previous["summary"]
+    current["previous_month"] = {
+        "period": previous["period"],
+        "summary": previous_summary,
+    }
+    current["comparison"] = {
+        key: {
+            "difference": round(current_summary[key] - previous_summary[key], 2),
+            "percent": _change_percent(current_summary[key], previous_summary[key]),
+        }
+        for key in ("income", "expense", "balance")
+    }
+    return current
+
+
 async def _month_net(user: dict, yy, mm):
     s, e = month_range(yy, mm)
     txs = await db.transactions.find(
