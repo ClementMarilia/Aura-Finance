@@ -39,8 +39,8 @@ export default function Layout() {
   const linkCls = ({ isActive }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors duration-200 ${
       isActive
-        ? "bg-[#F1EFE7] text-[#1E3F33] font-medium"
-        : "text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1E3F33]"
+        ? "bg-[#F1EFE7] text-[#061B4A] font-medium"
+        : "text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"
     }`;
 
   const go = (to) => { setMoreOpen(false); navigate(to); };
@@ -95,7 +95,7 @@ export default function Layout() {
           {primaryMobile.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end}
               className={({ isActive }) => `flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] transition-colors ${
-                isActive ? "text-[#1E3F33] font-medium" : "text-[#6B7068]"
+                isActive ? "text-[#061B4A] font-medium" : "text-[#6B7068]"
               }`}
               data-testid={`mobile-nav-${n.to.replace(/\//g, "") || "painel"}`}>
               <n.icon size={18} />
@@ -121,18 +121,18 @@ export default function Layout() {
             <nav className="flex flex-col gap-1 px-3 pb-4">
               {nav.map((n) => (
                 <button key={n.to} onClick={() => go(n.to)} data-testid={`more-nav-${n.to.replace(/\//g, "") || "painel"}`}
-                  className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#1E3F33] transition-colors">
+                  className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#061B4A] transition-colors">
                   <n.icon size={18} className="text-[#6B7068]" />
                   <span>{n.label}</span>
                 </button>
               ))}
               <div className="my-2 border-t" style={{ borderColor: "var(--border)" }} />
               <button onClick={() => go("/perfil")} data-testid="more-nav-perfil"
-                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#1E3F33] transition-colors">
+                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#061B4A] transition-colors">
                 <UserCircle size={18} className="text-[#6B7068]" /> <span>Perfil</span>
               </button>
               <button onClick={() => go("/configuracoes")} data-testid="more-nav-configuracoes"
-                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#1E3F33] transition-colors">
+                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#061B4A] transition-colors">
                 <Settings size={18} className="text-[#6B7068]" /> <span>Configurações</span>
               </button>
               <button onClick={() => { setMoreOpen(false); logout(); }} data-testid="more-nav-logout"

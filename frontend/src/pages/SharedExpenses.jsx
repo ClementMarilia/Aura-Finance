@@ -15,7 +15,7 @@ function Initials({ name, color, size = 28 }) {
   const initials = (name || "?").split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="rounded-full flex items-center justify-center text-white text-xs font-medium"
-      style={{ width: size, height: size, backgroundColor: color || "#1E3F33" }}>
+      style={{ width: size, height: size, backgroundColor: color || "#061B4A" }}>
       {initials}
     </div>
   );
@@ -195,7 +195,7 @@ export default function SharedExpenses() {
             className="card-soft block hover:bg-[#F8F6EE] transition py-3 px-4"
           >
             <div className="flex items-center gap-3 flex-wrap">
-              <Scale size={16} className="text-[#1E3F33] flex-shrink-0" />
+              <Scale size={16} className="text-[#061B4A] flex-shrink-0" />
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm flex-1 min-w-0">
                 {credits.map(s => (
                   <span key={s.user?.id} className="text-emerald-700" data-testid={`banner-credit-${s.user?.id}`}>
@@ -210,7 +210,7 @@ export default function SharedExpenses() {
                   </span>
                 ))}
               </div>
-              <span className="text-xs text-[#1E3F33] hover:underline flex items-center gap-1 flex-shrink-0">
+              <span className="text-xs text-[#061B4A] hover:underline flex items-center gap-1 flex-shrink-0">
                 Ver acertos <ArrowRight size={12} />
               </span>
             </div>
@@ -254,7 +254,7 @@ export default function SharedExpenses() {
                 <Input type="email" placeholder="email@exemplo.com" value={searchEmail}
                   onChange={e => setSearchEmail(e.target.value)} data-testid="shared-add-email-input" />
                 <Button type="button" onClick={addParticipantByEmail} data-testid="shared-add-participant-button"
-                  className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl"><UserPlus size={16} /></Button>
+                  className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl"><UserPlus size={16} /></Button>
               </div>
               <div className="mt-3 space-y-2">
                 {(() => {
@@ -276,7 +276,7 @@ export default function SharedExpenses() {
                           value={p.percent}
                           onChange={e => setParticipants(participants.map(x => x.user.id === p.user.id ? { ...x, percent: e.target.value } : x))} />
                       )}
-                      <div className="text-sm font-semibold text-[#1E3F33] w-20 text-right" data-testid={`preview-share-${p.user.id}`}>
+                      <div className="text-sm font-semibold text-[#061B4A] w-20 text-right" data-testid={`preview-share-${p.user.id}`}>
                         {fmtMoney(preview[p.user.id] || 0, curr)}
                       </div>
                       {p.user.id !== user.id && (
@@ -309,7 +309,7 @@ export default function SharedExpenses() {
                 </Select></div>
             </div>
 
-            <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="shared-submit-button">
+            <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="shared-submit-button">
               {editing ? "Salvar alterações" : "Criar despesa"}
             </Button>
           </form>
@@ -370,7 +370,7 @@ export default function SharedExpenses() {
                   <div className="flex gap-1">
                     {canEdit && (
                       <button onClick={() => openEdit(e)} data-testid={`shared-edit-${e.id}`}
-                        className="p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1E3F33] border border-[#E5E4E0]"
+                        className="p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A] border border-[#E5E4E0]"
                         title="Editar">
                         <Pencil size={16} />
                       </button>
@@ -418,7 +418,7 @@ export default function SharedExpenses() {
                       </div>
                       {/* Valor da parte da pessoa em destaque */}
                       <div className={`text-base font-semibold whitespace-nowrap ${
-                        isPayer ? "text-[#1E3F33]" : p.paid_back ? "text-emerald-600 line-through opacity-60" : "text-rose-600"
+                        isPayer ? "text-[#061B4A]" : p.paid_back ? "text-emerald-600 line-through opacity-60" : "text-rose-600"
                       }`} style={{ fontFamily: "Outfit" }} data-testid={`participant-amount-${e.id}-${p.user_id}`}>
                         {fmtMoney(p.owed || 0, e.currency || curr)}
                       </div>
@@ -428,7 +428,7 @@ export default function SharedExpenses() {
                           className={`px-3 py-1.5 rounded-lg text-xs whitespace-nowrap ${
                             p.paid_back
                               ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                              : "bg-[#1E3F33] text-white hover:bg-[#2C5C4A]"
+                              : "bg-[#061B4A] text-white hover:bg-[#1268F4]"
                           }`}>
                           {p.paid_back ? <><Check size={12} className="inline mr-1" />{actionLabel}</> : actionLabel}
                         </button>

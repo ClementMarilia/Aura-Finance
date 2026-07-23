@@ -39,7 +39,7 @@ export default function UserMenu({ compact = false }) {
         >
           <div
             className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0"
-            style={{ backgroundColor: user.avatar_color || "#1E3F33" }}
+            style={{ backgroundColor: user.avatar_color || "#061B4A" }}
             data-testid="user-menu-avatar"
           >
             {initials || "U"}

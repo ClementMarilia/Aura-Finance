@@ -75,7 +75,7 @@ export default function Receivables() {
         </div>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>
-            <Button onClick={openNew} data-testid="new-receivable-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+            <Button onClick={openNew} data-testid="new-receivable-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
               <Plus size={16} className="mr-1" /> Nova conta a receber
             </Button>
           </DialogTrigger>
@@ -103,7 +103,7 @@ export default function Receivables() {
                     {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
                   </SelectContent>
                 </Select></div>
-              <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="rec-submit-button">
+              <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="rec-submit-button">
                 {editing ? "Salvar alterações" : "Salvar"}
               </Button>
             </form>
@@ -140,7 +140,7 @@ export default function Receivables() {
                   <button onClick={() => receive(r.id)} className="text-emerald-600 hover:text-emerald-800 p-1" data-testid={`rec-receive-${r.id}`} title="Marcar como recebido">
                     <Check size={16} />
                   </button>
-                  <button onClick={() => openEdit(r)} className="text-[#6B7068] hover:text-[#1E3F33] p-1" data-testid={`rec-edit-${r.id}`} title="Editar">
+                  <button onClick={() => openEdit(r)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`rec-edit-${r.id}`} title="Editar">
                     <Pencil size={16} />
                   </button>
                   <button onClick={() => setConfirmDel(r)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`rec-delete-${r.id}`} title="Excluir">

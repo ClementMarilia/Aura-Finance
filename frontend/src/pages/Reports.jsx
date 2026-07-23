@@ -40,7 +40,7 @@ function SummaryCard({ label, value, currency, icon: Icon, tone, comparison, inv
     green: "text-emerald-600 bg-emerald-50",
     red: "text-rose-600 bg-rose-50",
     amber: "text-amber-700 bg-amber-50",
-    primary: "text-[#1E3F33] bg-[#F1EFE7]",
+    primary: "text-[#061B4A] bg-[#F1EFE7]",
   };
   return (
     <div className="card-soft hover:shadow-md hover:-translate-y-0.5 transition-[box-shadow,transform] duration-200">
@@ -76,7 +76,7 @@ function AnnualDeltaCard({ label, value, prev, currency, invert }) {
 }
 
 function InsightCard({ icon: Icon, label, value, detail, tone = "primary" }) {
-  const toneClass = tone === "red" ? "text-rose-600 bg-rose-50" : tone === "amber" ? "text-amber-700 bg-amber-50" : "text-[#1E3F33] bg-[#F1EFE7]";
+  const toneClass = tone === "red" ? "text-rose-600 bg-rose-50" : tone === "amber" ? "text-amber-700 bg-amber-50" : "text-[#061B4A] bg-[#F1EFE7]";
   return (
     <div className="card-soft p-5">
       <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${toneClass}`}><Icon size={17} /></div>
@@ -224,7 +224,7 @@ export default function Reports() {
       </div>
 
       <div className="card-soft py-4 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-2 text-sm font-medium"><CalendarDays size={17} className="text-[#1E3F33]" /> Período do relatório</div>
+        <div className="flex items-center gap-2 text-sm font-medium"><CalendarDays size={17} className="text-[#061B4A]" /> Período do relatório</div>
         <div className="flex gap-2">
           {view === "monthly" && (
             <select value={period.month} onChange={event => setPeriod({ ...period, month: Number(event.target.value) })} data-testid="reports-month-select" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
@@ -249,7 +249,7 @@ function MonthlyReport({ data, currency }) {
   const summary = data.summary;
   const profile = data.expense_profile;
   const composition = [
-    { name: "Fixos", value: profile.fixed, color: "#1E3F33" },
+    { name: "Fixos", value: profile.fixed, color: "#061B4A" },
     { name: "Variáveis", value: profile.variable, color: "#D96C5B" },
     { name: "Parcelas", value: profile.installments, color: "#E5A83B" },
   ].filter(item => item.value > 0);
@@ -356,8 +356,8 @@ function AnnualReport({ data, currency }) {
       <div className="card-soft overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="bg-[#F1EFE7] text-[#6B7068]"><tr><th className="text-left py-3 px-4">Mês</th><th className="text-right py-3 px-4">Receita</th><th className="text-right py-3 px-4">Despesa</th><th className="text-right py-3 px-4">Saldo</th></tr></thead>
-          <tbody>{data.months.map(month => <tr key={month.month} className="border-b border-[#E5E4E0]"><td className="py-3 px-4 font-medium">{MONTHS[month.month - 1]}</td><td className="py-3 px-4 text-right text-emerald-600">{fmtMoney(month.income, currency)}</td><td className="py-3 px-4 text-right text-rose-600">{fmtMoney(month.expense, currency)}</td><td className={`py-3 px-4 text-right font-semibold ${month.balance >= 0 ? "text-[#1E3F33]" : "text-rose-600"}`}>{fmtMoney(month.balance, currency)}</td></tr>)}</tbody>
-          <tfoot><tr className="bg-[#F1EFE7] font-semibold"><td className="py-3 px-4">Total</td><td className="py-3 px-4 text-right text-emerald-600">{fmtMoney(data.totals.income, currency)}</td><td className="py-3 px-4 text-right text-rose-600">{fmtMoney(data.totals.expense, currency)}</td><td className="py-3 px-4 text-right text-[#1E3F33]">{fmtMoney(data.totals.balance, currency)}</td></tr></tfoot>
+          <tbody>{data.months.map(month => <tr key={month.month} className="border-b border-[#E5E4E0]"><td className="py-3 px-4 font-medium">{MONTHS[month.month - 1]}</td><td className="py-3 px-4 text-right text-emerald-600">{fmtMoney(month.income, currency)}</td><td className="py-3 px-4 text-right text-rose-600">{fmtMoney(month.expense, currency)}</td><td className={`py-3 px-4 text-right font-semibold ${month.balance >= 0 ? "text-[#061B4A]" : "text-rose-600"}`}>{fmtMoney(month.balance, currency)}</td></tr>)}</tbody>
+          <tfoot><tr className="bg-[#F1EFE7] font-semibold"><td className="py-3 px-4">Total</td><td className="py-3 px-4 text-right text-emerald-600">{fmtMoney(data.totals.income, currency)}</td><td className="py-3 px-4 text-right text-rose-600">{fmtMoney(data.totals.expense, currency)}</td><td className="py-3 px-4 text-right text-[#061B4A]">{fmtMoney(data.totals.balance, currency)}</td></tr></tfoot>
         </table>
       </div>
     </>

@@ -90,7 +90,7 @@ export default function Installments() {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button data-testid="new-installment-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+            <Button data-testid="new-installment-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
               <Plus size={16} className="mr-1" /> Nova compra parcelada
             </Button>
           </DialogTrigger>
@@ -127,7 +127,7 @@ export default function Installments() {
                     </SelectContent>
                   </Select></div>
               </div>
-              <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="inst-submit-button">Criar</Button>
+              <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="inst-submit-button">Criar</Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -178,7 +178,7 @@ export default function Installments() {
                       )}
                     </div>
                     {!isOpen && (
-                      <div className="text-xs text-[#1E3F33] mt-1" data-testid={`purchase-summary-${p.id}`}>
+                      <div className="text-xs text-[#061B4A] mt-1" data-testid={`purchase-summary-${p.id}`}>
                         {next
                           ? <>Próxima: <b>Parcela {next.number}/{next.total}</b> · {fmtMoney(next.amount, p.currency || curr)} · vence {fmtDate(next.due_date)} · faltam {remaining}</>
                           : <>Tudo pago! 🎉</>}
@@ -187,7 +187,7 @@ export default function Installments() {
                   </div>
                 </button>
                 <div className="flex gap-1">
-                  <button onClick={() => openEdit(p)} className="text-[#6B7068] hover:text-[#1E3F33] p-2 rounded-lg border border-[#E5E4E0]" data-testid={`purchase-edit-${p.id}`} title="Editar">
+                  <button onClick={() => openEdit(p)} className="text-[#6B7068] hover:text-[#061B4A] p-2 rounded-lg border border-[#E5E4E0]" data-testid={`purchase-edit-${p.id}`} title="Editar">
                     <Pencil size={16} />
                   </button>
                   <button onClick={() => setConfirmDel(p)} className="text-[#6B7068] hover:text-[#D9453B] p-2 rounded-lg border border-[#E5E4E0]" data-testid={`purchase-delete-${p.id}`} title="Excluir">
@@ -201,7 +201,7 @@ export default function Installments() {
                   <button key={i.id} onClick={() => togglePay(i.id)} data-testid={`installment-${i.id}`}
                     className={`text-left p-3 rounded-xl border transition-all ${
                       i.status === "paid"
-                        ? "bg-[#1E3F33] text-white border-transparent"
+                        ? "bg-[#061B4A] text-white border-transparent"
                         : "bg-white border-[#E5E4E0] hover:bg-[#F1EFE7]"
                     }`}>
                     <div className="text-xs opacity-80">Parcela {i.number}/{i.total}</div>
@@ -244,7 +244,7 @@ export default function Installments() {
                 </SelectContent>
               </Select></div>
             <p className="text-xs text-[#6B7068]">Para alterar valor total ou número de parcelas, exclua e crie um novo parcelamento.</p>
-            <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="purchase-edit-submit">Salvar alterações</Button>
+            <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="purchase-edit-submit">Salvar alterações</Button>
           </form>
         </DialogContent>
       </Dialog>

@@ -12,7 +12,7 @@ export default function ConfirmDialog({
 }) {
   const confirmBg = variant === "danger"
     ? "bg-[#D9453B] hover:bg-[#B83A30] text-white"
-    : "bg-[#1E3F33] hover:bg-[#2C5C4A] text-white";
+    : "bg-[#061B4A] hover:bg-[#1268F4] text-white";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

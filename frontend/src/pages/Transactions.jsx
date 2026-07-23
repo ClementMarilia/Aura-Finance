@@ -374,7 +374,7 @@ export default function Transactions() {
         </Button>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>
-            <Button onClick={openNew} data-testid="new-transaction-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+            <Button onClick={openNew} data-testid="new-transaction-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
               <Plus size={16} className="mr-1" /> Novo lançamento
             </Button>
           </DialogTrigger>
@@ -523,7 +523,7 @@ export default function Transactions() {
                     </div>
                   )}
                   {form.type !== "transfer" && convertedAmount !== null && (
-                    <div className="col-span-2 rounded-lg bg-white/70 px-3 py-2 text-sm text-[#1E3F33]" data-testid="tx-conversion-preview">
+                    <div className="col-span-2 rounded-lg bg-white/70 px-3 py-2 text-sm text-[#061B4A]" data-testid="tx-conversion-preview">
                       {fmtMoney(numericAmount, sourceCurrency)} ≈ {fmtMoney(convertedAmount, targetCurrency)}
                     </div>
                   )}
@@ -584,7 +584,7 @@ export default function Transactions() {
                   <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} data-testid="tx-notes-input" />
                 </div>
               </div>
-              <Button type="submit" disabled={rateLoading} data-testid="tx-submit-button" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+              <Button type="submit" disabled={rateLoading} data-testid="tx-submit-button" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
                 {rateLoading ? "Buscando cotação..." : editing ? "Salvar alterações" : "Salvar"}
               </Button>
             </form>
@@ -671,7 +671,7 @@ export default function Transactions() {
 
       {selected.length > 0 && (
         <div className="card-soft flex items-center justify-between py-3" data-testid="bulk-action-bar">
-          <span className="text-sm text-[#1E3F33] font-medium">{selected.length} selecionado(s)</span>
+          <span className="text-sm text-[#061B4A] font-medium">{selected.length} selecionado(s)</span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setSelected([])} className="rounded-xl" data-testid="bulk-clear-btn">Limpar</Button>
             <Button onClick={() => setBulkConfirm(true)} data-testid="bulk-delete-btn" className="bg-[#D9453B] hover:bg-[#b8392f] rounded-xl">
@@ -687,7 +687,7 @@ export default function Transactions() {
             <tr>
               <th className="py-3 px-4 w-10">
                 <input type="checkbox" checked={allSelected} onChange={toggleSelectAll}
-                  data-testid="bulk-select-all" className="accent-[#1E3F33] w-4 h-4 cursor-pointer"
+                  data-testid="bulk-select-all" className="accent-[#061B4A] w-4 h-4 cursor-pointer"
                   disabled={selectableIds().length === 0} />
               </th>
               <th className="text-left py-3 px-4">Data</th>
@@ -710,7 +710,7 @@ export default function Transactions() {
                   <td className="py-3 px-4">
                     {t.editable !== false ? (
                       <input type="checkbox" checked={selected.includes(t.id)} onChange={() => toggleSelect(t.id)}
-                        data-testid={`tx-select-${t.id}`} className="accent-[#1E3F33] w-4 h-4 cursor-pointer" />
+                        data-testid={`tx-select-${t.id}`} className="accent-[#061B4A] w-4 h-4 cursor-pointer" />
                     ) : null}
                   </td>
                   <td className="py-3 px-4">{fmtDate(t.date)}</td>
@@ -719,7 +719,7 @@ export default function Transactions() {
                       <span>{t.description || "—"}</span>
                       {(t.recurrence_id || t.notes === "(recorrente)") && (
                         <span data-testid={`tx-recurrent-badge-${t.id}`}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#1E3F33] bg-[#E8EFE9] rounded-full px-2 py-0.5">
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#061B4A] bg-[#E7FAF5] rounded-full px-2 py-0.5">
                           <Repeat size={10} /> Recorrente
                         </span>
                       )}
@@ -789,7 +789,7 @@ export default function Transactions() {
                       )}
                       {t.receipt ? (
                         <>
-                          <button onClick={() => viewReceipt(t)} className="text-[#1E3F33] hover:bg-[#F1EFE7] rounded p-1" data-testid={`tx-receipt-view-${t.id}`} title="Ver comprovante">
+                          <button onClick={() => viewReceipt(t)} className="text-[#061B4A] hover:bg-[#F1EFE7] rounded p-1" data-testid={`tx-receipt-view-${t.id}`} title="Ver comprovante">
                             <Eye size={16} />
                           </button>
                           <button onClick={() => removeReceipt(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-receipt-remove-${t.id}`} title="Remover comprovante">
@@ -798,11 +798,11 @@ export default function Transactions() {
                         </>
                       ) : (
                         <button onClick={() => triggerUpload(t)} disabled={uploadingId === t.id}
-                          className="text-[#6B7068] hover:text-[#1E3F33] p-1 disabled:opacity-40" data-testid={`tx-receipt-upload-${t.id}`} title="Anexar comprovante">
+                          className="text-[#6B7068] hover:text-[#061B4A] p-1 disabled:opacity-40" data-testid={`tx-receipt-upload-${t.id}`} title="Anexar comprovante">
                           <Paperclip size={16} className={uploadingId === t.id ? "animate-pulse" : ""} />
                         </button>
                       )}
-                      <button onClick={() => openEdit(t)} className="text-[#6B7068] hover:text-[#1E3F33] p-1" data-testid={`tx-edit-${t.id}`} title="Editar">
+                      <button onClick={() => openEdit(t)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`tx-edit-${t.id}`} title="Editar">
                         <Pencil size={16} />
                       </button>
                       <button onClick={() => setConfirmDel(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-delete-${t.id}`} title="Excluir">

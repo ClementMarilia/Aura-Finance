@@ -9,12 +9,12 @@
   --surface: #FFFFFF;
   --surface-muted: #F1EFE7;
   --surface-elevated: #FFFFFF;
-  --primary: #1E3F33;
-  --primary-hover: #2C5C4A;
-  --primary-fg: #6FB597;
+  --primary: #061B4A;
+  --primary-hover: #1268F4;
+  --primary-fg: #FFFFFF;
   --secondary: #D96C5B;
-  --text-main: #16201A;
-  --text-muted: #6B7068;
+  --text-main: #061B4A;
+  --text-muted: #5D6B85;
   --border: #EAE7DE;
   --success: #2C7A51;
   --warning: #E5A83B;
@@ -22,17 +22,17 @@
 }
 
 html.dark {
-  --bg: #0A0E0C;
-  --surface: #121815;
-  --surface-muted: #1A211D;
-  --surface-elevated: #161C18;
-  --primary: #6FB597;
-  --primary-hover: #8AC9B0;
-  --primary-fg: #0A0E0C;
+  --bg: #04112F;
+  --surface: #071A3C;
+  --surface-muted: #0B234D;
+  --surface-elevated: #0A2048;
+  --primary: #08D7A5;
+  --primary-hover: #08B6E7;
+  --primary-fg: #061B4A;
   --secondary: #E48A78;
-  --text-main: #ECEEEA;
-  --text-muted: #9CA29C;
-  --border: #232A26;
+  --text-main: #FFFFFF;
+  --text-muted: #A6B2CC;
+  --border: #14356A;
   --success: #4FD49B;
   --warning: #F1B85A;
   --danger: #F26B61;
@@ -41,56 +41,56 @@ html.dark {
 @layer base {
   :root {
     --background: 43 27% 96%;
-    --foreground: 153 10% 12%;
+    --foreground: 222 85% 16%;
     --card: 0 0% 100%;
-    --card-foreground: 153 10% 12%;
+    --card-foreground: 222 85% 16%;
     --popover: 0 0% 100%;
-    --popover-foreground: 153 10% 12%;
-    --primary: 154 46% 16%;
-    --primary-foreground: 43 27% 96%;
+    --popover-foreground: 222 85% 16%;
+    --primary: 222 85% 16%;
+    --primary-foreground: 0 0% 100%;
     --secondary: 43 15% 90%;
-    --secondary-foreground: 154 46% 16%;
+    --secondary-foreground: 222 85% 16%;
     --muted: 43 15% 92%;
-    --muted-foreground: 153 6% 45%;
-    --accent: 152 41% 92%;
-    --accent-foreground: 154 46% 16%;
+    --muted-foreground: 220 17% 44%;
+    --accent: 166 70% 95%;
+    --accent-foreground: 222 85% 16%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 153 10% 90%;
-    --input: 153 10% 90%;
-    --ring: 154 46% 16%;
-    --chart-1: 158 40% 16%;
-    --chart-2: 152 45% 30%;
-    --chart-3: 148 42% 52%;
-    --chart-4: 141 47% 71%;
+    --border: 220 20% 90%;
+    --input: 220 20% 90%;
+    --ring: 218 90% 51%;
+    --chart-1: 222 85% 16%;
+    --chart-2: 218 90% 51%;
+    --chart-3: 193 93% 47%;
+    --chart-4: 166 93% 44%;
     --chart-5: 40 27% 70%;
     --radius: 0.75rem;
   }
 
   html.dark {
-    --background: 150 14% 4%;
-    --foreground: 43 27% 92%;
-    --card: 150 14% 7%;
-    --card-foreground: 43 27% 92%;
-    --popover: 150 14% 7%;
-    --popover-foreground: 43 27% 92%;
-    --primary: 152 41% 60%;
-    --primary-foreground: 150 14% 4%;
-    --secondary: 150 14% 12%;
-    --secondary-foreground: 43 27% 92%;
-    --muted: 150 14% 10%;
-    --muted-foreground: 150 10% 60%;
-    --accent: 152 41% 20%;
-    --accent-foreground: 152 41% 90%;
+    --background: 222 84% 10%;
+    --foreground: 0 0% 100%;
+    --card: 220 79% 13%;
+    --card-foreground: 0 0% 100%;
+    --popover: 220 79% 13%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 166 93% 44%;
+    --primary-foreground: 222 85% 16%;
+    --secondary: 218 75% 18%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 218 75% 17%;
+    --muted-foreground: 221 27% 73%;
+    --accent: 218 75% 24%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 70% 55%;
-    --destructive-foreground: 43 27% 92%;
-    --border: 150 14% 14%;
-    --input: 150 14% 14%;
-    --ring: 152 41% 60%;
-    --chart-1: 152 41% 60%;
-    --chart-2: 152 40% 45%;
-    --chart-3: 152 45% 30%;
-    --chart-4: 150 40% 22%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 218 68% 25%;
+    --input: 218 68% 25%;
+    --ring: 193 93% 47%;
+    --chart-1: 166 93% 44%;
+    --chart-2: 193 93% 47%;
+    --chart-3: 218 90% 58%;
+    --chart-4: 218 68% 35%;
     --chart-5: 40 30% 70%;
   }
 }
@@ -153,7 +153,7 @@ html.dark .bg-white { background-color: var(--surface) !important; }
 html.dark .bg-\[\#F9F8F6\] { background-color: var(--bg) !important; }
 html.dark .bg-\[\#F8F6EE\] { background-color: var(--surface-elevated) !important; }
 html.dark .bg-\[\#F1EFE7\] { background-color: var(--surface-muted) !important; }
-html.dark .bg-\[\#E8EFE9\] { background-color: rgba(111, 181, 151, 0.12) !important; }
+html.dark .bg-\[\#E7FAF5\] { background-color: rgba(111, 181, 151, 0.12) !important; }
 html.dark .bg-\[\#FAFAF7\] { background-color: var(--bg) !important; }
 
 /* Bordas */
@@ -166,17 +166,17 @@ html.dark .text-\[\#6B7068\] { color: var(--text-muted) !important; }
 html.dark .text-\[\#A8ABA0\] { color: var(--text-muted) !important; }
 
 /* Verde primário escuro original → verde claro no dark */
-html.dark .text-\[\#1E3F33\] { color: var(--primary) !important; }
-html.dark .text-\[\#2C5C4A\] { color: var(--primary-hover) !important; }
-html.dark .bg-\[\#1E3F33\] { background-color: var(--primary) !important; color: var(--primary-fg) !important; }
-html.dark .bg-\[\#2C5C4A\] { background-color: var(--primary-hover) !important; color: var(--primary-fg) !important; }
-html.dark .hover\:bg-\[\#2C5C4A\]:hover { background-color: var(--primary-hover) !important; color: var(--primary-fg) !important; }
-html.dark .hover\:text-\[\#1E3F33\]:hover { color: var(--primary) !important; }
-html.dark .border-\[\#1E3F33\] { border-color: var(--primary) !important; }
+html.dark .text-\[\#061B4A\] { color: var(--primary) !important; }
+html.dark .text-\[\#1268F4\] { color: var(--primary-hover) !important; }
+html.dark .bg-\[\#061B4A\] { background-color: var(--primary) !important; color: var(--primary-fg) !important; }
+html.dark .bg-\[\#1268F4\] { background-color: var(--primary-hover) !important; color: var(--primary-fg) !important; }
+html.dark .hover\:bg-\[\#1268F4\]:hover { background-color: var(--primary-hover) !important; color: var(--primary-fg) !important; }
+html.dark .hover\:text-\[\#061B4A\]:hover { color: var(--primary) !important; }
+html.dark .border-\[\#061B4A\] { border-color: var(--primary) !important; }
 
 /* Gradiente hero do dashboard (mantém legibilidade no dark) */
-html.dark .from-\[\#1E3F33\] { --tw-gradient-from: var(--primary) var(--tw-gradient-from-position) !important; }
-html.dark .to-\[\#2C5C4A\] { --tw-gradient-to: var(--primary-hover) var(--tw-gradient-to-position) !important; }
+html.dark .from-\[\#061B4A\] { --tw-gradient-from: var(--primary) var(--tw-gradient-from-position) !important; }
+html.dark .to-\[\#1268F4\] { --tw-gradient-to: var(--primary-hover) var(--tw-gradient-to-position) !important; }
 
 /* Coral / acento secundário */
 html.dark .text-\[\#D96C5B\] { color: var(--secondary) !important; }
@@ -283,8 +283,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 
 /* Feedback tátil nos botões primários (verde) */
-.bg-\[\#1E3F33\]:not(:disabled) { transition: transform 0.12s ease, filter 0.18s ease, background-color 0.18s ease; }
-.bg-\[\#1E3F33\]:not(:disabled):active { transform: scale(0.98); }
+.bg-\[\#061B4A\]:not(:disabled) { transition: transform 0.12s ease, filter 0.18s ease, background-color 0.18s ease; }
+.bg-\[\#061B4A\]:not(:disabled):active { transform: scale(0.98); }
 
 /* Cards com leve elevação no hover (quando a página adiciona a classe hover) */
 .card-soft { transition: box-shadow 0.2s ease, transform 0.2s ease, background-color 0.18s ease, border-color 0.18s ease; }

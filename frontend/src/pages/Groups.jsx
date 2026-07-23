@@ -14,7 +14,7 @@ function Initials({ name, color, size = 32 }) {
   const initials = (name || "?").split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="rounded-full flex items-center justify-center text-white text-xs font-medium"
-      style={{ width: size, height: size, backgroundColor: color || "#1E3F33" }}>
+      style={{ width: size, height: size, backgroundColor: color || "#061B4A" }}>
       {initials}
     </div>
   );
@@ -110,7 +110,7 @@ export default function Groups() {
                 <Input value={form.member_emails} data-testid="group-emails-input"
                   onChange={e => setForm({ ...form, member_emails: e.target.value })}
                   placeholder="ana@exemplo.com, lucas@exemplo.com" /></div>
-              <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="group-submit-button">Criar</Button>
+              <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="group-submit-button">Criar</Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -138,7 +138,7 @@ export default function Groups() {
                 </div>
               </button>
               <div className="flex gap-1">
-                <button onClick={() => openEdit(g)} className="text-[#6B7068] hover:text-[#1E3F33] p-1" data-testid={`group-edit-${g.id}`} title="Editar">
+                <button onClick={() => openEdit(g)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`group-edit-${g.id}`} title="Editar">
                   <Pencil size={16} />
                 </button>
                 <button onClick={() => setConfirmDel(g)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`group-delete-${g.id}`} title="Excluir">
@@ -165,7 +165,7 @@ export default function Groups() {
                 onChange={e => setAddEmail({ ...addEmail, [g.id]: e.target.value })}
                 data-testid={`group-add-email-${g.id}`} />
               <Button type="button" onClick={() => addMember(g.id)} data-testid={`group-add-member-${g.id}`}
-                className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl"><UserPlus size={16} /></Button>
+                className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl"><UserPlus size={16} /></Button>
             </div>
             </>
             )}
@@ -182,7 +182,7 @@ export default function Groups() {
               <Input value={editForm.name} required onChange={e => setEditForm({ ...editForm, name: e.target.value })} data-testid="group-edit-name" /></div>
             <div><Label>Descrição</Label>
               <Textarea value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} data-testid="group-edit-desc" /></div>
-            <Button type="submit" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl" data-testid="group-edit-submit">Salvar alterações</Button>
+            <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="group-edit-submit">Salvar alterações</Button>
           </form>
         </DialogContent>
       </Dialog>

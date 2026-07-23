@@ -8,7 +8,7 @@ function Initials({ name, color, size = 32 }) {
   const initials = (name || "?").split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="rounded-full flex items-center justify-center text-white text-xs font-medium"
-      style={{ width: size, height: size, backgroundColor: color || "#1E3F33" }}>
+      style={{ width: size, height: size, backgroundColor: color || "#061B4A" }}>
       {initials}
     </div>
   );
@@ -56,11 +56,11 @@ export default function Settlements() {
 
       <div className="flex gap-2 border-b border-[#E5E4E0]">
         <button onClick={() => setTab("open")} data-testid="tab-open"
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "open" ? "border-[#1E3F33] text-[#1E3F33]" : "border-transparent text-[#6B7068] hover:text-[#1E3F33]"}`}>
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "open" ? "border-[#061B4A] text-[#061B4A]" : "border-transparent text-[#6B7068] hover:text-[#061B4A]"}`}>
           <Check size={16} /> Pendentes
         </button>
         <button onClick={() => setTab("history")} data-testid="tab-history"
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "history" ? "border-[#1E3F33] text-[#1E3F33]" : "border-transparent text-[#6B7068] hover:text-[#1E3F33]"}`}>
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "history" ? "border-[#061B4A] text-[#061B4A]" : "border-transparent text-[#6B7068] hover:text-[#061B4A]"}`}>
           <HistoryIcon size={16} /> Histórico
         </button>
       </div>
@@ -94,12 +94,12 @@ export default function Settlements() {
                 <div className="mt-4 flex gap-2">
                   {s.net > 0 && (
                     <button onClick={() => nudge(s.user?.id, s.user?.name)} data-testid={`nudge-${s.user?.id}`}
-                      className="flex-1 px-3 py-1.5 rounded-lg text-xs border border-[#1E3F33] text-[#1E3F33] hover:bg-[#1E3F33] hover:text-white flex items-center justify-center gap-1 transition-colors">
+                      className="flex-1 px-3 py-1.5 rounded-lg text-xs border border-[#061B4A] text-[#061B4A] hover:bg-[#061B4A] hover:text-white flex items-center justify-center gap-1 transition-colors">
                       <Bell size={12} /> Cutucar
                     </button>
                   )}
                   <button onClick={() => settleAll(s.user?.id, s.user?.name)} data-testid={`settle-all-${s.user?.id}`}
-                    className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-[#1E3F33] text-white hover:bg-[#2C5C4A] flex items-center justify-center gap-1 transition-colors">
+                    className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-[#061B4A] text-white hover:bg-[#1268F4] flex items-center justify-center gap-1 transition-colors">
                     <Check size={12} /> Quitar tudo
                   </button>
                 </div>
@@ -120,7 +120,7 @@ export default function Settlements() {
                     <Initials name={t.debtor?.name} color={t.debtor?.avatar_color} size={28} />
                     <span className="font-medium">{t.debtor?.name}</span>
                     <span className="text-[#6B7068]">paga</span>
-                    <span className="font-semibold text-[#1E3F33]">{fmtMoney(t.amount, curr)}</span>
+                    <span className="font-semibold text-[#061B4A]">{fmtMoney(t.amount, curr)}</span>
                     <span className="text-[#6B7068]">para</span>
                     <Initials name={t.creditor?.name} color={t.creditor?.avatar_color} size={28} />
                     <span className="font-medium">{t.creditor?.name}</span>
@@ -165,7 +165,7 @@ export default function Settlements() {
                     <td className="py-3 px-4">
                       {(r.debtor_id === user.id || r.creditor_id === user.id) && (
                         <button onClick={() => markPaid(r)} data-testid={`mark-paid-${i}`}
-                          className="px-3 py-1.5 rounded-lg text-xs bg-[#1E3F33] text-white hover:bg-[#2C5C4A] flex items-center gap-1">
+                          className="px-3 py-1.5 rounded-lg text-xs bg-[#061B4A] text-white hover:bg-[#1268F4] flex items-center gap-1">
                           <Check size={12} /> Marcar pago
                         </button>
                       )}

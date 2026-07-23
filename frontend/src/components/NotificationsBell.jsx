@@ -99,7 +99,7 @@ export default function NotificationsBell() {
       <PopoverTrigger asChild>
         <button
           data-testid="notifications-bell"
-          className="relative p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1E3F33] transition-colors"
+          className="relative p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A] transition-colors"
           aria-label="Notificações"
         >
           <Bell size={18} />
@@ -120,7 +120,7 @@ export default function NotificationsBell() {
             <button
               onClick={markAll}
               data-testid="notifications-mark-all"
-              className="text-xs text-[#1E3F33] hover:underline flex items-center gap-1"
+              className="text-xs text-[#061B4A] hover:underline flex items-center gap-1"
             >
               <CheckCheck size={12} /> Marcar todas
             </button>
@@ -157,7 +157,7 @@ export default function NotificationsBell() {
           <button
             onClick={() => { setOpen(false); navigate("/notificacoes"); }}
             data-testid="notifications-see-all"
-            className="w-full text-center text-sm text-[#1E3F33] hover:bg-[#F1EFE7] rounded-lg py-2 font-medium"
+            className="w-full text-center text-sm text-[#061B4A] hover:bg-[#F1EFE7] rounded-lg py-2 font-medium"
           >
             Ver todas
           </button>

@@ -65,7 +65,7 @@ export default function Notifications() {
         </div>
         {unreadCount > 0 && (
           <button onClick={markAll} data-testid="notif-mark-all"
-            className="text-sm text-[#1E3F33] hover:bg-[#F1EFE7] rounded-lg px-3 py-2 flex items-center gap-1.5">
+            className="text-sm text-[#061B4A] hover:bg-[#F1EFE7] rounded-lg px-3 py-2 flex items-center gap-1.5">
             <CheckCheck size={16} /> Marcar todas
           </button>
         )}
@@ -74,7 +74,7 @@ export default function Notifications() {
       <div className="flex gap-2 border-b border-[#E5E4E0]">
         {["all", "unread"].map(f => (
           <button key={f} onClick={() => setFilter(f)} data-testid={`notif-filter-${f}`}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${filter === f ? "border-[#1E3F33] text-[#1E3F33]" : "border-transparent text-[#6B7068] hover:text-[#1E3F33]"}`}>
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${filter === f ? "border-[#061B4A] text-[#061B4A]" : "border-transparent text-[#6B7068] hover:text-[#061B4A]"}`}>
             {f === "all" ? "Todas" : "Não lidas"}
           </button>
         ))}
@@ -102,7 +102,7 @@ export default function Notifications() {
             <div className="flex items-center gap-1 flex-shrink-0">
               {!n.read && (
                 <button onClick={(e) => markRead(e, n)} data-testid={`notif-read-${n.id}`}
-                  className="p-1.5 rounded-lg text-[#6B7068] hover:bg-white hover:text-[#1E3F33]" title="Marcar como lida">
+                  className="p-1.5 rounded-lg text-[#6B7068] hover:bg-white hover:text-[#061B4A]" title="Marcar como lida">
                   <Check size={15} />
                 </button>
               )}
