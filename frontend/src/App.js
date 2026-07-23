@@ -22,6 +22,7 @@ import Goals from "@/pages/Goals";
 import Recurrences from "@/pages/Recurrences";
 import Wallets from "@/pages/Wallets";
 import InstallPrompt from "@/components/InstallPrompt";
+import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -44,6 +45,7 @@ function App() {
       <BrowserRouter>
         <Toaster position="top-right" richColors />
         <InstallPrompt />
+        <PWAUpdatePrompt />
         <Routes>
           <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
           <Route path="/cadastro" element={<PublicOnly><Register /></PublicOnly>} />
