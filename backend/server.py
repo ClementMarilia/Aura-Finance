@@ -31,6 +31,23 @@ mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
+DEFAULT_CORS_ORIGINS = (
+    "https://www.crelithtech.com,"
+    "https://crelithtech.com,"
+    "https://aura-finance-inky.vercel.app,"
+    "http://localhost:3000"
+)
+
+
+def configured_cors_origins() -> List[str]:
+    raw_origins = os.environ.get("CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
+    return [
+        origin.strip().rstrip("/")
+        for origin in raw_origins.split(",")
+        if origin.strip()
+    ]
+
+
 app = FastAPI(title="Controle Financeiro")
 api = APIRouter(prefix="/api")
 security = HTTPBearer(auto_error=False)
@@ -171,6 +188,15 @@ async def monetary_metadata(
         "rate_date": snapshot["date"],
         "rate_source": "manual" if manual_rate_to_base is not None else snapshot["source"],
     }
+@app.get("/api/health", tags=["health"])
+async def health_check():
+    """Health check used by Render without exposing database details."""
+    try:
+        await db.command("ping")
+    except Exception as exc:
+        logger.error("MongoDB health check failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível")
+    return {"status": "ok"}
 
 # ---------- Object Storage ----------
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
@@ -2732,7 +2758,7 @@ app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_origins=configured_cors_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )

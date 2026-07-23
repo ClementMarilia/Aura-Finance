@@ -189,7 +189,7 @@ No mobile, o avatar aparece compacto (só a inicial), mas o dropdown é o mesmo.
 
 ## Variáveis de ambiente
 
-> **Importante:** `frontend/.env` e `backend/.env` são gerenciados pelo ambiente / Vercel e **não devem ser modificados** localmente.
+> **Importante:** `frontend/.env` e `backend/.env` são gerenciados pela Vercel e pelo Render e **não devem ser versionados**. Use os arquivos `.env.example` apenas como referência.
 
 ### `backend/.env`
 | Variável | Descrição |
@@ -359,12 +359,22 @@ WS     /api/ws/notifications?token=...
 
 ## Deploy
 
-O frontend é deployado na **Vercel** automaticamente após push para o GitHub:
+### Arquitetura de produção
 
-1. Faça suas mudanças no preview do Emergent.
-2. Use o botão **"Save to Github"** no chat → push automático.
-3. A Vercel detecta o commit, faz `yarn build` (`NODE_ENV=production`) → o **Service Worker ativa** e o **banner "Instalar Aura Finance" passa a aparecer**.
-4. Variáveis de ambiente em produção (`REACT_APP_BACKEND_URL`, `MONGO_URL`, `JWT_SECRET`, `DB_NAME`, `SEED_DEMO`) ficam no painel da Vercel / serviço de hospedagem do backend.
+- **Frontend:** Vercel, com `frontend/` como Root Directory.
+- **API FastAPI:** Render, serviço `name-aura-finance-backend`.
+- **Banco de dados:** MongoDB, acessado exclusivamente pela API.
+- **Domínios públicos:** `www.crelithtech.com` e `aura-finance-inky.vercel.app`.
+
+### Fluxo de publicação
+
+1. Desenvolva em uma branch e abra um Pull Request.
+2. A Vercel gera o preview do frontend usando `frontend/vercel.json`.
+3. Após validação, faça merge na `main` para publicar o frontend de produção.
+4. O backend usa `render.yaml`, executa `uvicorn` e valida `/api/health` antes de receber tráfego.
+5. Configure `REACT_APP_BACKEND_URL` na Vercel. Configure `MONGO_URL`, `DB_NAME`, `JWT_SECRET`, `CORS_ORIGINS`, `SEED_DEMO` e, quando necessário, `EMERGENT_LLM_KEY` no Render.
+
+O endpoint `/api/health` confirma a conexão da API com o MongoDB sem expor credenciais ou detalhes do banco.
 
 > O backfill das categorias de receita roda automaticamente no próximo boot do backend em produção (idempotente).
 

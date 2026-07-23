@@ -341,7 +341,7 @@ export default function Transactions() {
                   <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required data-testid="tx-date-input" />
                 </div>
                 <div>
-                  <Label>Valor</Label>
+                  <Label>Valor ({sourceCurrency})</Label>
                   <Input type="number" step="0.01" value={form.amount}
                     onChange={e => {
                       const amount = e.target.value;
