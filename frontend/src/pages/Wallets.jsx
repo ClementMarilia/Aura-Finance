@@ -190,10 +190,10 @@ export default function Wallets() {
           <p className="text-[#6B7068]">Contas, poupança e investimentos — saldo usado para pagar contas</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={openTransfer} data-testid="wallet-transfer-btn" variant="outline" className="rounded-xl border-[#1E3F33] text-[#1E3F33]">
+          <Button onClick={openTransfer} data-testid="wallet-transfer-btn" variant="outline" className="rounded-xl border-[#061B4A] text-[#061B4A]">
             <ArrowLeftRight size={16} className="mr-1" /> Transferir
           </Button>
-          <Button onClick={openNew} data-testid="wallet-new-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+          <Button onClick={openNew} data-testid="wallet-new-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
             <Plus size={16} className="mr-1" /> Nova carteira
           </Button>
         </div>
@@ -201,7 +201,7 @@ export default function Wallets() {
 
       <div className="card-soft" data-testid="wallets-total">
         <div className="text-sm text-[#6B7068]">Saldo total disponível</div>
-        <div className={`text-4xl font-semibold mt-1 ${total >= 0 ? "text-[#1E3F33]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }}>
+        <div className={`text-4xl font-semibold mt-1 ${total >= 0 ? "text-[#061B4A]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }}>
           {fmtMoney(total, curr)}
         </div>
       </div>
@@ -214,20 +214,20 @@ export default function Wallets() {
             <div key={a.id} className="card-soft" data-testid={`wallet-${a.id}`}>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-10 h-10 rounded-xl bg-[#E8EFE9] text-[#1E3F33] flex items-center justify-center"><Icon size={18} /></div>
+                  <div className="w-10 h-10 rounded-xl bg-[#E7FAF5] text-[#061B4A] flex items-center justify-center"><Icon size={18} /></div>
                   <div>
                     <div className="font-semibold">{a.name}</div>
                     <div className="text-xs text-[#6B7068]">{meta.label}</div>
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={() => openEdit(a)} data-testid={`wallet-edit-${a.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1E3F33]"><Pencil size={14} /></button>
+                  <button onClick={() => openEdit(a)} data-testid={`wallet-edit-${a.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"><Pencil size={14} /></button>
                   <button onClick={() => setConfirmDel(a)} data-testid={`wallet-delete-${a.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"><Trash2 size={14} /></button>
                 </div>
               </div>
               <div className="mt-4">
                 <div className="text-sm text-[#6B7068]">Saldo atual</div>
-                <div className={`text-2xl font-semibold ${a.balance >= 0 ? "text-[#1E3F33]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid={`wallet-balance-${a.id}`}>
+                <div className={`text-2xl font-semibold ${a.balance >= 0 ? "text-[#061B4A]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid={`wallet-balance-${a.id}`}>
                   {fmtMoney(a.balance || 0, a.currency || curr)}
                 </div>
                 {(a.currency || curr) !== curr && (
@@ -275,7 +275,7 @@ export default function Wallets() {
             </div>
             <p className="text-xs text-[#6B7068]">Atualize aqui o valor guardado/investido. Pagamentos e transferências ajustam o saldo automaticamente.</p>
             <DialogFooter>
-              <Button type="submit" data-testid="wallet-save-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Salvar</Button>
+              <Button type="submit" data-testid="wallet-save-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Salvar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -365,7 +365,7 @@ export default function Wallets() {
                 onChange={e => setTransfer({ ...transfer, description: e.target.value })} placeholder="Ex: Sobra do mês para a poupança" />
             </div>
             <DialogFooter>
-              <Button type="submit" disabled={rateLoading} data-testid="transfer-save-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+              <Button type="submit" disabled={rateLoading} data-testid="transfer-save-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
                 {rateLoading ? "Buscando cotação..." : "Transferir"}
               </Button>
             </DialogFooter>

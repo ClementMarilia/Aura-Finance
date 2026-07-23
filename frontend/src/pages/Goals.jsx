@@ -14,7 +14,7 @@ import { Target, Plus, Pencil, Trash2, PiggyBank, Banknote } from "lucide-react"
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
-const emptyForm = { title: "", target_amount: "", current_amount: "", deadline: "", color: "#1E3F33", account_id: "" };
+const emptyForm = { title: "", target_amount: "", current_amount: "", deadline: "", color: "#061B4A", account_id: "" };
 
 export default function Goals() {
   const { user } = useAuth();
@@ -39,7 +39,7 @@ export default function Goals() {
   const openEdit = (g) => {
     setEditing(g);
     setForm({ title: g.title, target_amount: g.target_amount, current_amount: g.current_amount,
-      deadline: g.deadline || "", color: g.color || "#1E3F33", account_id: g.account_id || "" });
+      deadline: g.deadline || "", color: g.color || "#061B4A", account_id: g.account_id || "" });
     setOpen(true);
   };
 
@@ -112,7 +112,7 @@ export default function Goals() {
           <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Metas Financeiras</h1>
           <p className="text-[#6B7068]">Defina objetivos e acompanhe seu progresso</p>
         </div>
-        <Button onClick={openNew} data-testid="goal-new-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+        <Button onClick={openNew} data-testid="goal-new-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
           <Plus size={16} className="mr-1" /> Nova meta
         </Button>
       </div>
@@ -143,7 +143,7 @@ export default function Goals() {
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => openEdit(g)} data-testid={`goal-edit-${g.id}`}
-                    className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1E3F33]"><Pencil size={14} /></button>
+                    className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"><Pencil size={14} /></button>
                   <button onClick={() => setConfirmDel(g)} data-testid={`goal-delete-${g.id}`}
                     className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"><Trash2 size={14} /></button>
                 </div>
@@ -161,12 +161,12 @@ export default function Goals() {
                 <div className="flex items-center gap-1">
                   {g.current_amount > 0 && (
                     <button onClick={() => openWithdraw(g)} data-testid={`goal-withdraw-${g.id}`}
-                      className="text-xs text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1E3F33] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
+                      className="text-xs text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
                       <Banknote size={13} /> Resgatar
                     </button>
                   )}
                   <button onClick={() => openContribute(g)} data-testid={`goal-contribute-${g.id}`}
-                    className="text-xs text-[#1E3F33] hover:bg-[#F1EFE7] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
+                    className="text-xs text-[#061B4A] hover:bg-[#F1EFE7] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
                     <PiggyBank size={13} /> Aportar
                   </button>
                 </div>
@@ -224,7 +224,7 @@ export default function Goals() {
               <p className="text-xs text-[#6B7068] mt-1">Aportes podem virar uma transferência para esta conta.</p>
             </div>
             <DialogFooter>
-              <Button type="submit" data-testid="goal-save-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Salvar</Button>
+              <Button type="submit" data-testid="goal-save-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Salvar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -258,7 +258,7 @@ export default function Goals() {
               </p>
             </div>
             <DialogFooter>
-              <Button type="submit" data-testid="goal-contrib-save" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Adicionar</Button>
+              <Button type="submit" data-testid="goal-contrib-save" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Adicionar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -293,7 +293,7 @@ export default function Goals() {
               </p>
             </div>
             <DialogFooter>
-              <Button type="submit" data-testid="goal-withdraw-save" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Resgatar</Button>
+              <Button type="submit" data-testid="goal-withdraw-save" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Resgatar</Button>
             </DialogFooter>
           </form>
         </DialogContent>

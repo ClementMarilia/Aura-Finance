@@ -1,4 +1,4 @@
-# PRD - Aura Finance: Controle Financeiro Pessoal e Compartilhado
+# PRD - Crelith Finance: Controle Financeiro Pessoal e Compartilhado
 
 ## Original Problem Statement
 Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Cada usuário tem controle privado + participa de despesas compartilhadas com cálculo automático de acertos. Stack adaptada: React + FastAPI + MongoDB. Auth JWT customizado e-mail/senha. Moeda padrão EUR. Seed automático com 3 usuários (Wendy, Marilia, Nathalia / demo123) + despesa Mercado €222 dividida igualmente.
@@ -186,6 +186,6 @@ Backlog atualizado:
 ---
 ## Iteração — Tela de Login redesenhada (Jun 2026) — testado 100% (iteration_12.json)
 
-- **Login dark minimalista** (estilo referência SPACEFOX): fundo quase preto com brilho radial, wordmark "AURA" centralizado + logo mark, inputs com linha inferior (underline), botão "ENTRAR" full-width com borda, links "Esqueci minha senha" / "Criar conta" e círculo decorativo (spinner+check) embaixo.
+- **Login dark minimalista** (estilo referência SPACEFOX): fundo azul-marinho com brilho radial, logo horizontal da Crelith Finance centralizada, inputs com linha inferior (underline), botão "ENTRAR" full-width com borda, links "Esqueci minha senha" / "Criar conta" e círculo decorativo (spinner+check) embaixo.
 - Lógica 100% preservada: login, falha de senha, recuperação por pergunta de segurança e cadastro. Todos os data-testids mantidos.
 - Nota: inputs nativos com fundo transparente inline (evita overrides de `html.dark input`). Página de login é sempre dark, independente do tema do app.

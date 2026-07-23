@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api, { fmtMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
-const COLORS = ["#1E3F33", "#D96C5B", "#E5A83B", "#7EA193", "#C7BCA1"];
+const COLORS = ["#061B4A", "#D96C5B", "#E5A83B", "#7EA193", "#C7BCA1"];
 const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
 export default function Budget() {

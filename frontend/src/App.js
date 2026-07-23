@@ -38,7 +38,7 @@ function PublicOnly({ children }) {
 }
 
 function App() {
-  useEffect(() => { document.title = "Aura Finance — Controle Financeiro"; }, []);
+  useEffect(() => { document.title = "Crelith Finance — Controle Financeiro"; }, []);
   return (
     <AuthProvider>
       <BrowserRouter>

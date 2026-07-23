@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Download, X, Share } from "lucide-react";
 
 /**
- * Banner não-intrusivo que sugere instalar o Aura Finance como app.
+ * Banner não-intrusivo que sugere instalar o Crelith Finance como app.
  * - Android/Chrome: usa o evento beforeinstallprompt (instalação 1-clique).
  * - iOS Safari: mostra instrução manual (Compartilhar → Adicionar à Tela Inicial).
  * - Esconde quando já está em modo standalone (já instalado).
@@ -82,13 +82,13 @@ export default function InstallPrompt() {
     <div
       data-testid="install-prompt"
       className="fixed inset-x-3 md:left-auto md:right-4 md:bottom-20 bottom-3 md:max-w-sm z-[9998] card-soft shadow-xl border border-[#E5E4E0] flex items-start gap-3 p-4 animate-in slide-in-from-bottom-3"
-      style={{ background: "#1E3F33", color: "white" }}
+      style={{ background: "#061B4A", color: "white" }}
     >
       <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0">
         <Download size={20} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="font-semibold" style={{ fontFamily: "Outfit" }}>Instalar Aura Finance</div>
+        <div className="font-semibold" style={{ fontFamily: "Outfit" }}>Instalar Crelith Finance</div>
         {iosHint ? (
           <div className="text-sm opacity-90 mt-0.5">
             Toque em <Share size={14} className="inline mb-1" /> abaixo e depois em <strong>“Adicionar à Tela de Início”</strong> para abrir como um app.
@@ -102,7 +102,7 @@ export default function InstallPrompt() {
           <button
             onClick={install}
             data-testid="install-btn"
-            className="mt-2 inline-flex items-center gap-1.5 bg-white text-[#1E3F33] px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-[#F1EFE7]"
+            className="mt-2 inline-flex items-center gap-1.5 bg-white text-[#061B4A] px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-[#F1EFE7]"
           >
             <Download size={14} /> Instalar agora
           </button>

@@ -61,7 +61,7 @@ export default function Profile() {
       <div className="card-soft">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl font-medium"
-            style={{ backgroundColor: user?.avatar_color || "#1E3F33", fontFamily: "Outfit" }}>
+            style={{ backgroundColor: user?.avatar_color || "#061B4A", fontFamily: "Outfit" }}>
             {initials}
           </div>
           <div>
@@ -85,7 +85,7 @@ export default function Profile() {
             </Select>
             <p className="text-xs text-[#6B7068] mt-1">Dashboards e relatórios serão apresentados nesta moeda. Os valores originais não são alterados.</p>
           </div>
-          <Button type="submit" data-testid="profile-save-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Salvar</Button>
+          <Button type="submit" data-testid="profile-save-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Salvar</Button>
         </form>
       </div>
 
@@ -98,7 +98,7 @@ export default function Profile() {
           <div><Label>Nova senha</Label>
             <Input type="password" value={pw.new_password} required minLength={4} data-testid="profile-new-password"
               onChange={e => setPw({ ...pw, new_password: e.target.value })} /></div>
-          <Button type="submit" data-testid="profile-change-password-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+          <Button type="submit" data-testid="profile-change-password-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
             Alterar senha
           </Button>
         </form>
@@ -106,7 +106,7 @@ export default function Profile() {
 
       <div className="card-soft">
         <div className="flex items-center gap-2 mb-1">
-          <ShieldCheck size={18} className="text-[#1E3F33]" />
+          <ShieldCheck size={18} className="text-[#061B4A]" />
           <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Pergunta de segurança</h3>
         </div>
         <p className="text-sm text-[#6B7068] mb-3">
@@ -125,7 +125,7 @@ export default function Profile() {
           <div><Label>Resposta</Label>
             <Input value={sec.answer} required data-testid="security-answer-input"
               onChange={e => setSec({ ...sec, answer: e.target.value })} placeholder="Sua resposta secreta" /></div>
-          <Button type="submit" data-testid="security-save-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+          <Button type="submit" data-testid="security-save-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
             {user?.has_security_question ? "Atualizar pergunta" : "Salvar pergunta"}
           </Button>
         </form>

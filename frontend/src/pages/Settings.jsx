@@ -21,10 +21,10 @@ const KIND_LABEL = { expense: "Despesa", income: "Receita", both: "Ambos" };
 const KIND_BADGE = {
   expense: "bg-rose-50 text-rose-700",
   income: "bg-emerald-50 text-emerald-700",
-  both: "bg-[#F1EFE7] text-[#1E3F33]",
+  both: "bg-[#F1EFE7] text-[#061B4A]",
 };
 
-const defaultCatForm = () => ({ name: "", color: "#1E3F33", kind: "expense" });
+const defaultCatForm = () => ({ name: "", color: "#061B4A", kind: "expense" });
 
 export default function Settings() {
   const [cats, setCats] = useState([]);
@@ -51,7 +51,7 @@ export default function Settings() {
 
   const startEdit = (c) => {
     setEditing(c);
-    setForm({ name: c.name, color: c.color || "#1E3F33", kind: c.kind || "expense" });
+    setForm({ name: c.name, color: c.color || "#061B4A", kind: c.kind || "expense" });
   };
 
   const cancelEdit = () => {
@@ -120,7 +120,7 @@ export default function Settings() {
               </div>
               <Switch
                 data-testid={`notif-pref-${key}`}
-                className="data-[state=checked]:bg-[#1E3F33] data-[state=unchecked]:bg-[#D6D3CA]"
+                className="data-[state=checked]:bg-[#061B4A] data-[state=unchecked]:bg-[#D6D3CA]"
                 checked={prefs ? prefs[key] !== false : true}
                 onCheckedChange={(v) => togglePref(key, v)}
               />
@@ -159,7 +159,7 @@ export default function Settings() {
               onChange={e => setForm({ ...form, color: e.target.value })} />
           </div>
           <div className="sm:col-span-2 flex gap-1">
-            <Button type="submit" data-testid="settings-add-cat" className="flex-1 bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+            <Button type="submit" data-testid="settings-add-cat" className="flex-1 bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
               {editing ? <Pencil size={16} className="mr-1" /> : <Plus size={16} className="mr-1" />}
               {editing ? "Salvar" : "Adicionar"}
             </Button>
@@ -185,8 +185,8 @@ export default function Settings() {
               data-testid={`cat-tab-${t.key}`}
               className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition ${
                 tab === t.key
-                  ? "border-[#1E3F33] text-[#1E3F33]"
-                  : "border-transparent text-[#6B7068] hover:text-[#1E3F33]"
+                  ? "border-[#061B4A] text-[#061B4A]"
+                  : "border-transparent text-[#6B7068] hover:text-[#061B4A]"
               }`}
             >
               {t.label}
@@ -216,7 +216,7 @@ export default function Settings() {
                     {c.is_default && <span className="text-xs text-[#6B7068]">(padrão)</span>}
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
-                    <button onClick={() => startEdit(c)} className="text-[#6B7068] hover:text-[#1E3F33] p-1" data-testid={`cat-edit-${c.id}`} title="Editar">
+                    <button onClick={() => startEdit(c)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`cat-edit-${c.id}`} title="Editar">
                       <Pencil size={14} />
                     </button>
                     <button onClick={() => setConfirmDel(c)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`cat-delete-${c.id}`} title="Excluir">

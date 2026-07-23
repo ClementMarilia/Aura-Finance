@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { CURRENCIES } from "@/lib/api";
+import Logo from "@/components/Logo";
 
 function Field({ id, label, type, value, onChange, testid, placeholder, minLength, autoComplete }) {
   return (
@@ -21,7 +22,7 @@ function Field({ id, label, type, value, onChange, testid, placeholder, minLengt
         autoComplete={autoComplete}
         placeholder={placeholder}
         style={{ background: "transparent", color: "rgba(255,255,255,0.9)", borderColor: "rgba(255,255,255,0.15)" }}
-        className="w-full border-0 border-b placeholder-white/20 text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#6FB597]"
+        className="w-full border-0 border-b placeholder-white/20 text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#08D7A5]"
       />
     </div>
   );
@@ -48,10 +49,10 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ background: "#070A09" }}>
+    <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ background: "#04112F" }}>
       {/* Soft radial sphere glow */}
       <div aria-hidden className="pointer-events-none absolute inset-0"
-        style={{ background: "radial-gradient(circle at 50% 52%, rgba(111,181,151,0.10), rgba(30,63,51,0.05) 32%, transparent 60%)" }} />
+        style={{ background: "radial-gradient(circle at 50% 52%, rgba(8,215,165,0.12), rgba(18,104,244,0.07) 32%, transparent 60%)" }} />
       <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           width: "min(94vw, 860px)", height: "min(94vw, 860px)",
@@ -59,16 +60,11 @@ export default function Register() {
           boxShadow: "inset 0 0 140px rgba(255,255,255,0.025)",
         }} />
       <div aria-hidden className="pointer-events-none absolute -bottom-40 left-1/2 -translate-x-1/2 rounded-full"
-        style={{ width: "70vw", height: "70vw", background: "radial-gradient(circle, rgba(111,181,151,0.06), transparent 60%)" }} />
+        style={{ width: "70vw", height: "70vw", background: "radial-gradient(circle, rgba(8,182,231,0.08), transparent 60%)" }} />
 
       <div className="relative z-10 w-full max-w-sm px-6 text-center auth-in">
-        {/* Wordmark */}
-        <div className="mb-12 flex items-center justify-center gap-3">
-          <img src="/logo-mark-dark.png" alt="" className="h-7 w-auto opacity-90"
-            onError={(e) => { e.currentTarget.style.display = "none"; }} />
-          <span className="text-white/90 text-lg font-light whitespace-nowrap" style={{ fontFamily: "Outfit", letterSpacing: "0.3em" }}>
-            AURA FINANCE
-          </span>
+        <div className="mb-12 flex items-center justify-center">
+          <Logo variant="full" surface="dark" className="h-14 w-auto max-w-[250px]" />
         </div>
 
         <p className="text-white/40 text-xs tracking-[0.12em] uppercase mb-8">Criar conta</p>
@@ -94,7 +90,7 @@ export default function Register() {
               value={form.currency}
               onChange={(e) => setForm({ ...form, currency: e.target.value })}
               style={{ background: "transparent", color: "rgba(255,255,255,0.9)", borderColor: "rgba(255,255,255,0.15)" }}
-              className="w-full border-0 border-b text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#6FB597]"
+              className="w-full border-0 border-b text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#08D7A5]"
             >
               {CURRENCIES.map(currency => (
                 <option key={currency.value} value={currency.value} className="text-black">{currency.label}</option>

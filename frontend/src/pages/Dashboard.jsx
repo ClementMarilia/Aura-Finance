@@ -62,7 +62,7 @@ export default function Dashboard() {
     },
     {
       label: "Saldo atual", value: data.balance, icon: Wallet,
-      accent: "text-[#1E3F33]", bg: "bg-[#F1EFE7]",
+      accent: "text-[#061B4A]", bg: "bg-[#F1EFE7]",
       to: `/carteiras`,
     },
     {
@@ -84,7 +84,7 @@ export default function Dashboard() {
     },
     {
       label: "Gasto fixo mensal", value: data.fixed_monthly_expense || 0, icon: Repeat,
-      accent: "text-[#1E3F33]", bg: "bg-[#E8EFE9]",
+      accent: "text-[#061B4A]", bg: "bg-[#E7FAF5]",
       hint: data.fixed_monthly_income > 0 ? `Receita fixa: ${fmtMoney(data.fixed_monthly_income, curr)}` : "Média das recorrências ativas",
       to: `/recorrencias`,
     },
@@ -119,7 +119,7 @@ export default function Dashboard() {
       <Link
         to={`/carteiras`}
         data-testid="hero-balance-link"
-        className="card-soft bg-gradient-to-br from-[#1E3F33] to-[#2C5C4A] text-white border-transparent block hover:brightness-110 transition cursor-pointer"
+        className="card-soft bg-gradient-to-br from-[#061B4A] to-[#1268F4] text-white border-transparent block hover:brightness-110 transition cursor-pointer"
       >
         <div className="flex items-center justify-between">
           <div className="text-sm uppercase tracking-wide opacity-80">Saldo atual</div>
@@ -159,11 +159,11 @@ export default function Dashboard() {
       {accounts.length > 0 && (
         <div data-testid="account-balances">
           <div className="flex items-center gap-2 mb-3">
-            <Wallet size={18} className="text-[#1E3F33]" />
+            <Wallet size={18} className="text-[#061B4A]" />
             <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Minhas contas</h3>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            <Link to={`/carteiras`} className="card-soft bg-gradient-to-br from-[#1E3F33] to-[#2C5C4A] text-white border-transparent block hover:brightness-110 transition cursor-pointer" data-testid="patrimonio-card">
+            <Link to={`/carteiras`} className="card-soft bg-gradient-to-br from-[#061B4A] to-[#1268F4] text-white border-transparent block hover:brightness-110 transition cursor-pointer" data-testid="patrimonio-card">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-sm opacity-80"><PiggyBank size={16} /> Patrimônio</div>
                 <ChevronRight size={16} className="opacity-70" />
@@ -182,7 +182,7 @@ export default function Dashboard() {
               >
                 <ChevronRight size={14} className="absolute top-4 right-4 text-[#A8ABA0]" />
                 <div className="text-sm text-[#6B7068]">{a.name}</div>
-                <div className={`text-xl font-semibold mt-1 ${a.balance >= 0 ? "text-[#1E3F33]" : "text-rose-600"}`}
+                <div className={`text-xl font-semibold mt-1 ${a.balance >= 0 ? "text-[#061B4A]" : "text-rose-600"}`}
                   style={{ fontFamily: "Outfit" }}>
                   {fmtMoney(a.balance, a.currency || curr)}
                 </div>
@@ -210,7 +210,7 @@ export default function Dashboard() {
                 <Legend />
                 <Line type="monotone" dataKey="income" name="Receita" stroke="#2C7A51" strokeWidth={2} isAnimationActive={false} />
                 <Line type="monotone" dataKey="expense" name="Despesa" stroke="#D9453B" strokeWidth={2} isAnimationActive={false} />
-                <Line type="monotone" dataKey="balance" name="Saldo" stroke="#1E3F33" strokeWidth={2} isAnimationActive={false} />
+                <Line type="monotone" dataKey="balance" name="Saldo" stroke="#061B4A" strokeWidth={2} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -285,15 +285,15 @@ export default function Dashboard() {
                 <AreaChart data={projection.projection.map(p => ({ name: p.month.slice(5), projected: p.projected }))}>
                   <defs>
                     <linearGradient id="projGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#1E3F33" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#1E3F33" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#061B4A" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#061B4A" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E5E4E0" />
                   <XAxis dataKey="name" stroke="#6B7068" fontSize={12} />
                   <YAxis stroke="#6B7068" fontSize={12} />
                   <Tooltip formatter={(v) => fmtMoney(v, curr)} />
-                  <Area type="monotone" dataKey="projected" name="Saldo projetado" stroke="#1E3F33" strokeWidth={2} fill="url(#projGrad)" />
+                  <Area type="monotone" dataKey="projected" name="Saldo projetado" stroke="#061B4A" strokeWidth={2} fill="url(#projGrad)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -314,7 +314,7 @@ export default function Dashboard() {
               <div className="text-xl font-semibold mt-1" style={{ fontFamily: "Outfit" }}>{fmtMoney(r.amount, curr)}</div>
               <div className="mt-2 h-2 bg-[#F1EFE7] rounded-full overflow-hidden">
                 <div className="h-full rounded-full"
-                  style={{ width: `${r.percent}%`, backgroundColor: ["#1E3F33","#D96C5B","#E5A83B","#7EA193","#C7BCA1"][i] }} />
+                  style={{ width: `${r.percent}%`, backgroundColor: ["#061B4A","#D96C5B","#E5A83B","#7EA193","#C7BCA1"][i] }} />
               </div>
               <div className="text-xs text-[#6B7068] mt-1">{r.percent}%</div>
             </div>

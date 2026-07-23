@@ -93,7 +93,7 @@ export default function Recurrences() {
           <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Recorrências</h1>
           <p className="text-[#6B7068]">Lançamentos automáticos (aluguel, salário, assinaturas...)</p>
         </div>
-        <Button onClick={openNew} data-testid="rec-new-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+        <Button onClick={openNew} data-testid="rec-new-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
           <Plus size={16} className="mr-1" /> Nova recorrência
         </Button>
       </div>
@@ -114,7 +114,7 @@ export default function Recurrences() {
           </div>
           <div className="card-soft">
             <div className="text-sm text-[#6B7068]">Saldo fixo estimado</div>
-            <div className={`text-2xl font-semibold mt-1 ${fixedIncome - fixedExpense >= 0 ? "text-[#1E3F33]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-balance">
+            <div className={`text-2xl font-semibold mt-1 ${fixedIncome - fixedExpense >= 0 ? "text-[#061B4A]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-balance">
               {fmtMoney(fixedIncome - fixedExpense, curr)}
             </div>
           </div>
@@ -147,7 +147,7 @@ export default function Recurrences() {
                   </div>
                 </button>
                 <div className="flex gap-1">
-                  <button onClick={() => openEdit(r)} data-testid={`rec-edit-${r.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1E3F33]"><Pencil size={14} /></button>
+                  <button onClick={() => openEdit(r)} data-testid={`rec-edit-${r.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"><Pencil size={14} /></button>
                   <button onClick={() => setConfirmDel(r)} data-testid={`rec-delete-${r.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"><Trash2 size={14} /></button>
                 </div>
               </div>
@@ -162,7 +162,7 @@ export default function Recurrences() {
                 {cat && <div className="text-xs inline-flex items-center gap-1.5 text-[#6B7068]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{cat.name}</div>}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-[#6B7068]">{r.active ? "Pausar" : "Ativar"} recorrência</span>
-                  <Switch data-testid={`rec-toggle-${r.id}`} className="data-[state=checked]:bg-[#1E3F33] data-[state=unchecked]:bg-[#D6D3CA]"
+                  <Switch data-testid={`rec-toggle-${r.id}`} className="data-[state=checked]:bg-[#061B4A] data-[state=unchecked]:bg-[#D6D3CA]"
                     checked={r.active} onCheckedChange={() => toggle(r)} />
                 </div>
               </div>
@@ -237,7 +237,7 @@ export default function Recurrences() {
                 onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Ex: Aluguel, Salário, Spotify" />
             </div>
             <DialogFooter>
-              <Button type="submit" data-testid="rec-save-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Salvar</Button>
+              <Button type="submit" data-testid="rec-save-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Salvar</Button>
             </DialogFooter>
           </form>
         </DialogContent>

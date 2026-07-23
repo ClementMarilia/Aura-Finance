@@ -1,10 +1,10 @@
-/* Aura Finance PWA Service Worker
+/* Crelith Finance PWA Service Worker
  * Estratégia simples e segura para SPA + API:
  *  - HTML/JS/CSS estático: cache + revalidação em background
  *  - API (/api/...): SEMPRE rede (nunca cachear dados financeiros)
  *  - Offline: se rede falhar para navegação, devolve a shell em cache
  */
-const VERSION = "aura-v1";
+const VERSION = "crelith-v1";
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -15,6 +15,10 @@ const PRECACHE_URLS = [
   "/apple-touch-icon.png",
   "/icon-192.png",
   "/icon-512.png",
+  "/logo-full-light.png",
+  "/logo-full-dark.png",
+  "/logo-mark-light.png",
+  "/logo-mark-dark.png",
 ];
 
 self.addEventListener("install", (event) => {

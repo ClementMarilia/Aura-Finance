@@ -1,6 +1,6 @@
-# Aura Finance — Controle Financeiro Pessoal e Compartilhado
+# Crelith Finance — Controle Financeiro Pessoal e Compartilhado
 
-Aura Finance é um **PWA (Progressive Web App)** em pt-BR de finanças pessoais e compartilhadas. Cada usuário gerencia receitas, despesas, parcelamentos, recorrências, metas e carteiras — e ao mesmo tempo participa de **grupos** (Casa, Viagem, etc.) com **divisão automática de despesas** e **acertos** (quem deve a quem). Pode ser **instalado na tela inicial** do celular e desktop como um app nativo.
+Crelith Finance é um **PWA (Progressive Web App)** em pt-BR de finanças pessoais e compartilhadas. Cada usuário gerencia receitas, despesas, parcelamentos, recorrências, metas e carteiras — e ao mesmo tempo participa de **grupos** (Casa, Viagem, etc.) com **divisão automática de despesas** e **acertos** (quem deve a quem). Pode ser **instalado na tela inicial** do celular e desktop como um app nativo.
 
 > Stack: **React 19 + FastAPI + MongoDB**, autenticação JWT, moeda padrão **EUR (€)**. UI **com modo claro/escuro/automático**.
 
@@ -81,7 +81,7 @@ Cada card no Dashboard navega direto para a tela com filtro aplicado, mostrando 
 ## PWA & Dark Mode
 
 ### 📱 Instalável como app nativo
-O Aura Finance é um **PWA completo**:
+O Crelith Finance é um **PWA completo**:
 
 - **Manifest** (`/manifest.json`) com nome, ícones, atalhos e cores.
 - **Service Worker** (`/service-worker.js`) com estratégia:
@@ -89,7 +89,7 @@ O Aura Finance é um **PWA completo**:
   - **`/api/*`**: **nunca cacheado** (dados financeiros sempre frescos)
   - **Offline**: devolve a shell em cache se a rede cair
 - **Ícones PNG reais** em 192px, 512px (`any` + `maskable`) + apple-touch-icon 180px + favicons.
-- **Banner não-intrusivo** ("Instalar Aura Finance") no canto inferior:
+- **Banner não-intrusivo** ("Instalar Crelith Finance") no canto inferior:
   - 🤖 **Android/Chrome**: usa `beforeinstallprompt` (1-clique).
   - 🍎 **iOS Safari**: mostra instrução manual ("Compartilhar → Adicionar à Tela de Início").
   - Dispensável por 14 dias via `localStorage`.
@@ -170,7 +170,7 @@ No mobile, o avatar aparece compacto (só a inicial), mas o dropdown é o mesmo.
 │   │   │   ├── Layout.jsx           # sidebar limpa + header c/ UserMenu
 │   │   │   ├── UserMenu.jsx         # avatar dropdown (Perfil/Configurações/Sair)
 │   │   │   ├── ThemeToggle.jsx      # 2 variantes: icon (cíclico) + segmented
-│   │   │   ├── InstallPrompt.jsx    # banner "Instalar Aura Finance"
+│   │   │   ├── InstallPrompt.jsx    # banner "Instalar Crelith Finance"
 │   │   │   ├── NotificationsBell.jsx, ConfirmDialog.jsx
 │   │   │   └── ui/                  # shadcn/ui
 │   │   ├── lib/api.js               # axios + interceptor JWT
@@ -388,4 +388,4 @@ O endpoint `/api/health` confirma a conexão da API com o MongoDB sem expor cred
 
 ---
 
-© Aura Finance — controle financeiro pessoal e compartilhado · PWA instalável · light/dark/sistema.
+© Crelith Finance — controle financeiro pessoal e compartilhado · PWA instalável · light/dark/sistema.

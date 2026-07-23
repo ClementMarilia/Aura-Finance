@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Check } from "lucide-react";
+import Logo from "@/components/Logo";
 
 function Field({ id, label, type, value, onChange, testid, placeholder, autoComplete }) {
   return (
@@ -25,7 +26,7 @@ function Field({ id, label, type, value, onChange, testid, placeholder, autoComp
         autoComplete={autoComplete}
         placeholder={placeholder}
         style={{ background: "transparent", color: "rgba(255,255,255,0.9)", borderColor: "rgba(255,255,255,0.15)" }}
-        className="w-full border-0 border-b placeholder-white/20 text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#6FB597]"
+        className="w-full border-0 border-b placeholder-white/20 text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#08D7A5]"
       />
     </div>
   );
@@ -94,10 +95,10 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ background: "#070A09" }}>
+    <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ background: "#04112F" }}>
       {/* Soft radial sphere glow */}
       <div aria-hidden className="pointer-events-none absolute inset-0"
-        style={{ background: "radial-gradient(circle at 50% 52%, rgba(111,181,151,0.10), rgba(30,63,51,0.05) 32%, transparent 60%)" }} />
+        style={{ background: "radial-gradient(circle at 50% 52%, rgba(8,215,165,0.12), rgba(18,104,244,0.07) 32%, transparent 60%)" }} />
       <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           width: "min(94vw, 860px)", height: "min(94vw, 860px)",
@@ -105,16 +106,11 @@ export default function Login() {
           boxShadow: "inset 0 0 140px rgba(255,255,255,0.025)",
         }} />
       <div aria-hidden className="pointer-events-none absolute -bottom-40 left-1/2 -translate-x-1/2 rounded-full"
-        style={{ width: "70vw", height: "70vw", background: "radial-gradient(circle, rgba(111,181,151,0.06), transparent 60%)" }} />
+        style={{ width: "70vw", height: "70vw", background: "radial-gradient(circle, rgba(8,182,231,0.08), transparent 60%)" }} />
 
       <div className="relative z-10 w-full max-w-sm px-6 text-center auth-in">
-        {/* Wordmark */}
-        <div className="mb-16 flex items-center justify-center gap-3">
-          <img src="/logo-mark-dark.png" alt="" className="h-7 w-auto opacity-90"
-            onError={(e) => { e.currentTarget.style.display = "none"; }} />
-          <span className="text-white/90 text-lg font-light whitespace-nowrap" style={{ fontFamily: "Outfit", letterSpacing: "0.3em" }}>
-            AURA FINANCE
-          </span>
+        <div className="mb-16 flex items-center justify-center">
+          <Logo variant="full" surface="dark" className="h-14 w-auto max-w-[250px]" />
         </div>
 
         <form onSubmit={submit} className="space-y-7">
@@ -148,7 +144,7 @@ export default function Login() {
         {/* Decorative spinner-check */}
         <div className="mt-16 flex justify-center">
           <div className="relative w-9 h-9 rounded-full border border-white/10 flex items-center justify-center">
-            <span className="absolute inset-0 rounded-full border-t border-[#6FB597]/70 animate-spin" style={{ animationDuration: "2.6s" }} />
+            <span className="absolute inset-0 rounded-full border-t border-[#08B6E7]/70 animate-spin" style={{ animationDuration: "2.6s" }} />
             <Check size={13} className="text-white/45" />
           </div>
         </div>
@@ -168,7 +164,7 @@ export default function Login() {
                   onChange={e => setFpEmail(e.target.value)} placeholder="voce@exemplo.com" />
               </div>
               <Button type="submit" disabled={fpLoading} data-testid="forgot-continue-button"
-                className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+                className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
                 {fpLoading ? "Buscando..." : "Continuar"}
               </Button>
             </form>
@@ -189,7 +185,7 @@ export default function Login() {
                   onChange={e => setFpNewPassword(e.target.value)} placeholder="••••••••" />
               </div>
               <Button type="submit" disabled={fpLoading} data-testid="forgot-reset-button"
-                className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+                className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
                 {fpLoading ? "Redefinindo..." : "Redefinir senha"}
               </Button>
             </form>
