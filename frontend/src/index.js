@@ -5,6 +5,7 @@ import "@/index.css";
 import App from "@/App";
 import { registerSW } from "@/sw-register";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { PWAUpdateProvider } from "@/context/PWAUpdateContext";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,9 +20,11 @@ const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
+      <PWAUpdateProvider>
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      </PWAUpdateProvider>
     </ThemeProvider>
   </React.StrictMode>,
 );
