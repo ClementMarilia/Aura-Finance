@@ -5,10 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Plus, Pencil, X } from "lucide-react";
+import { Trash2, Plus, Pencil, X, RefreshCw, CheckCircle2, DownloadCloud } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ThemeToggle from "@/components/ThemeToggle";
+import { usePWAUpdate } from "@/context/PWAUpdateContext";
 
 const NOTIF_LABELS = {
   shared_expense_added: { title: "Despesas compartilhadas", desc: "Quando você é adicionado a uma nova despesa." },
@@ -27,6 +28,15 @@ const KIND_BADGE = {
 const defaultCatForm = () => ({ name: "", color: "#061B4A", kind: "expense" });
 
 export default function Settings() {
+  const {
+    appVersion,
+    supported: pwaSupported,
+    updateAvailable,
+    checking: checkingUpdate,
+    applying: applyingUpdate,
+    checkForUpdate,
+    applyUpdate,
+  } = usePWAUpdate();
   const [cats, setCats] = useState([]);
   const [form, setForm] = useState(defaultCatForm());
   const [editing, setEditing] = useState(null);
@@ -96,6 +106,19 @@ export default function Settings() {
     return k === tab;
   });
 
+  const handleCheckForUpdate = async () => {
+    const result = await checkForUpdate();
+    if (result.error) {
+      toast.error("Não foi possível verificar atualizações. Confira sua conexão.");
+    } else if (result.updateAvailable) {
+      toast.success("Nova versão pronta para instalar.");
+    } else if (!result.supported) {
+      toast.info("A verificação automática está disponível no aplicativo instalado.");
+    } else {
+      toast.success("Você já está usando a versão mais recente.");
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-2xl" data-testid="settings-page">
       <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Configurações</h1>
@@ -106,6 +129,90 @@ export default function Settings() {
           Escolha como o app deve aparecer para você. Selecione &ldquo;Sistema&rdquo; para seguir automaticamente as preferências do seu celular ou computador.
         </p>
         <ThemeToggle />
+      </div>
+
+      <div className="card-soft" data-testid="app-update-section">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>
+              Atualizações do aplicativo
+            </h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+              A Crelith Finance avisa quando uma nova versão estiver pronta. A atualização só é aplicada quando você confirmar.
+            </p>
+          </div>
+          <div
+            className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${
+              updateAvailable
+                ? "bg-blue-50 text-blue-600"
+                : "bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            {updateAvailable ? <DownloadCloud size={20} /> : <CheckCircle2 size={20} />}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-[#E5E4E0] p-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Versão instalada
+            </span>
+            <span className="text-sm font-semibold" data-testid="app-version">
+              v{appVersion}
+            </span>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Status
+            </span>
+            <span
+              className={`text-sm font-medium ${
+                updateAvailable ? "text-blue-600" : "text-emerald-700"
+              }`}
+              data-testid="app-update-status"
+            >
+              {updateAvailable ? "Nova versão disponível" : "Aplicativo atualizado"}
+            </span>
+          </div>
+        </div>
+
+        {updateAvailable && (
+          <p className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
+            Salve qualquer lançamento em edição antes de atualizar. O aplicativo será recarregado uma única vez.
+          </p>
+        )}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleCheckForUpdate}
+            disabled={checkingUpdate || applyingUpdate}
+            data-testid="check-app-update"
+            className="rounded-xl"
+          >
+            <RefreshCw size={16} className={`mr-2 ${checkingUpdate ? "animate-spin" : ""}`} />
+            {checkingUpdate ? "Verificando..." : "Verificar atualizações"}
+          </Button>
+          {updateAvailable && (
+            <Button
+              type="button"
+              onClick={applyUpdate}
+              disabled={applyingUpdate}
+              data-testid="apply-app-update"
+              className="rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
+            >
+              <DownloadCloud size={16} className="mr-2" />
+              {applyingUpdate ? "Atualizando..." : "Atualizar agora"}
+            </Button>
+          )}
+        </div>
+
+        {!pwaSupported && (
+          <p className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
+            Este navegador não oferece suporte à atualização de PWA.
+          </p>
+        )}
       </div>
 
       <div className="card-soft" data-testid="notif-prefs-section">
