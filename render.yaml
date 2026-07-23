@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: name-aura-finance-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT --proxy-headers
+    healthCheckPath: /api/health
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SEED_DEMO
+        value: "false"
+      - key: CORS_ORIGINS
+        value: https://www.crelithtech.com,https://crelithtech.com,https://aura-finance-inky.vercel.app
+      - key: EMERGENT_LLM_KEY
+        sync: false
