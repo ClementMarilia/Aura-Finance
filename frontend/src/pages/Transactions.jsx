@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import api, { fmtMoney, fmtDate, formatApiError } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +65,7 @@ export default function Transactions() {
       notes: "",
       status: "paid",
       repeat: "none",
+      currency: curr,
       exchange_rate: "",
       target_amount: "",
       rate_source: "automatic",
@@ -88,15 +89,15 @@ export default function Transactions() {
   const targetAccount = form.type === "transfer"
     ? accs.find(a => a.id === form.to_account_id)
     : null;
-  const sourceCurrency = sourceAccount?.currency || curr;
+  const sourceCurrency = sourceAccount?.currency || form.currency || curr;
   const targetCurrency = targetAccount?.currency || curr;
-  const rateContext = `${form.type}|${form.account_id}|${form.from_account_id}|${form.to_account_id}|${form.date}`;
+  const rateContext = `${form.type}|${form.currency}|${form.account_id}|${form.from_account_id}|${form.to_account_id}|${form.date}`;
   const editingRateContext = editing
-    ? `${editing.type}|${editing.account_id || ""}|${editing.from_account_id || ""}|${editing.to_account_id || ""}|${editing.date}`
+    ? `${editing.type}|${editing.currency || curr}|${editing.account_id || ""}|${editing.from_account_id || ""}|${editing.to_account_id || ""}|${editing.date}`
     : "";
 
   useEffect(() => {
-    if (!open || !sourceAccount || (form.type === "transfer" && !targetAccount)) return;
+    if (!open || (form.type === "transfer" && (!sourceAccount || !targetAccount))) return;
     if (editing && rateContext === editingRateContext) return;
     let active = true;
     api.get("/exchange-rates/quote", { params: {
@@ -155,6 +156,7 @@ export default function Transactions() {
       from_account_id: t.from_account_id || "", to_account_id: t.to_account_id || "",
       payment_method: t.payment_method || "", description: t.description || "",
       notes: t.notes || "", status: t.status,
+      currency: t.currency || curr,
       exchange_rate: String(t.type === "transfer" ? (t.transfer_exchange_rate || 1) : (t.exchange_rate_to_base || 1)),
       target_amount: String(t.target_amount ?? t.amount),
       rate_source: t.rate_source === "manual" ? "manual" : "automatic",
@@ -350,6 +352,28 @@ export default function Transactions() {
                 </div>
                 {form.type !== "transfer" && (
                 <div>
+                  <Label>Moeda</Label>
+                  <Select value={sourceCurrency} onValueChange={(value) => {
+                    const selectedAccount = accs.find(account => account.id === form.account_id);
+                    setForm({
+                      ...form,
+                      currency: value,
+                      account_id: selectedAccount && selectedAccount.currency !== value ? "" : form.account_id,
+                      exchange_rate: "",
+                      rate_source: "automatic",
+                    });
+                  }}>
+                    <SelectTrigger data-testid="tx-currency-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map(currency => (
+                        <SelectItem key={currency.value} value={currency.value}>{currency.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                )}
+                {form.type !== "transfer" && (
+                <div>
                   <Label>Categoria</Label>
                   <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
                     <SelectTrigger data-testid="tx-category-select"><SelectValue placeholder="Selecione" /></SelectTrigger>
@@ -368,10 +392,19 @@ export default function Transactions() {
                 {form.type !== "transfer" && (
                 <div>
                   <Label>Conta</Label>
-                  <Select value={form.account_id} onValueChange={(v) => setForm({ ...form, account_id: v })}>
+                  <Select value={form.account_id} onValueChange={(value) => {
+                    const account = accs.find(item => item.id === value);
+                    setForm({
+                      ...form,
+                      account_id: value,
+                      currency: account?.currency || form.currency || curr,
+                      exchange_rate: "",
+                      rate_source: "automatic",
+                    });
+                  }}>
                     <SelectTrigger data-testid="tx-account-select"><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
-                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({a.currency || curr})</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -387,7 +420,7 @@ export default function Transactions() {
                   </Select>
                 </div>
                 )}
-                {sourceAccount && (sourceCurrency !== targetCurrency || form.type === "transfer") && (
+                {(sourceCurrency !== targetCurrency || form.type === "transfer") && (
                 <div className="col-span-2 grid grid-cols-2 gap-3 rounded-xl bg-[#F1EFE7] p-3">
                   <div>
                     <Label>Cotação ({targetCurrency} por {sourceCurrency})</Label>
