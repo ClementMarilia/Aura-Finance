@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, UserCircle, Settings, LogOut } from "lucide-react";
+import { ChevronDown, UserCircle, Settings, LogOut, ShieldCheck } from "lucide-react";
 
 /**
  * UserMenu — avatar + nome do usuário no canto superior direito.
@@ -75,6 +75,11 @@ export default function UserMenu({ compact = false }) {
         <DropdownMenuItem onClick={() => navigate("/configuracoes")} data-testid="user-menu-configuracoes">
           <Settings size={16} className="mr-2" /> Configurações
         </DropdownMenuItem>
+        {user.is_admin && (
+          <DropdownMenuItem onClick={() => navigate("/admin/usuarios")} data-testid="user-menu-admin-users">
+            <ShieldCheck size={16} className="mr-2" /> Aprovar usuários
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={logout}

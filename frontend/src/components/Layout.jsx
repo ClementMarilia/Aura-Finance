@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
   Users, FolderOpen, Scale, FileBarChart, Wallet, Bell, Target, Repeat, Settings,
-  Menu, UserCircle, LogOut,
+  Menu, UserCircle, LogOut, ShieldCheck,
 } from "lucide-react";
 import NotificationsBell from "@/components/NotificationsBell";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -30,11 +30,13 @@ const nav = [
 
 // 4 primary destinations on the mobile bottom bar; everything else lives in "Mais"
 const primaryMobile = nav.slice(0, 4);
+const adminNav = { to: "/admin/usuarios", icon: ShieldCheck, label: "Aprovar Usuários" };
 
 export default function Layout() {
   const [moreOpen, setMoreOpen] = useState(false);
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const visibleNav = user?.is_admin ? [...nav, adminNav] : nav;
 
   const linkCls = ({ isActive }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors duration-200 ${
@@ -54,7 +56,7 @@ export default function Layout() {
           <Logo variant="full" className="h-16 w-auto" />
         </div>
         <nav className="flex flex-col gap-1 flex-1">
-          {nav.map((n) => (
+          {visibleNav.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={linkCls} data-testid={`nav-${n.to.replace(/\//g, "") || "painel"}`}>
               <n.icon size={18} />
               <span>{n.label}</span>
@@ -119,7 +121,7 @@ export default function Layout() {
               <SheetTitle style={{ fontFamily: "Outfit" }}>Menu</SheetTitle>
             </SheetHeader>
             <nav className="flex flex-col gap-1 px-3 pb-4">
-              {nav.map((n) => (
+              {visibleNav.map((n) => (
                 <button key={n.to} onClick={() => go(n.to)} data-testid={`more-nav-${n.to.replace(/\//g, "") || "painel"}`}
                   className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#061B4A] transition-colors">
                   <n.icon size={18} className="text-[#6B7068]" />

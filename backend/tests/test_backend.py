@@ -47,17 +47,19 @@ def test_me_ok(wendy):
     assert r.status_code == 200
     assert r.json()["email"] == "wendy@demo.com"
 
-def test_register_creates_user_with_defaults():
+def test_register_creates_pending_user_without_session():
     em = f"test_{uuid.uuid4().hex[:8]}@demo.com"
     r = requests.post(f"{API}/auth/register", json={"name": "Tester", "email": em, "password": "pass123", "currency": "EUR"})
     assert r.status_code == 200, r.text
     data = r.json()
-    assert "token" in data and data["user"]["email"] == em
-    h = {"Authorization": f"Bearer {data['token']}"}
-    cats = requests.get(f"{API}/categories", headers=h).json()
-    assert len(cats) >= 10
-    accts = requests.get(f"{API}/accounts", headers=h).json()
-    assert any(a["name"] == "Conta Principal" for a in accts)
+    assert data["status"] == "pending"
+    assert data["email"] == em
+    assert "token" not in data
+    denied = requests.post(
+        f"{API}/auth/login",
+        json={"email": em, "password": "pass123"},
+    )
+    assert denied.status_code == 403
 
 
 # Dashboard
@@ -186,17 +188,15 @@ def test_shared_expense_create_equal(wendy, marilia, nathalia):
     requests.delete(f"{API}/shared-expenses/{sid}", headers=wendy["h"])
 
 
-def test_change_password_and_relogin():
+def test_pending_user_cannot_change_password():
     em = f"pw_{uuid.uuid4().hex[:8]}@demo.com"
     r = requests.post(f"{API}/auth/register", json={"name": "X", "email": em, "password": "old123"})
     assert r.status_code == 200
-    h = {"Authorization": f"Bearer {r.json()['token']}"}
-    r2 = requests.post(f"{API}/auth/change-password", json={"current_password": "old123", "new_password": "new123"}, headers=h)
-    assert r2.status_code == 200
-    r3 = requests.post(f"{API}/auth/login", json={"email": em, "password": "new123"})
-    assert r3.status_code == 200
-    r4 = requests.post(f"{API}/auth/login", json={"email": em, "password": "old123"})
-    assert r4.status_code == 401
+    denied = requests.post(
+        f"{API}/auth/change-password",
+        json={"current_password": "old123", "new_password": "new123"},
+    )
+    assert denied.status_code == 401
 
 
 # ============================================================================

@@ -48,6 +48,18 @@ def configured_cors_origins() -> List[str]:
     ]
 
 
+def configured_admin_emails() -> set[str]:
+    raw_emails = os.environ.get(
+        "ADMIN_EMAILS",
+        "clementmarilia@gmail.com",
+    )
+    return {
+        email.strip().lower()
+        for email in raw_emails.split(",")
+        if email.strip()
+    }
+
+
 app = FastAPI(title="Controle Financeiro")
 api = APIRouter(prefix="/api")
 security = HTTPBearer(auto_error=False)
@@ -315,6 +327,32 @@ def create_token(user_id: str, email: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+def account_status(user: dict) -> str:
+    """Existing users predate approval and remain active by default."""
+    return user.get("status") or "active"
+
+
+def is_admin_user(user: dict) -> bool:
+    return user.get("email", "").lower() in configured_admin_emails()
+
+
+def ensure_active_user(user: dict) -> dict:
+    status = account_status(user)
+    if status == "pending":
+        raise HTTPException(
+            status_code=403,
+            detail="Cadastro aguardando aprovação da administradora",
+        )
+    if status == "rejected":
+        raise HTTPException(
+            status_code=403,
+            detail="Cadastro não aprovado. Entre em contato com a administradora.",
+        )
+    if status != "active":
+        raise HTTPException(status_code=403, detail="Conta indisponível")
+    return user
+
+
 async def get_current_user(request: Request) -> dict:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
@@ -329,6 +367,15 @@ async def get_current_user(request: Request) -> dict:
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
+    return ensure_active_user(user)
+
+
+async def require_admin(user=Depends(get_current_user)) -> dict:
+    if not is_admin_user(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Acesso restrito à administradora",
+        )
     return user
 
 
@@ -365,6 +412,15 @@ class UserOut(BaseModel):
     currency: str
     avatar_color: str
     created_at: str
+
+
+class AdminUserOut(BaseModel):
+    id: str
+    name: str
+    email: str
+    status: Literal["pending", "active", "rejected"]
+    created_at: str
+    reviewed_at: Optional[str] = None
 
 
 class UpdateProfileIn(BaseModel):
@@ -480,17 +536,27 @@ DEFAULT_CATEGORIES = [
 
 
 async def seed_user_defaults(user_id: str, currency: str = "EUR"):
+    existing_names = set()
+    async for category in db.categories.find(
+        {"user_id": user_id},
+        {"name": 1},
+    ):
+        existing_names.add(category.get("name"))
+
     for name, icon, color, kind in DEFAULT_CATEGORIES:
+        if name in existing_names:
+            continue
         await db.categories.insert_one({
             "id": new_id(), "user_id": user_id, "name": name,
             "icon": icon, "color": color, "kind": kind,
             "is_default": True, "created_at": now_iso(),
         })
-    await db.accounts.insert_one({
-        "id": new_id(), "user_id": user_id, "name": "Conta Principal",
-        "type": "checking", "initial_balance": 0.0,
-        "currency": normalize_currency(currency), "created_at": now_iso(),
-    })
+    if not await db.accounts.find_one({"user_id": user_id}):
+        await db.accounts.insert_one({
+            "id": new_id(), "user_id": user_id, "name": "Conta Principal",
+            "type": "checking", "initial_balance": 0.0,
+            "currency": normalize_currency(currency), "created_at": now_iso(),
+        })
 
 
 def user_color(name: str) -> str:
@@ -506,6 +572,20 @@ def public_user(u: dict) -> dict:
         "created_at": u.get("created_at", ""),
         "security_question": u.get("security_question") or None,
         "has_security_question": bool(u.get("security_answer_hash")),
+        "status": account_status(u),
+        "is_admin": is_admin_user(u),
+    }
+
+
+def admin_user_summary(u: dict) -> dict:
+    """Return identity and approval metadata only, never financial data."""
+    return {
+        "id": u["id"],
+        "name": u["name"],
+        "email": u["email"],
+        "status": account_status(u),
+        "created_at": u.get("created_at", ""),
+        "reviewed_at": u.get("reviewed_at"),
     }
 
 
@@ -521,12 +601,15 @@ async def register(payload: RegisterIn):
         "id": uid, "name": payload.name, "email": email,
         "password_hash": hash_password(payload.password),
         "currency": currency, "avatar_color": user_color(payload.name),
+        "status": "pending",
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
-    await seed_user_defaults(uid, currency)
-    token = create_token(uid, email)
-    return {"token": token, "user": public_user(user)}
+    return {
+        "status": "pending",
+        "email": email,
+        "message": "Cadastro enviado para aprovação",
+    }
 
 
 @api.post("/auth/login")
@@ -535,6 +618,7 @@ async def login(payload: LoginIn):
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
+    ensure_active_user(user)
     token = create_token(user["id"], email)
     return {"token": token, "user": public_user(user)}
 
@@ -663,10 +747,139 @@ async def reset_password_security(payload: ResetPasswordSecurityIn):
 
 @api.get("/users/search")
 async def search_users(email: str, user=Depends(get_current_user)):
-    u = await db.users.find_one({"email": email.lower()}, {"_id": 0, "password_hash": 0})
+    u = await db.users.find_one(
+        {
+            "email": email.lower(),
+            "$or": [
+                {"status": "active"},
+                {"status": {"$exists": False}},
+            ],
+        },
+        {"_id": 0, "password_hash": 0},
+    )
     if not u:
         return None
     return public_user(u)
+
+
+# ---------- User approval administration ----------
+@api.get("/admin/users", response_model=List[AdminUserOut])
+async def list_admin_users(
+    status: Literal["pending", "active", "rejected", "all"] = "pending",
+    admin=Depends(require_admin),
+):
+    if status == "active":
+        query = {
+            "$or": [
+                {"status": "active"},
+                {"status": {"$exists": False}},
+            ],
+        }
+    elif status == "all":
+        query = {}
+    else:
+        query = {"status": status}
+
+    projection = {
+        "_id": 0,
+        "id": 1,
+        "name": 1,
+        "email": 1,
+        "status": 1,
+        "created_at": 1,
+        "reviewed_at": 1,
+    }
+    users = await db.users.find(query, projection).sort("created_at", -1).to_list(500)
+    return [admin_user_summary(candidate) for candidate in users]
+
+
+@api.post("/admin/users/{user_id}/approve", response_model=AdminUserOut)
+async def approve_user(user_id: str, admin=Depends(require_admin)):
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if account_status(user) == "active":
+        raise HTTPException(status_code=409, detail="Usuário já está ativo")
+
+    lock = await db.users.update_one(
+        {
+            "id": user_id,
+            "status": {"$in": ["pending", "rejected"]},
+            "approval_in_progress": {"$ne": True},
+        },
+        {"$set": {"approval_in_progress": True}},
+    )
+    if not lock.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="Este cadastro já está sendo processado",
+        )
+
+    try:
+        await seed_user_defaults(user["id"], user.get("currency", "EUR"))
+    except Exception:
+        await db.users.update_one(
+            {"id": user_id},
+            {"$unset": {"approval_in_progress": ""}},
+        )
+        raise
+
+    reviewed_at = now_iso()
+    await db.users.update_one(
+        {"id": user_id, "approval_in_progress": True},
+        {
+            "$set": {
+                "status": "active",
+                "reviewed_at": reviewed_at,
+                "approved_by": admin["id"],
+            },
+            "$unset": {
+                "rejected_by": "",
+                "approval_in_progress": "",
+            },
+        },
+    )
+    user.update({"status": "active", "reviewed_at": reviewed_at})
+    return admin_user_summary(user)
+
+
+@api.post("/admin/users/{user_id}/reject", response_model=AdminUserOut)
+async def reject_user(user_id: str, admin=Depends(require_admin)):
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    status = account_status(user)
+    if status == "active":
+        raise HTTPException(
+            status_code=409,
+            detail="Usuário ativo não pode ser rejeitado por esta tela",
+        )
+    if status == "rejected":
+        return admin_user_summary(user)
+
+    reviewed_at = now_iso()
+    result = await db.users.update_one(
+        {
+            "id": user_id,
+            "status": "pending",
+            "approval_in_progress": {"$ne": True},
+        },
+        {
+            "$set": {
+                "status": "rejected",
+                "reviewed_at": reviewed_at,
+                "rejected_by": admin["id"],
+            },
+            "$unset": {"approved_by": ""},
+        },
+    )
+    if not result.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="Este cadastro já está sendo processado",
+        )
+    user.update({"status": "rejected", "reviewed_at": reviewed_at})
+    return admin_user_summary(user)
 
 
 # ---------- Categories ----------
@@ -1133,7 +1346,10 @@ async def _user_from_token(token: str):
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except Exception:
         return None
-    return await db.users.find_one({"id": payload.get("sub")}, {"_id": 0})
+    user = await db.users.find_one({"id": payload.get("sub")}, {"_id": 0})
+    if not user or account_status(user) != "active":
+        return None
+    return user
 
 
 @api.get("/files/{path:path}")
@@ -1504,7 +1720,13 @@ async def list_groups(user=Depends(get_current_user)):
 async def create_group(payload: GroupIn, user=Depends(get_current_user)):
     member_ids = [user["id"]]
     for em in payload.member_emails:
-        u = await db.users.find_one({"email": em.lower()})
+        u = await db.users.find_one({
+            "email": em.lower(),
+            "$or": [
+                {"status": "active"},
+                {"status": {"$exists": False}},
+            ],
+        })
         if u and u["id"] not in member_ids:
             member_ids.append(u["id"])
     doc = {
@@ -1529,7 +1751,13 @@ async def add_group_member(gid: str, body: dict, user=Depends(get_current_user))
     group = await db.groups.find_one({"id": gid, "member_ids": user["id"]})
     if not group:
         raise HTTPException(404, "Grupo não encontrado")
-    u = await db.users.find_one({"email": email})
+    u = await db.users.find_one({
+        "email": email,
+        "$or": [
+            {"status": "active"},
+            {"status": {"$exists": False}},
+        ],
+    })
     if not u:
         raise HTTPException(404, "Usuário não encontrado")
     await db.groups.update_one({"id": gid}, {"$addToSet": {"member_ids": u["id"]}})
@@ -2695,6 +2923,7 @@ async def startup():
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
     await db.users.create_index("email", unique=True)
+    await db.users.create_index([("status", 1), ("created_at", -1)])
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
     await db.shared_expenses.create_index("participant_ids")
     await db.groups.create_index("member_ids")
@@ -2702,7 +2931,15 @@ async def startup():
 
     # Backfill: garantir categorias padrão de receita para usuários existentes
     income_defaults = [c for c in DEFAULT_CATEGORIES if c[3] == "income"]
-    async for u in db.users.find({}, {"id": 1}):
+    async for u in db.users.find(
+        {
+            "$or": [
+                {"status": "active"},
+                {"status": {"$exists": False}},
+            ],
+        },
+        {"id": 1},
+    ):
         uid = u["id"]
         existing_names = set()
         async for c in db.categories.find({"user_id": uid, "kind": "income"}, {"name": 1}):
@@ -2732,6 +2969,7 @@ async def startup():
             "id": uid, "name": name, "email": email,
             "password_hash": hash_password(pw),
             "currency": "EUR", "avatar_color": user_color(name),
+            "status": "active",
             "created_at": now_iso(),
         })
         await seed_user_defaults(uid)
