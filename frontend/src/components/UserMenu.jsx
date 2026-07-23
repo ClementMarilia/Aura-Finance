@@ -8,7 +8,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, UserCircle, Settings, LogOut } from "lucide-react";
+import { ChevronDown, UserCircle, Settings, LogOut, ShieldCheck } from "lucide-react";
+import { translate as tr } from "@/i18n";
 
 /**
  * UserMenu — avatar + nome do usuário no canto superior direito.
@@ -16,8 +17,9 @@ import { ChevronDown, UserCircle, Settings, LogOut } from "lucide-react";
  *
  * Props:
  *  - compact (bool): no mobile mostra só o avatar; no desktop mostra avatar + nome
+ *  - pendingUserCount (number): cadastros aguardando aprovação administrativa
  */
-export default function UserMenu({ compact = false }) {
+export default function UserMenu({ compact = false, pendingUserCount = 0 }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const initials = (user?.name || "")
@@ -70,18 +72,32 @@ export default function UserMenu({ compact = false }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => navigate("/perfil")} data-testid="user-menu-perfil">
-          <UserCircle size={16} className="mr-2" /> Perfil
+          <UserCircle size={16} className="mr-2" /> {tr("Perfil")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate("/configuracoes")} data-testid="user-menu-configuracoes">
-          <Settings size={16} className="mr-2" /> Configurações
+          <Settings size={16} className="mr-2" /> {tr("Configurações")}
         </DropdownMenuItem>
+        {user.is_admin && (
+          <DropdownMenuItem onClick={() => navigate("/admin/usuarios")} data-testid="user-menu-admin-users">
+            <ShieldCheck size={16} className="mr-2" /> {tr("Aprovar usuários")}
+            {pendingUserCount > 0 && (
+              <span
+                data-testid="user-menu-admin-pending-count"
+                aria-label={tr("{count} cadastros pendentes", { count: pendingUserCount })}
+                className="ml-auto inline-flex min-w-[20px] h-5 items-center justify-center rounded-full bg-[#D96C5B] px-1.5 text-[10px] font-semibold text-white"
+              >
+                {pendingUserCount > 99 ? "99+" : pendingUserCount}
+              </span>
+            )}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={logout}
           data-testid="user-menu-logout"
           className="text-rose-600 focus:text-rose-700 focus:bg-rose-50"
         >
-          <LogOut size={16} className="mr-2" /> Sair
+          <LogOut size={16} className="mr-2" /> {tr("Sair")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

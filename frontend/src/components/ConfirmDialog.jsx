@@ -1,13 +1,14 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { translate as tr } from "@/i18n";
 
 /**
  * Reusable confirm dialog.
  * Usage: <ConfirmDialog open={state} onOpenChange={setState} title="..." description="..." onConfirm={fn} />
  */
 export default function ConfirmDialog({
-  open, onOpenChange, title = "Confirmar", description = "",
-  confirmLabel = "Excluir", cancelLabel = "Cancelar",
+  open, onOpenChange, title = tr("Confirmar"), description = "",
+  confirmLabel = tr("Excluir"), cancelLabel = tr("Cancelar"),
   variant = "danger", onConfirm, testId = "confirm-dialog",
 }) {
   const confirmBg = variant === "danger"

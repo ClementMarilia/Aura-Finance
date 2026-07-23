@@ -13,6 +13,8 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
+      - key: ADMIN_EMAILS
+        value: clementmarilia@gmail.com
       - key: SEED_DEMO
         value: "false"
       - key: CORS_ORIGINS

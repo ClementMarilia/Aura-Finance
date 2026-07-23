@@ -13,9 +13,10 @@ import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat, CreditCard, 
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 
-const STATUS_LABEL = { paid: "Pago", pending: "Pendente", cancelled: "Cancelado" };
-const TYPE_LABEL = { income: "Receita", expense: "Despesa", transfer: "Transferência" };
-const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+import { getMonthNames, translate as tr } from "@/i18n";
+const STATUS_LABEL = { paid: tr("Pago"), pending: tr("Pendente"), cancelled: tr("Cancelado") };
+const TYPE_LABEL = { income: tr("Receita"), expense: tr("Despesa"), transfer: tr("Transferência") };
+const MONTHS = getMonthNames("short");
 const PERIOD_KEY = "aura_period";
 function readSavedPeriod() {
   try { return JSON.parse(localStorage.getItem(PERIOD_KEY)) || null; } catch { return null; }
@@ -141,7 +142,7 @@ export default function Transactions() {
       if (!active) return;
       const rate = Number(response.data.rate);
       if (!Number.isFinite(rate) || rate <= 0) {
-        throw new Error("A API não retornou uma cotação válida");
+        throw new Error(tr("A API não retornou uma cotação válida"));
       }
       setForm(previous => ({
         ...previous,
@@ -224,15 +225,15 @@ export default function Transactions() {
     const amount = Number(form.amount);
     const exchangeRate = needsExchangeRate ? Number(form.exchange_rate) : 1;
     if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("Informe um valor maior que zero");
+      toast.error(tr("Informe um valor maior que zero"));
       return;
     }
     if (rateLoading) {
-      toast.error("Aguarde a cotação automática");
+      toast.error(tr("Aguarde a cotação automática"));
       return;
     }
     if (needsExchangeRate && (!Number.isFinite(exchangeRate) || exchangeRate <= 0)) {
-      toast.error("Informe uma cotação válida antes de salvar");
+      toast.error(tr("Informe uma cotação válida antes de salvar"));
       return;
     }
     try {
@@ -252,7 +253,7 @@ export default function Transactions() {
           next_run: form.date,
           active: true,
         });
-        toast.success("Pagamento recorrente criado");
+        toast.success(tr("Pagamento recorrente criado"));
         setOpen(false); setEditing(null); setForm(defaultForm()); load();
         return;
       }
@@ -270,10 +271,10 @@ export default function Transactions() {
       };
       if (editing) {
         await api.put(`/transactions/${editing.id}`, body);
-        toast.success("Lançamento atualizado");
+        toast.success(tr("Lançamento atualizado"));
       } else {
         await api.post("/transactions", body);
-        toast.success("Lançamento criado");
+        toast.success(tr("Lançamento criado"));
       }
       setOpen(false); setEditing(null); setForm(defaultForm()); load();
     } catch (err) { toast.error(formatApiError(err)); }
@@ -283,7 +284,7 @@ export default function Transactions() {
     if (!confirmDel) return;
     await api.delete(`/transactions/${confirmDel.id}`);
     setConfirmDel(null);
-    toast.success("Lançamento excluído");
+    toast.success(tr("Lançamento excluído"));
     load();
   };
 
@@ -294,7 +295,7 @@ export default function Transactions() {
   const bulkDelete = async () => {
     try {
       const r = await api.post("/transactions/bulk-delete", { ids: selected });
-      toast.success(`${r.data?.deleted ?? selected.length} lançamento(s) excluído(s)`);
+      toast.success(tr("{count} lançamento(s) excluído(s)", { count: r.data?.deleted ?? selected.length }));
     } catch (err) { toast.error(formatApiError(err)); }
     setBulkConfirm(false);
     load();
@@ -312,7 +313,7 @@ export default function Transactions() {
     setUploadingId(t.id);
     try {
       await api.post(`/transactions/${t.id}/receipt`, fd, { headers: { "Content-Type": "multipart/form-data" } });
-      toast.success("Comprovante anexado");
+      toast.success(tr("Comprovante anexado"));
       load();
     } catch (err) { toast.error(formatApiError(err)); }
     finally { setUploadingId(null); }
@@ -324,12 +325,12 @@ export default function Transactions() {
       const url = URL.createObjectURL(r.data);
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch { toast.error("Erro ao abrir comprovante"); }
+    } catch { toast.error(tr("Erro ao abrir comprovante")); }
   };
 
   const removeReceipt = async (t) => {
     await api.delete(`/transactions/${t.id}/receipt`);
-    toast.success("Comprovante removido");
+    toast.success(tr("Comprovante removido"));
     load();
   };
 
@@ -343,16 +344,16 @@ export default function Transactions() {
     try {
       const r = await api.post(`/transactions/${t.id}/pay`);
       const ns = r.data?.status;
-      toast.success(ns === "paid" ? "Pagamento confirmado" : "Lançamento marcado como pendente");
+      toast.success(ns === "paid" ? tr("Pagamento confirmado") : tr("Lançamento marcado como pendente"));
       load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
   const handleCSV = () => {
-    if (items.length === 0) { toast.error("Nada para exportar"); return; }
+    if (items.length === 0) { toast.error(tr("Nada para exportar")); return; }
     exportCSV(
       `lancamentos_${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Data", "Descrição", "Categoria", "Tipo", "Status", "Valor original", "Moeda", "Valor na moeda-base", "Moeda-base"],
+      [tr("Data"), tr("Descrição"), tr("Categoria"), tr("Tipo"), tr("Status"), "Valor original", tr("Moeda"), "Valor na moeda-base", tr("Moeda-base")],
       items.map(t => [
         t.date, t.description || "", cats.find(c => c.id === t.category_id)?.name || "",
         TYPE_LABEL[t.type], STATUS_LABEL[t.status], t.amount, t.currency || curr,
@@ -365,51 +366,51 @@ export default function Transactions() {
     <div className="space-y-6" data-testid="transactions-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Lançamentos</h1>
-          <p className="text-[#6B7068]">Receitas, despesas e transferências</p>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Lançamentos")}</h1>
+          <p className="text-[#6B7068]">{tr("Receitas, despesas e transferências")}</p>
         </div>
         <div className="flex gap-2">
         <Button variant="outline" onClick={handleCSV} data-testid="tx-export-csv" className="rounded-xl">
-          <FileDown size={16} className="mr-1" /> CSV
+          <FileDown size={16} className="mr-1" /> {tr("CSV")}
         </Button>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>
             <Button onClick={openNew} data-testid="new-transaction-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-              <Plus size={16} className="mr-1" /> Novo lançamento
+              <Plus size={16} className="mr-1" /> {tr("Novo lançamento")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg" data-testid="new-transaction-dialog">
-            <DialogHeader><DialogTitle>{editing ? "Editar lançamento" : "Novo lançamento"}</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{editing ? tr("Editar lançamento") : tr("Novo lançamento")}</DialogTitle></DialogHeader>
             <form onSubmit={submit} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Tipo</Label>
+                  <Label>{tr("Tipo")}</Label>
                   <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
                     <SelectTrigger data-testid="tx-type-select"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="income">Receita</SelectItem>
-                      <SelectItem value="expense">Despesa</SelectItem>
-                      <SelectItem value="transfer">Transferência</SelectItem>
+                      <SelectItem value="income">{tr("Receita")}</SelectItem>
+                      <SelectItem value="expense">{tr("Despesa")}</SelectItem>
+                      <SelectItem value="transfer">{tr("Transferência")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>Status</Label>
+                  <Label>{tr("Status")}</Label>
                   <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                     <SelectTrigger data-testid="tx-status-select"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="paid">Pago</SelectItem>
-                      <SelectItem value="pending">Pendente</SelectItem>
-                      <SelectItem value="cancelled">Cancelado</SelectItem>
+                      <SelectItem value="paid">{tr("Pago")}</SelectItem>
+                      <SelectItem value="pending">{tr("Pendente")}</SelectItem>
+                      <SelectItem value="cancelled">{tr("Cancelado")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>Data</Label>
+                  <Label>{tr("Data")}</Label>
                   <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required data-testid="tx-date-input" />
                 </div>
                 <div>
-                  <Label>Valor</Label>
+                  <Label>{tr("Valor")}</Label>
                   <Input type="number" step="0.01" value={form.amount}
                     onChange={e => {
                       const amount = e.target.value;
@@ -420,7 +421,7 @@ export default function Transactions() {
                 </div>
                 {form.type !== "transfer" && (
                 <div>
-                  <Label>Moeda</Label>
+                  <Label>{tr("Moeda")}</Label>
                   <Select value={sourceCurrency} onValueChange={(value) => {
                     const selectedAccount = accs.find(account => account.id === form.account_id);
                     setForm({
@@ -444,9 +445,9 @@ export default function Transactions() {
                 )}
                 {form.type !== "transfer" && (
                 <div>
-                  <Label>Categoria</Label>
+                  <Label>{tr("Categoria")}</Label>
                   <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
-                    <SelectTrigger data-testid="tx-category-select"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectTrigger data-testid="tx-category-select"><SelectValue placeholder={tr("Selecione")} /></SelectTrigger>
                     <SelectContent>
                       {cats
                         .filter(c => {
@@ -454,14 +455,14 @@ export default function Transactions() {
                           if (k === "both") return true;
                           return k === form.type;
                         })
-                        .map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                        .map(c => <SelectItem key={c.id} value={c.id}>{tr(c.name)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 )}
                 {form.type !== "transfer" && (
                 <div>
-                  <Label>Conta</Label>
+                  <Label>{tr("Conta")}</Label>
                   <Select value={form.account_id} onValueChange={(value) => {
                     const account = accs.find(item => item.id === value);
                     setForm({
@@ -474,20 +475,20 @@ export default function Transactions() {
                       rate_estimated: false,
                     });
                   }}>
-                    <SelectTrigger data-testid="tx-account-select"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectTrigger data-testid="tx-account-select"><SelectValue placeholder={tr("Selecione")} /></SelectTrigger>
                     <SelectContent>
-                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({a.currency || curr})</SelectItem>)}
+                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)} ({a.currency || curr})</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 )}
                 {form.type === "transfer" && (
                 <div>
-                  <Label>De conta</Label>
+                  <Label>{tr("De conta")}</Label>
                   <Select value={form.from_account_id} onValueChange={(v) => setForm({ ...form, from_account_id: v })}>
-                    <SelectTrigger data-testid="tx-from-account-select"><SelectValue placeholder="Origem" /></SelectTrigger>
+                    <SelectTrigger data-testid="tx-from-account-select"><SelectValue placeholder={tr("Origem")} /></SelectTrigger>
                     <SelectContent>
-                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -529,63 +530,63 @@ export default function Transactions() {
                   )}
                   <p className="col-span-2 text-xs text-[#6B7068]">
                     {rateLoading
-                      ? "Buscando cotação automática..."
+                      ? tr("Buscando cotação automática...")
                       : rateError
-                        ? `Cotação automática indisponível: ${rateError} Informe a taxa manualmente.`
+                        ? tr("Cotação automática indisponível: {error} Informe a taxa manualmente.", { error: rateError })
                         : form.rate_source === "automatic"
                           ? form.rate_estimated
-                            ? `Estimativa com a última cotação disponível de ${fmtDate(form.rate_date)}. Você pode ajustar pelo valor real do banco.`
-                            : `Cotação automática de ${fmtDate(form.rate_date)}; ajuste pelo valor real do banco se necessário.`
-                          : "Cotação ajustada manualmente."}
+                            ? tr("Estimativa com a última cotação disponível de {date}. Você pode ajustar pelo valor real do banco.", { date: fmtDate(form.rate_date) })
+                            : tr("Cotação automática de {date}; ajuste pelo valor real do banco se necessário.", { date: fmtDate(form.rate_date) })
+                          : tr("Cotação ajustada manualmente.")}
                   </p>
                 </div>
                 )}
                 {form.type === "transfer" && (
                 <div>
-                  <Label>Para conta</Label>
+                  <Label>{tr("Para conta")}</Label>
                   <Select value={form.to_account_id} onValueChange={(v) => setForm({ ...form, to_account_id: v })}>
-                    <SelectTrigger data-testid="tx-to-account-select"><SelectValue placeholder="Destino" /></SelectTrigger>
+                    <SelectTrigger data-testid="tx-to-account-select"><SelectValue placeholder={tr("Destino")} /></SelectTrigger>
                     <SelectContent>
-                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 )}
                 <div className="col-span-2">
-                  <Label>Forma de pagamento</Label>
+                  <Label>{tr("Forma de pagamento")}</Label>
                   <Input value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}
                     placeholder="Ex: Cartão de crédito" data-testid="tx-payment-input" />
                 </div>
                 {!editing && form.type !== "transfer" && (
                 <div className="col-span-2">
-                  <Label>Repetir (pagamento recorrente)</Label>
+                  <Label>{tr("Repetir (pagamento recorrente)")}</Label>
                   <Select value={form.repeat} onValueChange={(v) => setForm({ ...form, repeat: v })}>
                     <SelectTrigger data-testid="tx-repeat-select"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Não repetir</SelectItem>
-                      <SelectItem value="weekly">Semanal</SelectItem>
-                      <SelectItem value="monthly">Mensal</SelectItem>
-                      <SelectItem value="quarterly">Trimestral</SelectItem>
-                      <SelectItem value="semiannual">Semestral</SelectItem>
-                      <SelectItem value="yearly">Anual</SelectItem>
+                      <SelectItem value="none">{tr("Não repetir")}</SelectItem>
+                      <SelectItem value="weekly">{tr("Semanal")}</SelectItem>
+                      <SelectItem value="monthly">{tr("Mensal")}</SelectItem>
+                      <SelectItem value="quarterly">{tr("Trimestral")}</SelectItem>
+                      <SelectItem value="semiannual">{tr("Semestral")}</SelectItem>
+                      <SelectItem value="yearly">{tr("Anual")}</SelectItem>
                     </SelectContent>
                   </Select>
                   {form.repeat !== "none" && (
-                    <p className="text-xs text-[#6B7068] mt-1">Cria uma recorrência a partir desta data. Gerencie em Recorrências.</p>
+                    <p className="text-xs text-[#6B7068] mt-1">{tr("Cria uma recorrência a partir desta data. Gerencie em Recorrências.")}</p>
                   )}
                 </div>
                 )}
                 <div className="col-span-2">
-                  <Label>Descrição</Label>
+                  <Label>{tr("Descrição")}</Label>
                   <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} data-testid="tx-description-input" />
                 </div>
                 <div className="col-span-2">
-                  <Label>Observações</Label>
+                  <Label>{tr("Observações")}</Label>
                   <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} data-testid="tx-notes-input" />
                 </div>
               </div>
               <Button type="submit" disabled={rateLoading} data-testid="tx-submit-button" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-                {rateLoading ? "Buscando cotação..." : editing ? "Salvar alterações" : "Salvar"}
+                {rateLoading ? tr("Buscando cotação...") : editing ? tr("Salvar alterações") : tr("Salvar")}
               </Button>
             </form>
           </DialogContent>
@@ -597,7 +598,7 @@ export default function Transactions() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
             <SlidersHorizontal size={16} />
-            <span className="text-xs uppercase font-medium tracking-[0.06em]">Filtros</span>
+            <span className="text-xs uppercase font-medium tracking-[0.06em]">{tr("Filtros")}</span>
           </div>
           {hasActiveFilters && (
             <button
@@ -606,61 +607,61 @@ export default function Transactions() {
               data-testid="clear-filters-btn"
               className="inline-flex items-center gap-1 text-xs font-medium text-[#6B7068] hover:text-[#D9453B] rounded-lg px-2.5 py-1.5 hover:bg-rose-50 transition-colors"
             >
-              <X size={14} /> Limpar
+              <X size={14} /> {tr("Limpar")}
             </button>
           )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div>
-            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Tipo</label>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>{tr("Tipo")}</label>
             <select value={filter.type} onChange={e => setFilter({ ...filter, type: e.target.value })}
               data-testid="filter-type" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
-              <option value="">Todos</option>
-              <option value="income">Receita</option>
-              <option value="expense">Despesa</option>
-              <option value="transfer">Transferência</option>
+              <option value="">{tr("Todos")}</option>
+              <option value="income">{tr("Receita")}</option>
+              <option value="expense">{tr("Despesa")}</option>
+              <option value="transfer">{tr("Transferência")}</option>
             </select>
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Status</label>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>{tr("Status")}</label>
             <select value={filter.status} onChange={e => setFilter({ ...filter, status: e.target.value })}
               data-testid="filter-status" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
-              <option value="">Todos</option>
-              <option value="paid">Pago</option>
-              <option value="pending">Pendente</option>
-              <option value="cancelled">Cancelado</option>
+              <option value="">{tr("Todos")}</option>
+              <option value="paid">{tr("Pago")}</option>
+              <option value="pending">{tr("Pendente")}</option>
+              <option value="cancelled">{tr("Cancelado")}</option>
             </select>
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Categoria</label>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>{tr("Categoria")}</label>
             <select value={filter.category_id} onChange={e => setFilter({ ...filter, category_id: e.target.value })}
               data-testid="filter-category" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
-              <option value="">Todas</option>
-              {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="">{tr("Todas")}</option>
+              {cats.map(c => <option key={c.id} value={c.id}>{tr(c.name)}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Mês</label>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>{tr("Mês")}</label>
             <select value={filter.month} onChange={e => setFilter({ ...filter, month: e.target.value, year: e.target.value && !filter.year ? String(now.getFullYear()) : filter.year })}
               data-testid="filter-month" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
-              <option value="">Todos</option>
+              <option value="">{tr("Todos")}</option>
               {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Ano</label>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>{tr("Ano")}</label>
             <select value={filter.year} onChange={e => setFilter({ ...filter, year: e.target.value })}
               data-testid="filter-year" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
-              <option value="">Todos</option>
+              <option value="">{tr("Todos")}</option>
               {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Carteira</label>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>{tr("Carteira")}</label>
             <select value={filter.account_id} onChange={e => setFilter({ ...filter, account_id: e.target.value })}
               data-testid="filter-account" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
-              <option value="">Todas</option>
-              {accs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              <option value="">{tr("Todas")}</option>
+              {accs.map(a => <option key={a.id} value={a.id}>{tr(a.name)}</option>)}
             </select>
           </div>
         </div>
@@ -673,9 +674,9 @@ export default function Transactions() {
         <div className="card-soft flex items-center justify-between py-3" data-testid="bulk-action-bar">
           <span className="text-sm text-[#061B4A] font-medium">{selected.length} selecionado(s)</span>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setSelected([])} className="rounded-xl" data-testid="bulk-clear-btn">Limpar</Button>
+            <Button variant="outline" onClick={() => setSelected([])} className="rounded-xl" data-testid="bulk-clear-btn">{tr("Limpar")}</Button>
             <Button onClick={() => setBulkConfirm(true)} data-testid="bulk-delete-btn" className="bg-[#D9453B] hover:bg-[#b8392f] rounded-xl">
-              <Trash2 size={16} className="mr-1" /> Excluir selecionados
+              <Trash2 size={16} className="mr-1" /> {tr("Excluir selecionados")}
             </Button>
           </div>
         </div>
@@ -690,18 +691,18 @@ export default function Transactions() {
                   data-testid="bulk-select-all" className="accent-[#061B4A] w-4 h-4 cursor-pointer"
                   disabled={selectableIds().length === 0} />
               </th>
-              <th className="text-left py-3 px-4">Data</th>
-              <th className="text-left py-3 px-4">Descrição</th>
-              <th className="text-left py-3 px-4">Categoria</th>
-              <th className="text-left py-3 px-4">Tipo</th>
-              <th className="text-left py-3 px-4">Status</th>
-              <th className="text-right py-3 px-4">Valor</th>
+              <th className="text-left py-3 px-4">{tr("Data")}</th>
+              <th className="text-left py-3 px-4">{tr("Descrição")}</th>
+              <th className="text-left py-3 px-4">{tr("Categoria")}</th>
+              <th className="text-left py-3 px-4">{tr("Tipo")}</th>
+              <th className="text-left py-3 px-4">{tr("Status")}</th>
+              <th className="text-right py-3 px-4">{tr("Valor")}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 && (
-              <tr><td colSpan={8} className="text-center py-12 text-[#6B7068]">Nenhum lançamento</td></tr>
+              <tr><td colSpan={8} className="text-center py-12 text-[#6B7068]">{tr("Nenhum lançamento")}</td></tr>
             )}
             {items.map(t => {
               const cat = cats.find(c => c.id === t.category_id);
@@ -720,26 +721,26 @@ export default function Transactions() {
                       {(t.recurrence_id || t.notes === "(recorrente)") && (
                         <span data-testid={`tx-recurrent-badge-${t.id}`}
                           className="inline-flex items-center gap-1 text-[10px] font-medium text-[#061B4A] bg-[#E7FAF5] rounded-full px-2 py-0.5">
-                          <Repeat size={10} /> Recorrente
+                          <Repeat size={10} /> {tr("Recorrente")}
                         </span>
                       )}
                       {t.source === "installment" && (
                         <span data-testid={`tx-installment-badge-${t.id}`}
                           className="inline-flex items-center gap-1 text-[10px] font-medium text-[#8A5A00] bg-orange-50 rounded-full px-2 py-0.5">
-                          <CreditCard size={10} /> Parcela
+                          <CreditCard size={10} /> {tr("Parcela")}
                         </span>
                       )}
                       {t.overdue && (
                         <span data-testid={`tx-overdue-badge-${t.id}`}
                           className="inline-flex items-center gap-1 text-[10px] font-medium text-[#D9453B] bg-red-50 rounded-full px-2 py-0.5">
-                          Atrasada
+                          {tr("Atrasada")}
                         </span>
                       )}
                     </div>
                   </td>
                   <td className="py-3 px-4">
                     {cat ? <span className="inline-flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{cat.name}
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{tr(cat.name)}
                     </span> : "—"}
                   </td>
                   <td className="py-3 px-4">{TYPE_LABEL[t.type]}</td>
@@ -767,7 +768,7 @@ export default function Transactions() {
                             <Check size={16} />
                           </button>
                         ) : (
-                          <span className="text-xs text-[#6B7068] italic pr-1" title="Editar em Parcelamentos">vinculado</span>
+                          <span className="text-xs text-[#6B7068] italic pr-1" title={tr("Editar em Parcelamentos")}>vinculado</span>
                         )
                       ) : (
                       <>
@@ -789,23 +790,23 @@ export default function Transactions() {
                       )}
                       {t.receipt ? (
                         <>
-                          <button onClick={() => viewReceipt(t)} className="text-[#061B4A] hover:bg-[#F1EFE7] rounded p-1" data-testid={`tx-receipt-view-${t.id}`} title="Ver comprovante">
+                          <button onClick={() => viewReceipt(t)} className="text-[#061B4A] hover:bg-[#F1EFE7] rounded p-1" data-testid={`tx-receipt-view-${t.id}`} title={tr("Ver comprovante")}>
                             <Eye size={16} />
                           </button>
-                          <button onClick={() => removeReceipt(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-receipt-remove-${t.id}`} title="Remover comprovante">
+                          <button onClick={() => removeReceipt(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-receipt-remove-${t.id}`} title={tr("Remover comprovante")}>
                             <X size={14} />
                           </button>
                         </>
                       ) : (
                         <button onClick={() => triggerUpload(t)} disabled={uploadingId === t.id}
-                          className="text-[#6B7068] hover:text-[#061B4A] p-1 disabled:opacity-40" data-testid={`tx-receipt-upload-${t.id}`} title="Anexar comprovante">
+                          className="text-[#6B7068] hover:text-[#061B4A] p-1 disabled:opacity-40" data-testid={`tx-receipt-upload-${t.id}`} title={tr("Anexar comprovante")}>
                           <Paperclip size={16} className={uploadingId === t.id ? "animate-pulse" : ""} />
                         </button>
                       )}
-                      <button onClick={() => openEdit(t)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`tx-edit-${t.id}`} title="Editar">
+                      <button onClick={() => openEdit(t)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`tx-edit-${t.id}`} title={tr("Editar")}>
                         <Pencil size={16} />
                       </button>
-                      <button onClick={() => setConfirmDel(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-delete-${t.id}`} title="Excluir">
+                      <button onClick={() => setConfirmDel(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-delete-${t.id}`} title={tr("Excluir")}>
                         <Trash2 size={16} />
                       </button>
                       </>
@@ -822,8 +823,8 @@ export default function Transactions() {
       <ConfirmDialog
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
-        title="Excluir lançamento?"
-        description={confirmDel ? `"${confirmDel.description || "Sem descrição"}" - ${fmtMoney(confirmDel.amount, confirmDel.currency || curr)}. Esta ação não pode ser desfeita.` : ""}
+        title={tr("Excluir lançamento?")}
+        description={confirmDel ? tr("{item}. Esta ação não pode ser desfeita.", { item: `"${confirmDel.description || tr("Sem descrição")}" - ${fmtMoney(confirmDel.amount, confirmDel.currency || curr)}` }) : ""}
         onConfirm={remove}
         testId="tx-confirm-delete"
       />
@@ -831,8 +832,8 @@ export default function Transactions() {
       <ConfirmDialog
         open={bulkConfirm}
         onOpenChange={setBulkConfirm}
-        title="Excluir selecionados?"
-        description={`${selected.length} lançamento(s) serão excluídos permanentemente. Esta ação não pode ser desfeita.`}
+        title={tr("Excluir selecionados?")}
+        description={tr("{count} lançamento(s) serão excluídos permanentemente. Esta ação não pode ser desfeita.", { count: selected.length })}
         onConfirm={bulkDelete}
         testId="tx-bulk-confirm-delete"
       />

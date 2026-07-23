@@ -73,6 +73,10 @@ Cada card no Dashboard navega direto para a tela com filtro aplicado, mostrando 
 
 ### Conta & segurança
 - Auth JWT + bcrypt.
+- **Interface multilíngue** em Português, Italiano, Inglês e Espanhol. O primeiro acesso considera o idioma do dispositivo; a escolha manual é salva no perfil e acompanha o usuário em outros dispositivos.
+- **Aprovação de novos usuários**: cadastro entra como `pending`, sem token e sem estrutura financeira. Apenas administradores configurados em `ADMIN_EMAILS` podem aprovar ou rejeitar.
+- A área administrativa exibe somente nome, e-mail, data do cadastro e status. Ela não consulta carteiras, saldos, lançamentos ou relatórios.
+- Usuários existentes sem o campo `status` continuam ativos para garantir compatibilidade.
 - **Recuperação de senha** por pergunta de segurança (fluxo público de 2 passos no Login + configuração em Perfil).
 - **Notificações in-app** + push em **WebSocket** (`/api/ws/notifications`) com fallback de polling; preferências por tipo (mute).
 
@@ -197,6 +201,7 @@ No mobile, o avatar aparece compacto (só a inicial), mas o dropdown é o mesmo.
 | `MONGO_URL` | URL de conexão com o MongoDB. |
 | `DB_NAME` | Nome do banco. |
 | `JWT_SECRET` | Segredo para assinatura dos tokens JWT. |
+| `ADMIN_EMAILS` | E-mails, separados por vírgula, autorizados a aprovar usuários. |
 | `SEED_DEMO` | `true` para seed automático no startup (3 usuários demo, grupo Casa, despesa Mercado €222). |
 | `EMERGENT_LLM_KEY` | (opcional) usado para Emergent Object Storage de anexos. |
 
@@ -269,6 +274,9 @@ POST   /auth/security-question                   # define (auth)
 GET    /auth/security-question?email=...         # público (retorna pergunta ou null)
 POST   /auth/reset-password-security             # público (email, answer, new_password)
 GET    /users/search
+GET    /admin/users?status=pending|active|rejected|all
+POST   /admin/users/{user_id}/approve
+POST   /admin/users/{user_id}/reject
 ```
 
 ### Categorias / Carteiras
@@ -345,6 +353,8 @@ WS     /api/ws/notifications?token=...
 - **Auto-preenchimento por grupo**: ao escolher um grupo numa despesa compartilhada, todos os membros viram participantes (preservando quem já foi adicionado manualmente).
 - **IDs**: UUIDs em tudo (nunca ObjectId).
 - **Auth de WS**: token via query string (`?token=...`).
+- **Aprovação**: novos cadastros não recebem token. Categorias e Conta Principal são criadas somente após aprovação.
+- **Privacidade administrativa**: a API `/admin/users` devolve apenas metadados cadastrais e nunca acessa coleções financeiras.
 
 ---
 
@@ -372,7 +382,7 @@ WS     /api/ws/notifications?token=...
 2. A Vercel gera o preview do frontend usando `frontend/vercel.json`.
 3. Após validação, faça merge na `main` para publicar o frontend de produção.
 4. O backend usa `render.yaml`, executa `uvicorn` e valida `/api/health` antes de receber tráfego.
-5. Configure `REACT_APP_BACKEND_URL` na Vercel. Configure `MONGO_URL`, `DB_NAME`, `JWT_SECRET`, `CORS_ORIGINS`, `SEED_DEMO` e, quando necessário, `EMERGENT_LLM_KEY` no Render.
+5. Configure `REACT_APP_BACKEND_URL` na Vercel. Configure `MONGO_URL`, `DB_NAME`, `JWT_SECRET`, `ADMIN_EMAILS`, `CORS_ORIGINS`, `SEED_DEMO` e, quando necessário, `EMERGENT_LLM_KEY` no Render.
 
 O endpoint `/api/health` confirma a conexão da API com o MongoDB sem expor credenciais ou detalhes do banco.
 

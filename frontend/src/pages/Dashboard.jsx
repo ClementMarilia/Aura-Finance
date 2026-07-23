@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import api from "@/lib/api";
 import { fmtMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { getMonthNames, translate as tr } from "@/i18n";
 import {
   TrendingUp, TrendingDown, Wallet, Clock, HandCoins, CreditCard,
   Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat, PiggyBank, ChevronRight
@@ -12,7 +13,7 @@ import {
   PieChart, Pie, Cell, Legend, AreaChart, Area
 } from "recharts";
 
-const months = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const months = getMonthNames("short");
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -47,45 +48,45 @@ export default function Dashboard() {
   const patrimonio = accounts.reduce((s, a) => s + (a.balance_base ?? a.balance ?? 0), 0);
   const ym = `year=${period.year}&month=${period.month}`;
 
-  if (!data) return <div className="text-[#6B7068]">Carregando painel...</div>;
+  if (!data) return <div className="text-[#6B7068]">{tr("Carregando painel...")}</div>;
 
   const stats = [
     {
-      label: "Receita do mês", value: data.income, icon: TrendingUp,
+      label: tr("Receita do mês"), value: data.income, icon: TrendingUp,
       accent: "text-emerald-600", bg: "bg-emerald-50",
       to: `/lancamentos?type=income&${ym}`,
     },
     {
-      label: "Despesa do mês", value: data.expense, icon: TrendingDown,
+      label: tr("Despesa do mês"), value: data.expense, icon: TrendingDown,
       accent: "text-rose-600", bg: "bg-rose-50",
       to: `/lancamentos?type=expense&${ym}`,
     },
     {
-      label: "Saldo atual", value: data.balance, icon: Wallet,
+      label: tr("Saldo atual"), value: data.balance, icon: Wallet,
       accent: "text-[#061B4A]", bg: "bg-[#F1EFE7]",
       to: `/carteiras`,
     },
     {
-      label: "Contas pendentes", value: data.pending_payable, icon: Clock,
+      label: tr("Contas pendentes"), value: data.pending_payable, icon: Clock,
       accent: "text-amber-700", bg: "bg-amber-50",
       hint: data.shared_payable > 0 ? `Inclui ${fmtMoney(data.shared_payable, curr)} de despesas compartilhadas` : null,
       to: `/lancamentos?type=expense&status=pending&${ym}`,
     },
     {
-      label: "A receber", value: data.receivable_total, icon: HandCoins,
+      label: tr("A receber"), value: data.receivable_total, icon: HandCoins,
       accent: "text-blue-600", bg: "bg-blue-50",
       hint: data.shared_receivable > 0 ? `Inclui ${fmtMoney(data.shared_receivable, curr)} de despesas compartilhadas` : null,
       to: `/contas-a-receber`,
     },
     {
-      label: "Parcelas futuras", value: data.future_installments_total, icon: CreditCard,
+      label: tr("Parcelas futuras"), value: data.future_installments_total, icon: CreditCard,
       accent: "text-[#D96C5B]", bg: "bg-orange-50",
       to: `/parcelamentos`,
     },
     {
-      label: "Gasto fixo mensal", value: data.fixed_monthly_expense || 0, icon: Repeat,
+      label: tr("Gasto fixo mensal"), value: data.fixed_monthly_expense || 0, icon: Repeat,
       accent: "text-[#061B4A]", bg: "bg-[#E7FAF5]",
-      hint: data.fixed_monthly_income > 0 ? `Receita fixa: ${fmtMoney(data.fixed_monthly_income, curr)}` : "Média das recorrências ativas",
+      hint: data.fixed_monthly_income > 0 ? `Receita fixa: ${fmtMoney(data.fixed_monthly_income, curr)}` : tr("Média das recorrências ativas"),
       to: `/recorrencias`,
     },
   ];
@@ -95,7 +96,7 @@ export default function Dashboard() {
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>
-            Olá, {user?.name?.split(" ")[0]}
+            {tr("Olá,")} {user?.name?.split(" ")[0]}
           </h1>
           <p className="text-[#6B7068] mt-1">
             {months[period.month - 1]} de {period.year}
@@ -122,7 +123,7 @@ export default function Dashboard() {
         className="card-soft bg-gradient-to-br from-[#061B4A] to-[#1268F4] text-white border-transparent block hover:brightness-110 transition cursor-pointer"
       >
         <div className="flex items-center justify-between">
-          <div className="text-sm uppercase tracking-wide opacity-80">Saldo atual</div>
+          <div className="text-sm uppercase tracking-wide opacity-80">{tr("Saldo atual")}</div>
           <ChevronRight size={18} className="opacity-70" />
         </div>
         <div className="text-5xl font-semibold tracking-tight mt-2" style={{ fontFamily: "Outfit" }}
@@ -130,8 +131,8 @@ export default function Dashboard() {
           {fmtMoney(data.balance, curr)}
         </div>
         <div className="mt-3 flex gap-6 text-sm">
-          <span>Receita: <strong>{fmtMoney(data.income, curr)}</strong></span>
-          <span>Despesa: <strong>{fmtMoney(data.expense, curr)}</strong></span>
+          <span>{tr("Receita:")} <strong>{fmtMoney(data.income, curr)}</strong></span>
+          <span>{tr("Despesa:")} <strong>{fmtMoney(data.expense, curr)}</strong></span>
         </div>
       </Link>
 
@@ -160,18 +161,18 @@ export default function Dashboard() {
         <div data-testid="account-balances">
           <div className="flex items-center gap-2 mb-3">
             <Wallet size={18} className="text-[#061B4A]" />
-            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Minhas contas</h3>
+            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Minhas contas")}</h3>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             <Link to={`/carteiras`} className="card-soft bg-gradient-to-br from-[#061B4A] to-[#1268F4] text-white border-transparent block hover:brightness-110 transition cursor-pointer" data-testid="patrimonio-card">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-sm opacity-80"><PiggyBank size={16} /> Patrimônio</div>
+                <div className="flex items-center gap-1.5 text-sm opacity-80"><PiggyBank size={16} /> {tr("Patrimônio")}</div>
                 <ChevronRight size={16} className="opacity-70" />
               </div>
               <div className="text-2xl font-semibold mt-1" style={{ fontFamily: "Outfit" }} data-testid="patrimonio-value">
                 {fmtMoney(patrimonio, curr)}
               </div>
-              <div className="text-xs opacity-70 mt-1">Soma do saldo atual de todas as carteiras</div>
+              <div className="text-xs opacity-70 mt-1">{tr("Soma do saldo atual de todas as carteiras")}</div>
             </Link>
             {accounts.map(a => (
               <Link
@@ -181,7 +182,7 @@ export default function Dashboard() {
                 data-testid={`account-card-${a.id}`}
               >
                 <ChevronRight size={14} className="absolute top-4 right-4 text-[#A8ABA0]" />
-                <div className="text-sm text-[#6B7068]">{a.name}</div>
+                <div className="text-sm text-[#6B7068]">{tr(a.name)}</div>
                 <div className={`text-xl font-semibold mt-1 ${a.balance >= 0 ? "text-[#061B4A]" : "text-rose-600"}`}
                   style={{ fontFamily: "Outfit" }}>
                   {fmtMoney(a.balance, a.currency || curr)}
@@ -189,7 +190,7 @@ export default function Dashboard() {
                 {(a.currency || curr) !== curr && (
                   <div className="text-xs text-[#6B7068] mt-1">≈ {fmtMoney(a.balance_base || 0, curr)}</div>
                 )}
-                <div className="text-xs text-[#6B7068] mt-1">Ver lançamentos →</div>
+                <div className="text-xs text-[#6B7068] mt-1">{tr("Ver lançamentos →")}</div>
               </Link>
             ))}
           </div>
@@ -199,7 +200,7 @@ export default function Dashboard() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="card-soft lg:col-span-2">
-          <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: "Outfit" }}>Evolução (6 meses)</h3>
+          <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: "Outfit" }}>{tr("Evolução (6 meses)")}</h3>
           <div style={{ width: "100%", height: 260 }}>
             <ResponsiveContainer>
               <LineChart data={data.evolution}>
@@ -208,18 +209,18 @@ export default function Dashboard() {
                 <YAxis stroke="#6B7068" fontSize={12} />
                 <Tooltip formatter={(v) => fmtMoney(v, curr)} />
                 <Legend />
-                <Line type="monotone" dataKey="income" name="Receita" stroke="#2C7A51" strokeWidth={2} isAnimationActive={false} />
-                <Line type="monotone" dataKey="expense" name="Despesa" stroke="#D9453B" strokeWidth={2} isAnimationActive={false} />
-                <Line type="monotone" dataKey="balance" name="Saldo" stroke="#061B4A" strokeWidth={2} isAnimationActive={false} />
+                <Line type="monotone" dataKey="income" name={tr("Receita")} stroke="#2C7A51" strokeWidth={2} isAnimationActive={false} />
+                <Line type="monotone" dataKey="expense" name={tr("Despesa")} stroke="#D9453B" strokeWidth={2} isAnimationActive={false} />
+                <Line type="monotone" dataKey="balance" name={tr("Saldo")} stroke="#061B4A" strokeWidth={2} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="card-soft">
-          <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: "Outfit" }}>Gastos por categoria</h3>
+          <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: "Outfit" }}>{tr("Gastos por categoria")}</h3>
           {data.category_breakdown.length === 0 ? (
-            <div className="text-sm text-[#6B7068] py-12 text-center">Sem despesas neste período</div>
+            <div className="text-sm text-[#6B7068] py-12 text-center">{tr("Sem despesas neste período")}</div>
           ) : (
             <div style={{ width: "100%", height: 260 }}>
               <ResponsiveContainer>
@@ -243,10 +244,10 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-soft" data-testid="insights-section">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ fontFamily: "Outfit" }}>
-            <Lightbulb size={18} className="text-[#E5A83B]" /> Insights
+            <Lightbulb size={18} className="text-[#E5A83B]" /> {tr("Insights")}
           </h3>
           <div className="space-y-3">
-            {insights.length === 0 && <div className="text-sm text-[#6B7068]">Calculando insights...</div>}
+            {insights.length === 0 && <div className="text-sm text-[#6B7068]">{tr("Calculando insights...")}</div>}
             {insights.map((ins, i) => {
               const map = {
                 good: { Icon: CheckCircle2, c: "text-emerald-600", bg: "bg-emerald-50" },
@@ -271,14 +272,14 @@ export default function Dashboard() {
 
         <div className="card-soft" data-testid="projection-section">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Projeção de saldo</h3>
+            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Projeção de saldo")}</h3>
             {projection && (
               <span className="text-xs text-[#6B7068]">
-                média mensal: {fmtMoney(projection.avg_monthly_net, curr)}
+                {tr("média mensal:")} {fmtMoney(projection.avg_monthly_net, curr)}
               </span>
             )}
           </div>
-          <p className="text-xs text-[#6B7068] mb-3">Estimativa para os próximos 6 meses com base no seu histórico.</p>
+          <p className="text-xs text-[#6B7068] mb-3">{tr("Estimativa para os próximos 6 meses com base no seu histórico.")}</p>
           {projection && (
             <div style={{ width: "100%", height: 220 }}>
               <ResponsiveContainer>
@@ -304,7 +305,7 @@ export default function Dashboard() {
       {/* Budget */}
       <div className="card-soft">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Orçamento 50/20/10/10/10</h3>
+          <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Orçamento 50/20/10/10/10")}</h3>
           <div className="text-sm text-[#6B7068]">Base: {fmtMoney(data.budget.income, curr)}</div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">

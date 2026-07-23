@@ -1,6 +1,7 @@
 import { useTheme } from "@/context/ThemeContext";
 import { Sun, Moon, Monitor } from "lucide-react";
 
+import { translate as tr } from "@/i18n";
 /**
  * ThemeToggle — botão segmentado com 3 opções: Claro / Sistema / Escuro.
  * Indicado para a sidebar ou cabeçalho.
@@ -17,7 +18,7 @@ export default function ThemeToggle({ variant = "segmented" }) {
         type="button"
         onClick={() => setTheme(next)}
         data-testid="theme-toggle-icon"
-        title={`Tema: ${theme === "system" ? "Sistema" : theme === "dark" ? "Escuro" : "Claro"} (clique para alternar)`}
+        title={`Tema: ${theme === "system" ? tr("Sistema") : theme === "dark" ? tr("Escuro") : tr("Claro")} (clique para alternar)`}
         className="p-2 rounded-lg hover:bg-[#F1EFE7] transition"
         style={{ color: "var(--text-muted)" }}
       >
@@ -27,15 +28,15 @@ export default function ThemeToggle({ variant = "segmented" }) {
   }
 
   const options = [
-    { key: "light", label: "Claro", Icon: Sun },
-    { key: "system", label: "Sistema", Icon: Monitor },
-    { key: "dark", label: "Escuro", Icon: Moon },
+    { key: "light", label: tr("Claro"), Icon: Sun },
+    { key: "system", label: tr("Sistema"), Icon: Monitor },
+    { key: "dark", label: tr("Escuro"), Icon: Moon },
   ];
 
   return (
     <div
       role="radiogroup"
-      aria-label="Tema"
+      aria-label={tr("Tema")}
       data-testid="theme-toggle"
       className="inline-flex rounded-xl p-1 gap-1"
       style={{ background: "var(--surface-muted)" }}

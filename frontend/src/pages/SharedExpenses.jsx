@@ -11,6 +11,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Trash2, UserPlus, X, Check, Pencil, ArrowRight, Scale } from "lucide-react";
 import { toast } from "sonner";
 
+import { translate as tr } from "@/i18n";
 function Initials({ name, color, size = 28 }) {
   const initials = (name || "?").split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase();
   return (
@@ -23,7 +24,7 @@ function Initials({ name, color, size = 28 }) {
 
 const emptyForm = (user) => ({
   title: "", amount: "", date: new Date().toISOString().slice(0, 10),
-  category: "Mercado", payer_id: user?.id || "", split_type: "equal", group_id: "", notes: "",
+  category: tr("Mercado"), payer_id: user?.id || "", split_type: "equal", group_id: "", notes: "",
 });
 
 export default function SharedExpenses() {
@@ -115,8 +116,8 @@ export default function SharedExpenses() {
     if (!searchEmail) return;
     try {
       const r = await api.get("/users/search", { params: { email: searchEmail } });
-      if (!r.data) { toast.error("Usuário não encontrado"); return; }
-      if (participants.some(p => p.user.id === r.data.id)) { toast.warning("Já adicionado"); return; }
+      if (!r.data) { toast.error(tr("Usuário não encontrado")); return; }
+      if (participants.some(p => p.user.id === r.data.id)) { toast.warning(tr("Já adicionado")); return; }
       setParticipants([...participants, { user: r.data, amount: "", percent: "" }]);
       setSearchEmail("");
     } catch (err) { toast.error(formatApiError(err)); }
@@ -139,10 +140,10 @@ export default function SharedExpenses() {
       };
       if (editing) {
         await api.put(`/shared-expenses/${editing.id}`, body);
-        toast.success("Despesa atualizada");
+        toast.success(tr("Despesa atualizada"));
       } else {
         await api.post("/shared-expenses", body);
-        toast.success("Despesa compartilhada criada");
+        toast.success(tr("Despesa compartilhada criada"));
       }
       setOpen(false); setEditing(null); setParticipants([]);
       setForm(emptyForm(user));
@@ -162,7 +163,7 @@ export default function SharedExpenses() {
   const doDelete = async () => {
     try {
       await api.delete(`/shared-expenses/${confirmDelete.id}`);
-      toast.success("Despesa excluída");
+      toast.success(tr("Despesa excluída"));
       setConfirmDelete(null);
       load();
     } catch (err) {
@@ -175,12 +176,12 @@ export default function SharedExpenses() {
     <div className="space-y-6" data-testid="shared-expenses-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Despesas Compartilhadas</h1>
-          <p className="text-[#6B7068]">Apenas você e os participantes podem ver cada despesa</p>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Despesas Compartilhadas")}</h1>
+          <p className="text-[#6B7068]">{tr("Apenas você e os participantes podem ver cada despesa")}</p>
         </div>
         <Button onClick={openNew} data-testid="new-shared-button"
           className="bg-[#D96C5B] hover:bg-[#C25848] text-white rounded-xl">
-          <Plus size={16} className="mr-1" /> Nova despesa
+          <Plus size={16} className="mr-1" /> {tr("Nova despesa")}
         </Button>
       </div>
 
@@ -205,13 +206,13 @@ export default function SharedExpenses() {
                 ))}
                 {debts.map(s => (
                   <span key={s.user?.id} className="text-rose-700" data-testid={`banner-debt-${s.user?.id}`}>
-                    Você deve <strong>{fmtMoney(Math.abs(s.net), curr)}</strong>{" "}
+                    {tr("Você deve")} <strong>{fmtMoney(Math.abs(s.net), curr)}</strong>{" "}
                     para <strong>{(s.user?.name || "").split(" ")[0]}</strong>
                   </span>
                 ))}
               </div>
               <span className="text-xs text-[#061B4A] hover:underline flex items-center gap-1 flex-shrink-0">
-                Ver acertos <ArrowRight size={12} />
+                {tr("Ver acertos")} <ArrowRight size={12} />
               </span>
             </div>
           </Link>
@@ -223,33 +224,33 @@ export default function SharedExpenses() {
           <DialogHeader><DialogTitle>{editing ? "Editar despesa compartilhada" : "Nova despesa compartilhada"}</DialogTitle></DialogHeader>
           <form onSubmit={submit} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2"><Label>Título</Label>
+              <div className="col-span-2"><Label>{tr("Título")}</Label>
                 <Input value={form.title} required data-testid="shared-title-input"
                   onChange={e => setForm({ ...form, title: e.target.value })} /></div>
-              <div><Label>Valor total</Label>
+              <div><Label>{tr("Valor total")}</Label>
                 <Input type="number" step="0.01" value={form.amount} required data-testid="shared-amount-input"
                   onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
-              <div><Label>Data</Label>
+              <div><Label>{tr("Data")}</Label>
                 <Input type="date" value={form.date} required data-testid="shared-date-input"
                   onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-              <div><Label>Categoria</Label>
+              <div><Label>{tr("Categoria")}</Label>
                 <Input value={form.category} data-testid="shared-category-input"
                   onChange={e => setForm({ ...form, category: e.target.value })} /></div>
-              <div><Label>Grupo (opcional)</Label>
+              <div><Label>{tr("Grupo (opcional)")}</Label>
                 <Select value={form.group_id} onValueChange={applyGroup}>
-                  <SelectTrigger data-testid="shared-group-select"><SelectValue placeholder="Nenhum" /></SelectTrigger>
+                  <SelectTrigger data-testid="shared-group-select"><SelectValue placeholder={tr("Nenhum")} /></SelectTrigger>
                   <SelectContent>
                     {groups.map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 {form.group_id && (
-                  <p className="text-xs text-[#6B7068] mt-1">Os membros do grupo foram adicionados automaticamente como participantes.</p>
+                  <p className="text-xs text-[#6B7068] mt-1">{tr("Os membros do grupo foram adicionados automaticamente como participantes.")}</p>
                 )}
               </div>
             </div>
 
             <div>
-              <Label>Participantes</Label>
+              <Label>{tr("Participantes")}</Label>
               <div className="flex gap-2 mt-1.5">
                 <Input type="email" placeholder="email@exemplo.com" value={searchEmail}
                   onChange={e => setSearchEmail(e.target.value)} data-testid="shared-add-email-input" />
@@ -291,16 +292,16 @@ export default function SharedExpenses() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Tipo de divisão</Label>
+              <div><Label>{tr("Tipo de divisão")}</Label>
                 <Select value={form.split_type} onValueChange={v => setForm({ ...form, split_type: v })}>
                   <SelectTrigger data-testid="shared-split-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="equal">Igual entre todos</SelectItem>
-                    <SelectItem value="manual">Valor manual</SelectItem>
-                    <SelectItem value="percent">Percentual</SelectItem>
+                    <SelectItem value="equal">{tr("Igual entre todos")}</SelectItem>
+                    <SelectItem value="manual">{tr("Valor manual")}</SelectItem>
+                    <SelectItem value="percent">{tr("Percentual")}</SelectItem>
                   </SelectContent>
                 </Select></div>
-              <div><Label>Quem pagou</Label>
+              <div><Label>{tr("Quem pagou")}</Label>
                 <Select value={form.payer_id} onValueChange={v => setForm({ ...form, payer_id: v })}>
                   <SelectTrigger data-testid="shared-payer-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -310,7 +311,7 @@ export default function SharedExpenses() {
             </div>
 
             <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="shared-submit-button">
-              {editing ? "Salvar alterações" : "Criar despesa"}
+              {editing ? tr("Salvar alterações") : "Criar despesa"}
             </Button>
           </form>
         </DialogContent>
@@ -319,14 +320,14 @@ export default function SharedExpenses() {
       <ConfirmDialog
         open={!!confirmDelete}
         onOpenChange={(v) => !v && setConfirmDelete(null)}
-        title="Excluir despesa?"
-        description={confirmDelete ? `"${confirmDelete.title}" - ${fmtMoney(confirmDelete.amount, confirmDelete.currency || curr)}. Esta ação não pode ser desfeita.` : ""}
+        title={tr("Excluir despesa?")}
+        description={confirmDelete ? tr("{item}. Esta ação não pode ser desfeita.", { item: `"${confirmDelete.title}" - ${fmtMoney(confirmDelete.amount, confirmDelete.currency || curr)}` }) : ""}
         onConfirm={doDelete}
         testId="shared-confirm-delete"
       />
 
       <div className="space-y-4">
-        {list.length === 0 && <div className="card-soft text-center text-[#6B7068]">Nenhuma despesa compartilhada</div>}
+        {list.length === 0 && <div className="card-soft text-center text-[#6B7068]">{tr("Nenhuma despesa compartilhada")}</div>}
         {list.map(e => {
           const canEdit = e.creator_id === user.id;
           const canDelete = e.creator_id === user.id || e.payer_id === user.id;
@@ -371,14 +372,14 @@ export default function SharedExpenses() {
                     {canEdit && (
                       <button onClick={() => openEdit(e)} data-testid={`shared-edit-${e.id}`}
                         className="p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A] border border-[#E5E4E0]"
-                        title="Editar">
+                        title={tr("Editar")}>
                         <Pencil size={16} />
                       </button>
                     )}
                     {canDelete && (
                       <button onClick={() => setConfirmDelete(e)} data-testid={`shared-delete-${e.id}`}
                         className="p-2 rounded-lg text-[#6B7068] hover:bg-rose-50 hover:text-[#D9453B] border border-[#E5E4E0]"
-                        title="Excluir">
+                        title={tr("Excluir")}>
                         <Trash2 size={16} />
                       </button>
                     )}
@@ -391,16 +392,16 @@ export default function SharedExpenses() {
                   const isPayer = p.user_id === e.payer_id;
                   const iAmPayer = e.payer_id === user.id;       // eu recebo
                   const iAmThisDebtor = p.user_id === user.id;   // eu devo
-                  let actionLabel = "Marcar pago";
+                  let actionLabel = tr("Marcar pago");
                   let actionTitle = "Confirmar pagamento";
                   if (iAmPayer && !isPayer) {
-                    actionLabel = p.paid_back ? "Recebido" : "Confirmar recebimento";
+                    actionLabel = p.paid_back ? tr("Recebido") : "Confirmar recebimento";
                     actionTitle = "Confirmar que recebi este valor";
                   } else if (iAmThisDebtor) {
-                    actionLabel = p.paid_back ? "Pago" : "Já paguei";
-                    actionTitle = "Marcar que já paguei minha parte";
+                    actionLabel = p.paid_back ? tr("Pago") : tr("Já paguei");
+                    actionTitle = tr("Marcar que já paguei minha parte");
                   } else if (!isPayer) {
-                    actionLabel = p.paid_back ? "Pago" : "Marcar pago";
+                    actionLabel = p.paid_back ? tr("Pago") : tr("Marcar pago");
                   }
                   return (
                     <div key={p.user_id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-[#F1EFE7]" data-testid={`participant-row-${e.id}-${p.user_id}`}>

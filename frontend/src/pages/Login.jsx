@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import { Check } from "lucide-react";
 import Logo from "@/components/Logo";
+import LanguageSelector from "@/components/LanguageSelector";
+import { getLanguage, translate as tr } from "@/i18n";
 
 function Field({ id, label, type, value, onChange, testid, placeholder, autoComplete }) {
   return (
@@ -58,7 +60,7 @@ export default function Login() {
     try {
       const r = await api.get("/auth/security-question", { params: { email: fpEmail } });
       if (!r.data?.question) {
-        toast.error("Esta conta não tem pergunta de segurança configurada. Configure no Perfil após entrar.");
+        toast.error(tr("Esta conta não tem pergunta de segurança configurada. Configure no Perfil após entrar."));
         return;
       }
       setFpQuestion(r.data.question);
@@ -74,7 +76,7 @@ export default function Login() {
       await api.post("/auth/reset-password-security", {
         email: fpEmail, answer: fpAnswer, new_password: fpNewPassword,
       });
-      toast.success("Senha redefinida! Faça login com a nova senha.");
+      toast.success(tr("Senha redefinida! Faça login com a nova senha."));
       setEmail(fpEmail); setPassword("");
       setFpOpen(false);
     } catch (err) { toast.error(formatApiError(err)); }
@@ -85,8 +87,13 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     try {
-      await login(email, password);
-      nav("/");
+      const previousLanguage = getLanguage();
+      const signedInUser = await login(email, password);
+      if (signedInUser?.language && signedInUser.language !== previousLanguage) {
+        window.location.assign("/");
+      } else {
+        nav("/");
+      }
     } catch (err) {
       toast.error(formatApiError(err));
     } finally {
@@ -96,6 +103,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ background: "#04112F" }}>
+      <LanguageSelector compact className="absolute right-4 top-4 z-20 text-white/70" />
       {/* Soft radial sphere glow */}
       <div aria-hidden className="pointer-events-none absolute inset-0"
         style={{ background: "radial-gradient(circle at 50% 52%, rgba(8,215,165,0.12), rgba(18,104,244,0.07) 32%, transparent 60%)" }} />
@@ -114,30 +122,30 @@ export default function Login() {
         </div>
 
         <form onSubmit={submit} className="space-y-7">
-          <Field id="email" label="E-mail" type="email" value={email} testid="login-email-input"
+          <Field id="email" label={tr("E-mail")} type="email" value={email} testid="login-email-input"
             autoComplete="email" placeholder="voce@exemplo.com"
             onChange={(e) => setEmail(e.target.value)} />
-          <Field id="password" label="Senha" type="password" value={password} testid="login-password-input"
+          <Field id="password" label={tr("Senha")} type="password" value={password} testid="login-password-input"
             autoComplete="current-password" placeholder="••••••••"
             onChange={(e) => setPassword(e.target.value)} />
 
           <button type="submit" disabled={loading} data-testid="login-submit-button"
             className="w-full mt-2 rounded-xl border border-white/12 bg-white/[0.04] hover:bg-white/[0.09] active:scale-[0.99] text-white/85 text-xs tracking-[0.28em] uppercase py-4 transition-colors duration-200 disabled:opacity-50">
-            {loading ? "Entrando..." : "Entrar"}
+            {loading ? tr("Entrando...") : tr("Entrar")}
           </button>
         </form>
 
         <div className="mt-6 text-xs text-white/40">
           <button type="button" onClick={openForgot} data-testid="forgot-password-link"
             className="hover:text-white/75 transition-colors">
-            Esqueci minha senha
+            {tr("Esqueci minha senha")}
           </button>
         </div>
 
         <div className="mt-3 text-xs text-white/40">
-          Não tem conta?{" "}
+          {tr("Não tem conta?")}{" "}
           <Link to="/cadastro" className="text-white/70 hover:text-white transition-colors" data-testid="link-register">
-            Criar conta
+            {tr("Criar conta")}
           </Link>
         </div>
 
@@ -153,40 +161,40 @@ export default function Login() {
       <Dialog open={fpOpen} onOpenChange={setFpOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "Outfit" }}>Recuperar senha</DialogTitle>
+            <DialogTitle style={{ fontFamily: "Outfit" }}>{tr("Recuperar senha")}</DialogTitle>
           </DialogHeader>
           {fpStep === 1 ? (
             <form onSubmit={fpFindQuestion} className="space-y-3" data-testid="forgot-step-email">
-              <p className="text-sm text-[#6B7068]">Informe seu e-mail para buscar sua pergunta de segurança.</p>
+              <p className="text-sm text-[#6B7068]">{tr("Informe seu e-mail para buscar sua pergunta de segurança.")}</p>
               <div>
-                <Label>E-mail</Label>
+                <Label>{tr("E-mail")}</Label>
                 <Input type="email" value={fpEmail} required data-testid="forgot-email-input"
                   onChange={e => setFpEmail(e.target.value)} placeholder="voce@exemplo.com" />
               </div>
               <Button type="submit" disabled={fpLoading} data-testid="forgot-continue-button"
                 className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-                {fpLoading ? "Buscando..." : "Continuar"}
+                {fpLoading ? tr("Buscando...") : tr("Continuar")}
               </Button>
             </form>
           ) : (
             <form onSubmit={fpReset} className="space-y-3" data-testid="forgot-step-reset">
               <div className="text-sm">
-                <span className="text-[#6B7068]">Pergunta de segurança:</span>
-                <div className="font-medium mt-1" data-testid="forgot-question-text">{fpQuestion}</div>
+                <span className="text-[#6B7068]">{tr("Pergunta de segurança:")}</span>
+                <div className="font-medium mt-1" data-testid="forgot-question-text">{tr(fpQuestion)}</div>
               </div>
               <div>
-                <Label>Sua resposta</Label>
+                <Label>{tr("Sua resposta")}</Label>
                 <Input value={fpAnswer} required data-testid="forgot-answer-input"
                   onChange={e => setFpAnswer(e.target.value)} />
               </div>
               <div>
-                <Label>Nova senha</Label>
+                <Label>{tr("Nova senha")}</Label>
                 <Input type="password" value={fpNewPassword} required minLength={4} data-testid="forgot-new-password-input"
                   onChange={e => setFpNewPassword(e.target.value)} placeholder="••••••••" />
               </div>
               <Button type="submit" disabled={fpLoading} data-testid="forgot-reset-button"
                 className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-                {fpLoading ? "Redefinindo..." : "Redefinir senha"}
+                {fpLoading ? tr("Redefinindo...") : tr("Redefinir senha")}
               </Button>
             </form>
           )}

@@ -21,12 +21,14 @@ import Notifications from "@/pages/Notifications";
 import Goals from "@/pages/Goals";
 import Recurrences from "@/pages/Recurrences";
 import Wallets from "@/pages/Wallets";
+import AdminUsers from "@/pages/AdminUsers";
 import InstallPrompt from "@/components/InstallPrompt";
 import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
+import { translate as tr } from "@/i18n";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="p-10 text-[#6B7068]">Carregando...</div>;
+  if (loading) return <div className="p-10 text-[#6B7068]">{tr("Carregando...")}</div>;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
@@ -38,8 +40,15 @@ function PublicOnly({ children }) {
   return children;
 }
 
+function AdminOnly({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="p-10 text-[#6B7068]">{tr("Carregando...")}</div>;
+  if (!user?.is_admin) return <Navigate to="/" replace />;
+  return children;
+}
+
 function App() {
-  useEffect(() => { document.title = "Crelith Finance — Controle Financeiro"; }, []);
+  useEffect(() => { document.title = tr("Crelith Finance — Controle Financeiro"); }, []);
   return (
     <AuthProvider>
       <BrowserRouter>
@@ -65,6 +74,7 @@ function App() {
             <Route path="metas" element={<Goals />} />
             <Route path="recorrencias" element={<Recurrences />} />
             <Route path="carteiras" element={<Wallets />} />
+            <Route path="admin/usuarios" element={<AdminOnly><AdminUsers /></AdminOnly>} />
           </Route>
         </Routes>
       </BrowserRouter>

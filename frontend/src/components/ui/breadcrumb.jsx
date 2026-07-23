@@ -1,4 +1,5 @@
-import * as React from "react"
+
+import { translate as tr } from "@/i18n";import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { ChevronRight, MoreHorizontal } from "lucide-react"
 
@@ -76,7 +77,7 @@ const BreadcrumbEllipsis = ({
     className={cn("flex h-9 w-9 items-center justify-center", className)}
     {...props}>
     <MoreHorizontal className="h-4 w-4" />
-    <span className="sr-only">More</span>
+    <span className="sr-only">{tr("More")}</span>
   </span>
 )
 BreadcrumbEllipsis.displayName = "BreadcrumbElipssis"

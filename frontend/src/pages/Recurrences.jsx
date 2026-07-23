@@ -11,7 +11,8 @@ import { Repeat, Plus, Pencil, Trash2, ChevronDown, ChevronRight } from "lucide-
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
-const FREQ_LABEL = { weekly: "Semanal", monthly: "Mensal", yearly: "Anual" };
+import { translate as tr } from "@/i18n";
+const FREQ_LABEL = { weekly: tr("Semanal"), monthly: tr("Mensal"), yearly: tr("Anual") };
 
 const emptyForm = {
   type: "expense", amount: "", category_id: "", account_id: "", payment_method: "",
@@ -66,8 +67,8 @@ export default function Recurrences() {
       next_run: form.next_run, active: form.active,
     };
     try {
-      if (editing) { await api.put(`/recurrences/${editing.id}`, payload); toast.success("Recorrência atualizada"); }
-      else { await api.post("/recurrences", payload); toast.success("Recorrência criada"); }
+      if (editing) { await api.put(`/recurrences/${editing.id}`, payload); toast.success(tr("Recorrência atualizada")); }
+      else { await api.post("/recurrences", payload); toast.success(tr("Recorrência criada")); }
       setOpen(false);
       load();
     } catch (err) { toast.error(formatApiError(err)); }
@@ -82,7 +83,7 @@ export default function Recurrences() {
     if (!confirmDel) return;
     await api.delete(`/recurrences/${confirmDel.id}`);
     setConfirmDel(null);
-    toast.success("Recorrência excluída");
+    toast.success(tr("Recorrência excluída"));
     load();
   };
 
@@ -90,30 +91,30 @@ export default function Recurrences() {
     <div className="space-y-6" data-testid="recurrences-page">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Recorrências</h1>
-          <p className="text-[#6B7068]">Lançamentos automáticos (aluguel, salário, assinaturas...)</p>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Recorrências")}</h1>
+          <p className="text-[#6B7068]">{tr("Lançamentos automáticos (aluguel, salário, assinaturas...)")}</p>
         </div>
         <Button onClick={openNew} data-testid="rec-new-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-          <Plus size={16} className="mr-1" /> Nova recorrência
+          <Plus size={16} className="mr-1" /> {tr("Nova recorrência")}
         </Button>
       </div>
 
       {items.some(r => r.active) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="rec-summary">
           <div className="card-soft">
-            <div className="text-sm text-[#6B7068]">Gasto fixo mensal (média)</div>
+            <div className="text-sm text-[#6B7068]">{tr("Gasto fixo mensal (média)")}</div>
             <div className="text-2xl font-semibold text-rose-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-expense">
               {fmtMoney(fixedExpense, curr)}
             </div>
           </div>
           <div className="card-soft">
-            <div className="text-sm text-[#6B7068]">Receita fixa mensal (média)</div>
+            <div className="text-sm text-[#6B7068]">{tr("Receita fixa mensal (média)")}</div>
             <div className="text-2xl font-semibold text-emerald-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-income">
               {fmtMoney(fixedIncome, curr)}
             </div>
           </div>
           <div className="card-soft">
-            <div className="text-sm text-[#6B7068]">Saldo fixo estimado</div>
+            <div className="text-sm text-[#6B7068]">{tr("Saldo fixo estimado")}</div>
             <div className={`text-2xl font-semibold mt-1 ${fixedIncome - fixedExpense >= 0 ? "text-[#061B4A]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-balance">
               {fmtMoney(fixedIncome - fixedExpense, curr)}
             </div>
@@ -124,7 +125,7 @@ export default function Recurrences() {
       {items.length === 0 && (
         <div className="card-soft text-center py-16 flex flex-col items-center gap-3 text-[#6B7068]" data-testid="rec-empty">
           <Repeat size={32} className="opacity-40" />
-          <span>Nenhuma recorrência. Automatize seus lançamentos fixos!</span>
+          <span>{tr("Nenhuma recorrência. Automatize seus lançamentos fixos!")}</span>
         </div>
       )}
 
@@ -142,7 +143,7 @@ export default function Recurrences() {
                     <Repeat size={18} />
                   </div>
                   <div>
-                    <div className="font-semibold">{r.description || (r.type === "income" ? "Receita" : "Despesa")}</div>
+                    <div className="font-semibold">{r.description || (r.type === "income" ? tr("Receita") : tr("Despesa"))}</div>
                     <div className="text-xs text-[#6B7068]">{FREQ_LABEL[r.frequency]} · próx: {fmtDate(r.next_run)}</div>
                   </div>
                 </button>
@@ -155,11 +156,11 @@ export default function Recurrences() {
                 <span className={`text-2xl font-semibold ${r.type === "income" ? "text-emerald-600" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }}>
                   {r.type === "income" ? "+" : "-"}{fmtMoney(r.amount, r.currency || curr)}
                 </span>
-                <span className={`text-xs ${r.active ? "text-emerald-700" : "text-[#6B7068]"}`}>{r.active ? "Ativa" : "Pausada"}</span>
+                <span className={`text-xs ${r.active ? "text-emerald-700" : "text-[#6B7068]"}`}>{r.active ? tr("Ativa") : tr("Pausada")}</span>
               </div>
               {isOpen && (
               <div className="mt-3 border-t border-[#E5E4E0] pt-3 space-y-2" data-testid={`rec-details-${r.id}`}>
-                {cat && <div className="text-xs inline-flex items-center gap-1.5 text-[#6B7068]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{cat.name}</div>}
+                {cat && <div className="text-xs inline-flex items-center gap-1.5 text-[#6B7068]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{tr(cat.name)}</div>}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-[#6B7068]">{r.active ? "Pausar" : "Ativar"} recorrência</span>
                   <Switch data-testid={`rec-toggle-${r.id}`} className="data-[state=checked]:bg-[#061B4A] data-[state=unchecked]:bg-[#D6D3CA]"
@@ -174,70 +175,70 @@ export default function Recurrences() {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle style={{ fontFamily: "Outfit" }}>{editing ? "Editar recorrência" : "Nova recorrência"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle style={{ fontFamily: "Outfit" }}>{editing ? tr("Editar recorrência") : tr("Nova recorrência")}</DialogTitle></DialogHeader>
           <form onSubmit={save} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Tipo</Label>
+                <Label>{tr("Tipo")}</Label>
                 <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
                   <SelectTrigger data-testid="rec-type-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="expense">Despesa</SelectItem>
-                    <SelectItem value="income">Receita</SelectItem>
+                    <SelectItem value="expense">{tr("Despesa")}</SelectItem>
+                    <SelectItem value="income">{tr("Receita")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Frequência</Label>
+                <Label>{tr("Frequência")}</Label>
                 <Select value={form.frequency} onValueChange={(v) => setForm({ ...form, frequency: v })}>
                   <SelectTrigger data-testid="rec-freq-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="weekly">Semanal</SelectItem>
-                    <SelectItem value="monthly">Mensal</SelectItem>
-                    <SelectItem value="quarterly">Trimestral</SelectItem>
-                    <SelectItem value="semiannual">Semestral</SelectItem>
-                    <SelectItem value="yearly">Anual</SelectItem>
+                    <SelectItem value="weekly">{tr("Semanal")}</SelectItem>
+                    <SelectItem value="monthly">{tr("Mensal")}</SelectItem>
+                    <SelectItem value="quarterly">{tr("Trimestral")}</SelectItem>
+                    <SelectItem value="semiannual">{tr("Semestral")}</SelectItem>
+                    <SelectItem value="yearly">{tr("Anual")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Valor</Label>
+                <Label>{tr("Valor")}</Label>
                 <Input type="number" step="0.01" value={form.amount} required data-testid="rec-amount-input"
                   onChange={e => setForm({ ...form, amount: e.target.value })} />
               </div>
               <div>
-                <Label>Próxima data</Label>
+                <Label>{tr("Próxima data")}</Label>
                 <Input type="date" value={form.next_run} required data-testid="rec-date-input"
                   onChange={e => setForm({ ...form, next_run: e.target.value })} />
               </div>
             </div>
             <div>
-              <Label>Categoria</Label>
+              <Label>{tr("Categoria")}</Label>
               <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
-                <SelectTrigger data-testid="rec-category-select"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectTrigger data-testid="rec-category-select"><SelectValue placeholder={tr("Selecione")} /></SelectTrigger>
                 <SelectContent>
-                  {cats.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  {cats.map(c => <SelectItem key={c.id} value={c.id}>{tr(c.name)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Carteira (de onde sai/entra o valor)</Label>
+              <Label>{tr("Carteira (de onde sai/entra o valor)")}</Label>
               <Select value={form.account_id} onValueChange={(v) => setForm({ ...form, account_id: v })}>
-                <SelectTrigger data-testid="rec-account-select"><SelectValue placeholder="Selecione a carteira" /></SelectTrigger>
+                <SelectTrigger data-testid="rec-account-select"><SelectValue placeholder={tr("Selecione a carteira")} /></SelectTrigger>
                 <SelectContent>
-                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Descrição</Label>
+              <Label>{tr("Descrição")}</Label>
               <Input value={form.description} data-testid="rec-description-input"
                 onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Ex: Aluguel, Salário, Spotify" />
             </div>
             <DialogFooter>
-              <Button type="submit" data-testid="rec-save-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Salvar</Button>
+              <Button type="submit" data-testid="rec-save-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">{tr("Salvar")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -246,8 +247,8 @@ export default function Recurrences() {
       <ConfirmDialog
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
-        title="Excluir recorrência?"
-        description={confirmDel ? `"${confirmDel.description || "Recorrência"}" não gerará mais lançamentos e os lançamentos FUTUROS já gerados por ela serão removidos. Os lançamentos passados permanecem.` : ""}
+        title={tr("Excluir recorrência?")}
+        description={confirmDel ? tr("\"{name}\" não gerará mais lançamentos e os lançamentos FUTUROS já gerados por ela serão removidos. Os lançamentos passados permanecem.", { name: confirmDel.description || tr("Recorrência") }) : ""}
         onConfirm={remove}
         testId="rec-confirm-delete"
       />

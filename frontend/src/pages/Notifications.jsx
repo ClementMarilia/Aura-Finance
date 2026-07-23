@@ -4,6 +4,7 @@ import api from "@/lib/api";
 import { Bell, CheckCheck, Trash2, Check } from "lucide-react";
 import { toast } from "sonner";
 
+import { translate as tr } from "@/i18n";
 function timeAgo(iso) {
   if (!iso) return "";
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -49,7 +50,7 @@ export default function Notifications() {
 
   const markAll = async () => {
     await api.post("/notifications/read-all");
-    toast.success("Todas marcadas como lidas");
+    toast.success(tr("Todas marcadas como lidas"));
     load();
   };
 
@@ -60,13 +61,13 @@ export default function Notifications() {
     <div className="space-y-6 max-w-3xl" data-testid="notifications-page">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Notificações</h1>
-          <p className="text-[#6B7068]">{unreadCount > 0 ? `${unreadCount} não lida(s)` : "Tudo em dia"}</p>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Notificações")}</h1>
+          <p className="text-[#6B7068]">{unreadCount > 0 ? `${unreadCount} não lida(s)` : tr("Tudo em dia")}</p>
         </div>
         {unreadCount > 0 && (
           <button onClick={markAll} data-testid="notif-mark-all"
             className="text-sm text-[#061B4A] hover:bg-[#F1EFE7] rounded-lg px-3 py-2 flex items-center gap-1.5">
-            <CheckCheck size={16} /> Marcar todas
+            <CheckCheck size={16} /> {tr("Marcar todas")}
           </button>
         )}
       </div>
@@ -75,7 +76,7 @@ export default function Notifications() {
         {["all", "unread"].map(f => (
           <button key={f} onClick={() => setFilter(f)} data-testid={`notif-filter-${f}`}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${filter === f ? "border-[#061B4A] text-[#061B4A]" : "border-transparent text-[#6B7068] hover:text-[#061B4A]"}`}>
-            {f === "all" ? "Todas" : "Não lidas"}
+            {f === "all" ? tr("Todas") : tr("Não lidas")}
           </button>
         ))}
       </div>
@@ -84,7 +85,7 @@ export default function Notifications() {
         {shown.length === 0 && (
           <div className="text-center text-[#6B7068] py-16 flex flex-col items-center gap-2">
             <Bell size={28} className="opacity-40" />
-            <span>Nenhuma notificação{filter === "unread" ? " não lida" : ""}.</span>
+            <span>{tr("Nenhuma notificação")}{filter === "unread" ? ` ${tr("não lida")}` : ""}.</span>
           </div>
         )}
         {shown.map(n => (
@@ -102,12 +103,12 @@ export default function Notifications() {
             <div className="flex items-center gap-1 flex-shrink-0">
               {!n.read && (
                 <button onClick={(e) => markRead(e, n)} data-testid={`notif-read-${n.id}`}
-                  className="p-1.5 rounded-lg text-[#6B7068] hover:bg-white hover:text-[#061B4A]" title="Marcar como lida">
+                  className="p-1.5 rounded-lg text-[#6B7068] hover:bg-white hover:text-[#061B4A]" title={tr("Marcar como lida")}>
                   <Check size={15} />
                 </button>
               )}
               <button onClick={(e) => remove(e, n)} data-testid={`notif-delete-${n.id}`}
-                className="p-1.5 rounded-lg text-[#6B7068] hover:bg-white hover:text-[#D9453B]" title="Excluir">
+                className="p-1.5 rounded-lg text-[#6B7068] hover:bg-white hover:text-[#D9453B]" title={tr("Excluir")}>
                 <Trash2 size={15} />
               </button>
             </div>
