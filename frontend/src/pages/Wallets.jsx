@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { CURRENCIES, fmtMoney, formatApiError } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,17 +34,44 @@ export default function Wallets() {
   const emptyTransfer = {
     from_account_id: "", to_account_id: "", amount: "",
     target_amount: "", exchange_rate: "", rate_source: "automatic",
+    rate_date: "", rate_estimated: false,
     date: new Date().toISOString().slice(0, 10), description: "",
   };
   const [transfer, setTransfer] = useState(emptyTransfer);
+  const [rateLoading, setRateLoading] = useState(false);
+  const [rateError, setRateError] = useState("");
 
   const fromAccount = list.find(a => a.id === transfer.from_account_id);
   const toAccount = list.find(a => a.id === transfer.to_account_id);
 
   useEffect(() => {
     if (!transferOpen || !fromAccount || !toAccount) return;
+    if ((fromAccount.currency || curr) === (toAccount.currency || curr)) {
+      setRateLoading(false);
+      setRateError("");
+      setTransfer(previous => ({
+        ...previous,
+        exchange_rate: "1",
+        target_amount: previous.amount,
+        rate_source: "automatic",
+        rate_date: previous.date,
+        rate_estimated: false,
+      }));
+      return;
+    }
     let active = true;
     const loadQuote = async () => {
+      setRateLoading(true);
+      setRateError("");
+      if ((fromAccount.currency || curr) !== (toAccount.currency || curr)) {
+        setTransfer(previous => ({
+          ...previous,
+          exchange_rate: "",
+          target_amount: "",
+          rate_date: "",
+          rate_estimated: false,
+        }));
+      }
       try {
         const response = await api.get("/exchange-rates/quote", { params: {
           from_currency: fromAccount.currency || curr,
@@ -52,15 +79,26 @@ export default function Wallets() {
           date: transfer.date,
         }});
         if (!active) return;
-        const rate = Number(response.data.rate || 1);
+        const rate = Number(response.data.rate);
+        if (!Number.isFinite(rate) || rate <= 0) {
+          throw new Error("A API não retornou uma cotação válida");
+        }
         setTransfer(previous => ({
           ...previous,
           exchange_rate: String(rate),
           target_amount: previous.amount ? String((Number(previous.amount) * rate).toFixed(2)) : "",
           rate_source: "automatic",
+          rate_date: response.data.date || "",
+          rate_estimated: Boolean(response.data.estimated),
         }));
       } catch (err) {
-        if (active) toast.error(formatApiError(err));
+        if (active) {
+          const message = formatApiError(err);
+          setRateError(message);
+          toast.error(message);
+        }
+      } finally {
+        if (active) setRateLoading(false);
       }
     };
     loadQuote();
@@ -70,7 +108,12 @@ export default function Wallets() {
   const load = () => api.get("/accounts").then(r => setList(r.data || []));
   useEffect(() => { load(); }, []);
 
-  const openTransfer = () => { setTransfer(emptyTransfer); setTransferOpen(true); };
+  const openTransfer = () => {
+    setRateError("");
+    setRateLoading(false);
+    setTransfer(emptyTransfer);
+    setTransferOpen(true);
+  };
   const doTransfer = async (e) => {
     e.preventDefault();
     if (!transfer.from_account_id || !transfer.to_account_id) {
@@ -79,13 +122,28 @@ export default function Wallets() {
     if (transfer.from_account_id === transfer.to_account_id) {
       toast.error("Origem e destino devem ser diferentes"); return;
     }
+    const amount = Number(transfer.amount);
+    const rate = Number(transfer.exchange_rate);
+    const targetAmount = Number(transfer.target_amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Informe um valor maior que zero"); return;
+    }
+    if (rateLoading) {
+      toast.error("Aguarde a cotação automática"); return;
+    }
+    if (!Number.isFinite(rate) || rate <= 0) {
+      toast.error("Informe uma cotação válida antes de transferir"); return;
+    }
+    if (!Number.isFinite(targetAmount) || targetAmount <= 0) {
+      toast.error("Informe um valor recebido válido"); return;
+    }
     try {
       await api.post("/transactions", {
         type: "transfer",
         date: transfer.date,
-        amount: parseFloat(transfer.amount) || 0,
-        target_amount: parseFloat(transfer.target_amount) || 0,
-        exchange_rate: parseFloat(transfer.exchange_rate) || 1,
+        amount,
+        target_amount: targetAmount,
+        exchange_rate: rate,
         rate_source: transfer.rate_source,
         from_account_id: transfer.from_account_id,
         to_account_id: transfer.to_account_id,
@@ -269,7 +327,14 @@ export default function Wallets() {
                     onChange={e => {
                       const rate = e.target.value;
                       const target = rate && transfer.amount ? (Number(transfer.amount) * Number(rate)).toFixed(2) : "";
-                      setTransfer({ ...transfer, exchange_rate: rate, target_amount: target, rate_source: "manual" });
+                      setRateError("");
+                      setTransfer({
+                        ...transfer,
+                        exchange_rate: rate,
+                        target_amount: target,
+                        rate_source: "manual",
+                        rate_estimated: false,
+                      });
                     }} />
                 </div>
                 <div>
@@ -282,7 +347,15 @@ export default function Wallets() {
                     }} />
                 </div>
                 <p className="col-span-2 text-xs text-[#6B7068]">
-                  {transfer.rate_source === "automatic" ? "Cotação sugerida automaticamente. Você pode substituir pelo valor real do banco." : "Cotação ajustada manualmente."}
+                  {rateLoading
+                    ? "Buscando cotação automática..."
+                    : rateError
+                      ? `Cotação automática indisponível: ${rateError} Informe a taxa manualmente.`
+                      : transfer.rate_source === "automatic"
+                        ? transfer.rate_estimated
+                          ? `Estimativa com a última cotação disponível de ${fmtDate(transfer.rate_date)}. Você pode ajustar pelo valor real do banco.`
+                          : `Cotação automática de ${fmtDate(transfer.rate_date)}. Você pode substituir pelo valor real do banco.`
+                        : "Cotação ajustada manualmente."}
                 </p>
               </div>
             )}
@@ -292,7 +365,9 @@ export default function Wallets() {
                 onChange={e => setTransfer({ ...transfer, description: e.target.value })} placeholder="Ex: Sobra do mês para a poupança" />
             </div>
             <DialogFooter>
-              <Button type="submit" data-testid="transfer-save-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Transferir</Button>
+              <Button type="submit" disabled={rateLoading} data-testid="transfer-save-btn" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+                {rateLoading ? "Buscando cotação..." : "Transferir"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

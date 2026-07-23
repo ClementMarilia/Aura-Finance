@@ -71,6 +71,12 @@ async def fetch_currency_snapshot(base_currency: str, rate_date: Optional[str] =
     """Return conversion rates from one currency to every supported currency."""
     base = normalize_currency(base_currency)
     day = (rate_date or datetime.now(timezone.utc).date().isoformat())[:10]
+    try:
+        requested_date = datetime.strptime(day, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(400, "Data inválida para cotação")
+    today = datetime.now(timezone.utc).date()
+    lookup_day = min(requested_date, today).isoformat()
     cache_key = (base, day)
     if cache_key in _fx_cache:
         return dict(_fx_cache[cache_key])
@@ -79,7 +85,7 @@ async def fetch_currency_snapshot(base_currency: str, rate_date: Optional[str] =
     def _request():
         response = requests.get(
             FX_API_URL,
-            params={"base": base, "quotes": ",".join(quotes), "date": day},
+            params={"base": base, "quotes": ",".join(quotes), "date": lookup_day},
             timeout=8,
         )
         response.raise_for_status()
@@ -88,7 +94,7 @@ async def fetch_currency_snapshot(base_currency: str, rate_date: Optional[str] =
     try:
         rows = await asyncio.to_thread(_request)
         rates = {base: 1.0}
-        effective_date = day
+        effective_date = lookup_day
         for row in rows if isinstance(rows, list) else []:
             quote = row.get("quote")
             if quote in SUPPORTED_CURRENCIES:
@@ -103,7 +109,14 @@ async def fetch_currency_snapshot(base_currency: str, rate_date: Optional[str] =
             "Não foi possível obter a cotação automática. Tente novamente ou informe a cotação manualmente.",
         )
 
-    snapshot = {"base": base, "date": effective_date, "rates": rates, "source": "frankfurter"}
+    snapshot = {
+        "base": base,
+        "date": effective_date,
+        "requested_date": day,
+        "estimated": effective_date != day,
+        "rates": rates,
+        "source": "frankfurter",
+    }
     _fx_cache[cache_key] = snapshot
     return dict(snapshot)
 
@@ -180,11 +193,16 @@ async def monetary_metadata(
         if manual_rate_to_base <= 0:
             raise HTTPException(400, "A cotação deve ser maior que zero")
         rates[base] = float(manual_rate_to_base)
+    if base not in rates:
+        raise HTTPException(
+            503,
+            "Não foi possível obter uma cotação válida. Informe a cotação manualmente.",
+        )
     return {
         "currency": source,
         "exchange_rates": rates,
         "base_currency_at_creation": base,
-        "exchange_rate_to_base": float(rates.get(base, 1.0)),
+        "exchange_rate_to_base": float(rates[base]),
         "rate_date": snapshot["date"],
         "rate_source": "manual" if manual_rate_to_base is not None else snapshot["source"],
     }
@@ -694,15 +712,22 @@ async def exchange_rate_quote(
     source = normalize_currency(from_currency)
     target = normalize_currency(to_currency)
     if source == target:
+        requested_date = date or datetime.now(timezone.utc).date().isoformat()
         return {
             "from": source, "to": target, "rate": 1.0,
-            "date": date or datetime.now(timezone.utc).date().isoformat(),
+            "date": requested_date,
+            "requested_date": requested_date,
+            "estimated": False,
             "source": "same_currency",
         }
     snapshot = await fetch_currency_snapshot(source, date)
+    requested_date = date or datetime.now(timezone.utc).date().isoformat()
     return {
         "from": source, "to": target, "rate": snapshot["rates"][target],
-        "date": snapshot["date"], "source": snapshot["source"],
+        "date": snapshot["date"],
+        "requested_date": snapshot.get("requested_date", requested_date),
+        "estimated": snapshot.get("estimated", snapshot["date"] != requested_date),
+        "source": snapshot["source"],
     }
 
 
@@ -944,7 +969,7 @@ async def transaction_values(payload: TransactionIn, user: dict) -> dict:
     if payload.type == "transfer":
         source_currency = currencies[payload.from_account_id]
         target_currency = currencies[payload.to_account_id]
-        rate = payload.exchange_rate
+        rate = payload.exchange_rate if payload.rate_source != "automatic" else None
         source_label = payload.rate_source
         if source_currency == target_currency:
             rate = 1.0
@@ -968,7 +993,8 @@ async def transaction_values(payload: TransactionIn, user: dict) -> dict:
         }
 
     currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
-    meta = await monetary_metadata(currency, base_currency, payload.date, payload.exchange_rate)
+    manual_rate = payload.exchange_rate if payload.rate_source != "automatic" else None
+    meta = await monetary_metadata(currency, base_currency, payload.date, manual_rate)
     if payload.rate_source:
         meta["rate_source"] = payload.rate_source
     return {
@@ -1204,6 +1230,7 @@ class RecurrenceIn(BaseModel):
     active: bool = True
     currency: Optional[str] = None
     exchange_rate: Optional[float] = None
+    rate_source: Optional[Literal["automatic", "manual"]] = None
 
 
 @api.get("/recurrences")
@@ -1216,8 +1243,11 @@ async def create_recurrence(payload: RecurrenceIn, user=Depends(get_current_user
     currencies = await account_currency_map(user)
     base_currency = normalize_currency(user.get("currency"))
     currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
-    meta = await monetary_metadata(currency, base_currency, payload.next_run, payload.exchange_rate)
-    values = payload.model_dump(exclude={"currency", "exchange_rate"})
+    manual_rate = payload.exchange_rate if payload.rate_source != "automatic" else None
+    meta = await monetary_metadata(currency, base_currency, payload.next_run, manual_rate)
+    if payload.rate_source:
+        meta["rate_source"] = payload.rate_source
+    values = payload.model_dump(exclude={"currency", "exchange_rate", "rate_source"})
     doc = {"id": new_id(), "user_id": user["id"], **values, **meta, "created_at": now_iso()}
     await db.recurrences.insert_one(doc)
     doc.pop("_id", None)
@@ -1230,8 +1260,11 @@ async def update_recurrence(rid: str, payload: RecurrenceIn, user=Depends(get_cu
     currencies = await account_currency_map(user)
     base_currency = normalize_currency(user.get("currency"))
     currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
-    meta = await monetary_metadata(currency, base_currency, payload.next_run, payload.exchange_rate)
-    values = payload.model_dump(exclude={"currency", "exchange_rate"})
+    manual_rate = payload.exchange_rate if payload.rate_source != "automatic" else None
+    meta = await monetary_metadata(currency, base_currency, payload.next_run, manual_rate)
+    if payload.rate_source:
+        meta["rate_source"] = payload.rate_source
+    values = payload.model_dump(exclude={"currency", "exchange_rate", "rate_source"})
     res = await db.recurrences.update_one(
         {"id": rid, "user_id": user["id"]}, {"$set": {**values, **meta}})
     if res.matched_count == 0:
