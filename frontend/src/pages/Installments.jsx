@@ -10,6 +10,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Check, Trash2, Pencil, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
+import { translate as tr } from "@/i18n";
 export default function Installments() {
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
@@ -43,7 +44,7 @@ export default function Installments() {
         category_id: form.category_id || null,
         account_id: form.account_id || null,
       });
-      toast.success("Parcelamento criado");
+      toast.success(tr("Parcelamento criado"));
       setOpen(false); load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
@@ -67,7 +68,7 @@ export default function Installments() {
         payment_method: editForm.payment_method,
         account_id: editForm.account_id || null,
       });
-      toast.success("Atualizado");
+      toast.success(tr("Atualizado"));
       setEditing(null); load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
@@ -77,7 +78,7 @@ export default function Installments() {
     if (!confirmDel) return;
     await api.delete(`/installments/purchases/${confirmDel.id}`);
     setConfirmDel(null);
-    toast.success("Parcelamento excluído");
+    toast.success(tr("Parcelamento excluído"));
     load();
   };
 
@@ -85,49 +86,49 @@ export default function Installments() {
     <div className="space-y-6" data-testid="installments-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Parcelamentos</h1>
-          <p className="text-[#6B7068]">Compras parceladas com geração automática</p>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Parcelamentos")}</h1>
+          <p className="text-[#6B7068]">{tr("Compras parceladas com geração automática")}</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button data-testid="new-installment-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-              <Plus size={16} className="mr-1" /> Nova compra parcelada
+              <Plus size={16} className="mr-1" /> {tr("Nova compra parcelada")}
             </Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>Nova compra parcelada</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{tr("Nova compra parcelada")}</DialogTitle></DialogHeader>
             <form onSubmit={submit} className="space-y-3">
-              <div><Label>Descrição</Label>
+              <div><Label>{tr("Descrição")}</Label>
                 <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required data-testid="inst-description-input" /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>Valor total</Label>
+                <div><Label>{tr("Valor total")}</Label>
                   <Input type="number" step="0.01" value={form.total_amount} required data-testid="inst-total-input"
                     onChange={e => setForm({ ...form, total_amount: e.target.value })} /></div>
-                <div><Label>Nº parcelas</Label>
+                <div><Label>{tr("Nº parcelas")}</Label>
                   <Input type="number" min="1" max="120" value={form.installments} required data-testid="inst-count-input"
                     onChange={e => setForm({ ...form, installments: e.target.value })} /></div>
-                <div><Label>Primeira parcela</Label>
+                <div><Label>{tr("Primeira parcela")}</Label>
                   <Input type="date" value={form.first_date} required data-testid="inst-date-input"
                     onChange={e => setForm({ ...form, first_date: e.target.value })} /></div>
-                <div><Label>Forma de pagamento</Label>
+                <div><Label>{tr("Forma de pagamento")}</Label>
                   <Input value={form.payment_method} data-testid="inst-payment-input"
                     onChange={e => setForm({ ...form, payment_method: e.target.value })} /></div>
-                <div className="col-span-2"><Label>Categoria</Label>
+                <div className="col-span-2"><Label>{tr("Categoria")}</Label>
                   <Select value={form.category_id} onValueChange={v => setForm({ ...form, category_id: v })}>
-                    <SelectTrigger data-testid="inst-category-select"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectTrigger data-testid="inst-category-select"><SelectValue placeholder={tr("Selecione")} /></SelectTrigger>
                     <SelectContent>
-                      {cats.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      {cats.map(c => <SelectItem key={c.id} value={c.id}>{tr(c.name)}</SelectItem>)}
                     </SelectContent>
                   </Select></div>
-                <div className="col-span-2"><Label>Carteira (pagamento sai daqui ao confirmar a parcela)</Label>
+                <div className="col-span-2"><Label>{tr("Carteira (pagamento sai daqui ao confirmar a parcela)")}</Label>
                   <Select value={form.account_id} onValueChange={v => setForm({ ...form, account_id: v })}>
-                    <SelectTrigger data-testid="inst-account-select"><SelectValue placeholder="Selecione a carteira" /></SelectTrigger>
+                    <SelectTrigger data-testid="inst-account-select"><SelectValue placeholder={tr("Selecione a carteira")} /></SelectTrigger>
                     <SelectContent>
-                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
                     </SelectContent>
                   </Select></div>
               </div>
-              <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="inst-submit-button">Criar</Button>
+              <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="inst-submit-button">{tr("Criar")}</Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -140,14 +141,14 @@ export default function Installments() {
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="inst-summary">
             <div className="card-soft">
-              <div className="text-sm text-[#6B7068]">Total pendente (parcelas em aberto)</div>
+              <div className="text-sm text-[#6B7068]">{tr("Total pendente (parcelas em aberto)")}</div>
               <div className="text-2xl font-semibold text-rose-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="inst-pending-total">
                 {fmtMoney(pendingTotal, curr)}
               </div>
-              <div className="text-xs text-[#6B7068] mt-1">Só sai da carteira quando você confirmar o pagamento</div>
+              <div className="text-xs text-[#6B7068] mt-1">{tr("Só sai da carteira quando você confirmar o pagamento")}</div>
             </div>
             <div className="card-soft">
-              <div className="text-sm text-[#6B7068]">Total já pago</div>
+              <div className="text-sm text-[#6B7068]">{tr("Total já pago")}</div>
               <div className="text-2xl font-semibold text-emerald-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="inst-paid-total">
                 {fmtMoney(paidTotal, curr)}
               </div>
@@ -157,7 +158,7 @@ export default function Installments() {
       })()}
 
       <div className="space-y-4">
-        {list.length === 0 && <div className="card-soft text-center text-[#6B7068]">Nenhum parcelamento ainda</div>}
+        {list.length === 0 && <div className="card-soft text-center text-[#6B7068]">{tr("Nenhum parcelamento ainda")}</div>}
         {list.map(p => {
           const paid = p.installments_list.filter(i => i.status === "paid").length;
           const remaining = p.installments - paid;
@@ -174,23 +175,23 @@ export default function Installments() {
                     <div className="text-sm text-[#6B7068]">
                       {p.installments}x · {fmtMoney(p.total_amount, p.currency || curr)} · Pagas: {paid}/{p.installments}
                       {p.account_id && accs.find(a => a.id === p.account_id) && (
-                        <> · {accs.find(a => a.id === p.account_id).name}</>
+                        <> · {tr(accs.find(a => a.id === p.account_id).name)}</>
                       )}
                     </div>
                     {!isOpen && (
                       <div className="text-xs text-[#061B4A] mt-1" data-testid={`purchase-summary-${p.id}`}>
                         {next
-                          ? <>Próxima: <b>Parcela {next.number}/{next.total}</b> · {fmtMoney(next.amount, p.currency || curr)} · vence {fmtDate(next.due_date)} · faltam {remaining}</>
-                          : <>Tudo pago! 🎉</>}
+                          ? <>{tr("Próxima:")} <b>{tr("Parcela")} {next.number}/{next.total}</b> · {fmtMoney(next.amount, p.currency || curr)} · vence {fmtDate(next.due_date)} · faltam {remaining}</>
+                          : <>{tr("Tudo pago! 🎉")}</>}
                       </div>
                     )}
                   </div>
                 </button>
                 <div className="flex gap-1">
-                  <button onClick={() => openEdit(p)} className="text-[#6B7068] hover:text-[#061B4A] p-2 rounded-lg border border-[#E5E4E0]" data-testid={`purchase-edit-${p.id}`} title="Editar">
+                  <button onClick={() => openEdit(p)} className="text-[#6B7068] hover:text-[#061B4A] p-2 rounded-lg border border-[#E5E4E0]" data-testid={`purchase-edit-${p.id}`} title={tr("Editar")}>
                     <Pencil size={16} />
                   </button>
-                  <button onClick={() => setConfirmDel(p)} className="text-[#6B7068] hover:text-[#D9453B] p-2 rounded-lg border border-[#E5E4E0]" data-testid={`purchase-delete-${p.id}`} title="Excluir">
+                  <button onClick={() => setConfirmDel(p)} className="text-[#6B7068] hover:text-[#D9453B] p-2 rounded-lg border border-[#E5E4E0]" data-testid={`purchase-delete-${p.id}`} title={tr("Excluir")}>
                     <Trash2 size={16} />
                   </button>
                 </div>
@@ -204,11 +205,11 @@ export default function Installments() {
                         ? "bg-[#061B4A] text-white border-transparent"
                         : "bg-white border-[#E5E4E0] hover:bg-[#F1EFE7]"
                     }`}>
-                    <div className="text-xs opacity-80">Parcela {i.number}/{i.total}</div>
+                    <div className="text-xs opacity-80">{tr("Parcela")} {i.number}/{i.total}</div>
                     <div className="font-semibold text-sm mt-1">{fmtMoney(i.amount, p.currency || curr)}</div>
                     <div className="text-xs opacity-80 mt-1">{fmtDate(i.due_date)}</div>
                     <div className="text-xs mt-2 flex items-center gap-1">
-                      {i.status === "paid" ? <><Check size={12} /> Pago</> : "Pendente"}
+                      {i.status === "paid" ? <><Check size={12} /> {tr("Pago")}</> : tr("Pendente")}
                     </div>
                   </button>
                 ))}
@@ -221,30 +222,30 @@ export default function Installments() {
 
       <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Editar parcelamento</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{tr("Editar parcelamento")}</DialogTitle></DialogHeader>
           <form onSubmit={submitEdit} className="space-y-3">
-            <div><Label>Descrição</Label>
+            <div><Label>{tr("Descrição")}</Label>
               <Input value={editForm.description} required data-testid="purchase-edit-description"
                 onChange={e => setEditForm({ ...editForm, description: e.target.value })} /></div>
-            <div><Label>Forma de pagamento</Label>
+            <div><Label>{tr("Forma de pagamento")}</Label>
               <Input value={editForm.payment_method} data-testid="purchase-edit-payment"
                 onChange={e => setEditForm({ ...editForm, payment_method: e.target.value })} /></div>
-            <div><Label>Categoria</Label>
+            <div><Label>{tr("Categoria")}</Label>
               <Select value={editForm.category_id} onValueChange={v => setEditForm({ ...editForm, category_id: v })}>
-                <SelectTrigger data-testid="purchase-edit-category"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectTrigger data-testid="purchase-edit-category"><SelectValue placeholder={tr("Selecione")} /></SelectTrigger>
                 <SelectContent>
-                  {cats.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  {cats.map(c => <SelectItem key={c.id} value={c.id}>{tr(c.name)}</SelectItem>)}
                 </SelectContent>
               </Select></div>
-            <div><Label>Carteira</Label>
+            <div><Label>{tr("Carteira")}</Label>
               <Select value={editForm.account_id} onValueChange={v => setEditForm({ ...editForm, account_id: v })}>
-                <SelectTrigger data-testid="purchase-edit-account"><SelectValue placeholder="Selecione a carteira" /></SelectTrigger>
+                <SelectTrigger data-testid="purchase-edit-account"><SelectValue placeholder={tr("Selecione a carteira")} /></SelectTrigger>
                 <SelectContent>
-                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
                 </SelectContent>
               </Select></div>
-            <p className="text-xs text-[#6B7068]">Para alterar valor total ou número de parcelas, exclua e crie um novo parcelamento.</p>
-            <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="purchase-edit-submit">Salvar alterações</Button>
+            <p className="text-xs text-[#6B7068]">{tr("Para alterar valor total ou número de parcelas, exclua e crie um novo parcelamento.")}</p>
+            <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="purchase-edit-submit">{tr("Salvar alterações")}</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -252,8 +253,8 @@ export default function Installments() {
       <ConfirmDialog
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
-        title="Excluir parcelamento?"
-        description={confirmDel ? `"${confirmDel.description}" e todas as ${confirmDel.installments} parcelas serão removidas. Esta ação não pode ser desfeita.` : ""}
+        title={tr("Excluir parcelamento?")}
+        description={confirmDel ? tr("\"{name}\" e todas as {count} parcelas serão removidas. Esta ação não pode ser desfeita.", { name: confirmDel.description, count: confirmDel.installments }) : ""}
         onConfirm={removePurchase}
         testId="purchase-confirm-delete"
       />

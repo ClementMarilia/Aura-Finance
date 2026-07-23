@@ -4,6 +4,8 @@ import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { CURRENCIES } from "@/lib/api";
 import Logo from "@/components/Logo";
+import LanguageSelector from "@/components/LanguageSelector";
+import { getLanguage, translate as tr } from "@/i18n";
 
 function Field({ id, label, type, value, onChange, testid, placeholder, minLength, autoComplete }) {
   return (
@@ -38,9 +40,9 @@ export default function Register() {
     e.preventDefault();
     setLoading(true);
     try {
-      const result = await register(form);
+      const result = await register({ ...form, language: getLanguage() });
       setSubmittedEmail(result.email || form.email);
-      toast.success("Cadastro enviado para aprovação");
+      toast.success(tr("Cadastro enviado para aprovação"));
     } catch (err) {
       toast.error(formatApiError(err));
     } finally {
@@ -50,6 +52,7 @@ export default function Register() {
 
   return (
     <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ background: "#04112F" }}>
+      <LanguageSelector compact className="absolute right-4 top-4 z-20 text-white/70" />
       {/* Soft radial sphere glow */}
       <div aria-hidden className="pointer-events-none absolute inset-0"
         style={{ background: "radial-gradient(circle at 50% 52%, rgba(8,215,165,0.12), rgba(18,104,244,0.07) 32%, transparent 60%)" }} />
@@ -72,37 +75,37 @@ export default function Register() {
             <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-full border border-[#08D7A5]/30 bg-[#08D7A5]/10 text-2xl text-[#08D7A5]">
               ✓
             </div>
-            <p className="text-white/80 text-lg font-medium">Cadastro recebido</p>
+            <p className="text-white/80 text-lg font-medium">{tr("Cadastro recebido")}</p>
             <p className="mt-3 text-sm leading-6 text-white/50">
-              A conta <span className="text-white/75">{submittedEmail}</span> está aguardando aprovação.
-              Você poderá entrar depois que a administradora liberar o acesso.
+              {tr("A conta")} <span className="text-white/75">{submittedEmail}</span>{" "}
+              {tr("está aguardando aprovação. Você poderá entrar depois que a administradora liberar o acesso.")}
             </p>
             <Link
               to="/login"
               className="mt-8 inline-flex w-full justify-center rounded-xl border border-white/12 bg-white/[0.04] px-4 py-4 text-xs uppercase tracking-[0.22em] text-white/80 transition-colors hover:bg-white/[0.09]"
               data-testid="register-pending-login"
             >
-              Voltar para o login
+              {tr("Voltar para o login")}
             </Link>
           </div>
         ) : (
           <>
-            <p className="text-white/40 text-xs tracking-[0.12em] uppercase mb-8">Criar conta</p>
+            <p className="text-white/40 text-xs tracking-[0.12em] uppercase mb-8">{tr("Criar conta")}</p>
 
             <form onSubmit={submit} className="space-y-6">
-              <Field id="reg-name" label="Nome" type="text" value={form.name} testid="register-name-input"
-                autoComplete="name" placeholder="Seu nome"
+              <Field id="reg-name" label={tr("Nome")} type="text" value={form.name} testid="register-name-input"
+                autoComplete="name" placeholder={tr("Seu nome")}
                 onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <Field id="reg-email" label="E-mail" type="email" value={form.email} testid="register-email-input"
+              <Field id="reg-email" label={tr("E-mail")} type="email" value={form.email} testid="register-email-input"
                 autoComplete="email" placeholder="voce@exemplo.com"
                 onChange={(e) => setForm({ ...form, email: e.target.value })} />
-              <Field id="reg-password" label="Senha" type="password" value={form.password} testid="register-password-input"
+              <Field id="reg-password" label={tr("Senha")} type="password" value={form.password} testid="register-password-input"
                 autoComplete="new-password" minLength={4} placeholder="••••••••"
                 onChange={(e) => setForm({ ...form, password: e.target.value })} />
 
               <div className="text-left">
                 <label htmlFor="reg-currency" className="block text-[11px] tracking-[0.18em] uppercase text-white/40 mb-2">
-                  Moeda-base
+                  {tr("Moeda-base")}
                 </label>
                 <select
                   id="reg-currency"
@@ -120,14 +123,14 @@ export default function Register() {
 
               <button type="submit" disabled={loading} data-testid="register-submit-button"
                 className="w-full mt-2 rounded-xl border border-white/12 bg-white/[0.04] hover:bg-white/[0.09] active:scale-[0.99] text-white/85 text-xs tracking-[0.28em] uppercase py-4 transition-colors duration-200 disabled:opacity-50">
-                {loading ? "Enviando..." : "Solicitar acesso"}
+                {loading ? tr("Enviando...") : tr("Solicitar acesso")}
               </button>
             </form>
 
             <div className="mt-6 text-xs text-white/40">
-              Já tem conta?{" "}
+              {tr("Já tem conta?")}{" "}
               <Link to="/login" className="text-white/70 hover:text-white transition-colors" data-testid="link-login">
-                Entrar
+                {tr("Entrar")}
               </Link>
             </div>
           </>

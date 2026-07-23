@@ -9,12 +9,13 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { LogOut, ShieldCheck } from "lucide-react";
 
+import { translate as tr } from "@/i18n";
 const SECURITY_QUESTIONS = [
-  "Qual o nome do seu primeiro animal de estimação?",
-  "Em que cidade você nasceu?",
-  "Qual o nome de solteira da sua mãe?",
-  "Qual foi o nome da sua primeira escola?",
-  "Qual o seu prato de comida favorito?",
+  tr("Qual o nome do seu primeiro animal de estimação?"),
+  tr("Em que cidade você nasceu?"),
+  tr("Qual o nome de solteira da sua mãe?"),
+  tr("Qual foi o nome da sua primeira escola?"),
+  tr("Qual o seu prato de comida favorito?"),
 ];
 
 export default function Profile() {
@@ -31,7 +32,7 @@ export default function Profile() {
     try {
       await api.put("/auth/profile", form);
       await refreshMe();
-      toast.success("Perfil atualizado");
+      toast.success(tr("Perfil atualizado"));
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
@@ -39,7 +40,7 @@ export default function Profile() {
     e.preventDefault();
     try {
       await api.post("/auth/change-password", pw);
-      toast.success("Senha alterada");
+      toast.success(tr("Senha alterada"));
       setPw({ current_password: "", new_password: "" });
     } catch (err) { toast.error(formatApiError(err)); }
   };
@@ -49,14 +50,14 @@ export default function Profile() {
     try {
       await api.post("/auth/security-question", sec);
       await refreshMe();
-      toast.success("Pergunta de segurança salva");
+      toast.success(tr("Pergunta de segurança salva"));
       setSec({ ...sec, answer: "" });
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
   return (
     <div className="space-y-6 max-w-2xl" data-testid="profile-page">
-      <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Perfil</h1>
+      <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Perfil")}</h1>
 
       <div className="card-soft">
         <div className="flex items-center gap-4">
@@ -71,10 +72,10 @@ export default function Profile() {
         </div>
 
         <form onSubmit={saveProfile} className="mt-6 space-y-3">
-          <div><Label>Nome</Label>
+          <div><Label>{tr("Nome")}</Label>
             <Input value={form.name} required data-testid="profile-name-input"
               onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-          <div><Label>Moeda-base</Label>
+          <div><Label>{tr("Moeda-base")}</Label>
             <Select value={form.currency} onValueChange={v => setForm({ ...form, currency: v })}>
               <SelectTrigger data-testid="profile-currency-select"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -83,23 +84,23 @@ export default function Profile() {
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-[#6B7068] mt-1">Dashboards e relatórios serão apresentados nesta moeda. Os valores originais não são alterados.</p>
+            <p className="text-xs text-[#6B7068] mt-1">{tr("Dashboards e relatórios serão apresentados nesta moeda. Os valores originais não são alterados.")}</p>
           </div>
-          <Button type="submit" data-testid="profile-save-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Salvar</Button>
+          <Button type="submit" data-testid="profile-save-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">{tr("Salvar")}</Button>
         </form>
       </div>
 
       <div className="card-soft">
-        <h3 className="text-lg font-semibold mb-3" style={{ fontFamily: "Outfit" }}>Alterar senha</h3>
+        <h3 className="text-lg font-semibold mb-3" style={{ fontFamily: "Outfit" }}>{tr("Alterar senha")}</h3>
         <form onSubmit={changePassword} className="space-y-3">
-          <div><Label>Senha atual</Label>
+          <div><Label>{tr("Senha atual")}</Label>
             <Input type="password" value={pw.current_password} required data-testid="profile-current-password"
               onChange={e => setPw({ ...pw, current_password: e.target.value })} /></div>
-          <div><Label>Nova senha</Label>
+          <div><Label>{tr("Nova senha")}</Label>
             <Input type="password" value={pw.new_password} required minLength={4} data-testid="profile-new-password"
               onChange={e => setPw({ ...pw, new_password: e.target.value })} /></div>
           <Button type="submit" data-testid="profile-change-password-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-            Alterar senha
+            {tr("Alterar senha")}
           </Button>
         </form>
       </div>
@@ -107,26 +108,26 @@ export default function Profile() {
       <div className="card-soft">
         <div className="flex items-center gap-2 mb-1">
           <ShieldCheck size={18} className="text-[#061B4A]" />
-          <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Pergunta de segurança</h3>
+          <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Pergunta de segurança")}</h3>
         </div>
         <p className="text-sm text-[#6B7068] mb-3">
           {user?.has_security_question
-            ? "Já configurada. Usada para recuperar a senha caso você esqueça."
-            : "Configure para conseguir recuperar sua senha sem e-mail."}
+            ? tr("Já configurada. Usada para recuperar a senha caso você esqueça.")
+            : tr("Configure para conseguir recuperar sua senha sem e-mail.")}
         </p>
         <form onSubmit={saveSecurity} className="space-y-3">
-          <div><Label>Pergunta</Label>
+          <div><Label>{tr("Pergunta")}</Label>
             <Select value={sec.question} onValueChange={v => setSec({ ...sec, question: v })}>
               <SelectTrigger data-testid="security-question-select"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {SECURITY_QUESTIONS.map(q => <SelectItem key={q} value={q}>{q}</SelectItem>)}
+                {SECURITY_QUESTIONS.map(q => <SelectItem key={q} value={q}>{tr(q)}</SelectItem>)}
               </SelectContent>
             </Select></div>
-          <div><Label>Resposta</Label>
+          <div><Label>{tr("Resposta")}</Label>
             <Input value={sec.answer} required data-testid="security-answer-input"
-              onChange={e => setSec({ ...sec, answer: e.target.value })} placeholder="Sua resposta secreta" /></div>
+              onChange={e => setSec({ ...sec, answer: e.target.value })} placeholder={tr("Sua resposta secreta")} /></div>
           <Button type="submit" data-testid="security-save-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-            {user?.has_security_question ? "Atualizar pergunta" : "Salvar pergunta"}
+            {user?.has_security_question ? tr("Atualizar pergunta") : tr("Salvar pergunta")}
           </Button>
         </form>
       </div>
@@ -134,7 +135,7 @@ export default function Profile() {
       <div className="card-soft">
         <Button onClick={() => { logout(); navigate("/login"); }} data-testid="profile-logout-button"
           className="bg-white border border-[#E5E4E0] text-[#D9453B] hover:bg-[#F1EFE7] rounded-xl">
-          <LogOut size={16} className="mr-2" /> Sair
+          <LogOut size={16} className="mr-2" /> {tr("Sair")}
         </Button>
       </div>
     </div>

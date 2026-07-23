@@ -3,6 +3,7 @@ import api, { fmtDate, fmtMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { exportCSV, exportPDF, exportMonthlyReportPDF } from "@/lib/exporters";
+import { getMonthNames, translate as tr } from "@/i18n";
 import {
   ArrowDownRight, ArrowUpRight, CalendarDays, CircleDollarSign, CreditCard,
   FileDown, FileText, Landmark, ReceiptText, Repeat, TrendingDown, TrendingUp,
@@ -13,13 +14,10 @@ import {
   PieChart, Pie, Cell,
 } from "recharts";
 
-const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-const MONTHS_LONG = [
-  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
-];
-const STATUS = { paid: "Pago", pending: "Pendente", cancelled: "Cancelado" };
-const SOURCE = { manual: "Manual", recurrence: "Recorrência", installment: "Parcela" };
+const MONTHS = getMonthNames("short");
+const MONTHS_LONG = getMonthNames("long");
+const STATUS = { paid: tr("Pago"), pending: tr("Pendente"), cancelled: tr("Cancelado") };
+const SOURCE = { manual: "Manual", recurrence: "Recorrência", installment: tr("Parcela") };
 
 function DeltaPill({ comparison, invert = false, label = "mês anterior" }) {
   if (!comparison || comparison.difference === 0) {
@@ -96,14 +94,14 @@ function MovementColumn({ title, items, type, currency }) {
           {income ? <ArrowUpRight size={18} className="text-emerald-600" /> : <ArrowDownRight size={18} className="text-rose-600" />}
           <h3 className="text-lg font-semibold">{title}</h3>
         </div>
-        <span className="text-xs text-[#6B7068]">{items.length} itens</span>
+        <span className="text-xs text-[#6B7068]">{items.length} {tr("itens")}</span>
       </div>
       <div className="divide-y divide-[#E5E4E0] max-h-[460px] overflow-y-auto">
-        {items.length === 0 && <div className="p-8 text-sm text-center text-[#6B7068]">Nenhum lançamento no período.</div>}
+        {items.length === 0 && <div className="p-8 text-sm text-center text-[#6B7068]">{tr("Nenhum lançamento no período.")}</div>}
         {items.map(item => (
           <div key={`${item.source}-${item.id}`} className="p-4 flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <div className="font-medium truncate">{item.description || "Sem descrição"}</div>
+              <div className="font-medium truncate">{item.description || tr("Sem descrição")}</div>
               <div className="text-xs text-[#6B7068] mt-1 flex flex-wrap gap-x-2 gap-y-1">
                 <span>{fmtDate(item.date)}</span><span>•</span><span>{item.category}</span><span>•</span>
                 <span>{SOURCE[item.source] || item.source}</span>
@@ -116,7 +114,7 @@ function MovementColumn({ title, items, type, currency }) {
               </div>
               <span className={`pill mt-1 ${item.status === "paid" ? "pill-paid" : "pill-pending"}`}>{STATUS[item.status] || item.status}</span>
               {item.currency !== currency && (
-                <div className="text-[10px] text-[#6B7068] mt-1">Original: {fmtMoney(item.amount, item.currency)}</div>
+                <div className="text-[10px] text-[#6B7068] mt-1">{tr("Original:")} {fmtMoney(item.amount, item.currency)}</div>
               )}
             </div>
           </div>
@@ -157,7 +155,7 @@ export default function Reports() {
       if (view === "monthly") setMonthly(response.data);
       else setAnnual(response.data);
     }).catch(() => {
-      if (active) setError("Não foi possível carregar o relatório. Tente novamente.");
+      if (active) setError(tr("Não foi possível carregar o relatório. Tente novamente."));
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [view, period.year, period.month, annualYear, user?.currency]);
@@ -170,21 +168,21 @@ export default function Reports() {
     const rows = [...monthly.entries, ...monthly.expenses]
       .sort((a, b) => String(b.date).localeCompare(String(a.date)))
       .map(item => [
-        item.type === "income" ? "Entrada" : "Saída", item.date,
-        item.description || "Sem descrição", item.category,
+        item.type === "income" ? "Entrada" : tr("Saída"), item.date,
+        item.description || tr("Sem descrição"), item.category,
         SOURCE[item.source] || item.source, STATUS[item.status] || item.status,
         item.amount, item.currency, item.base_amount, monthly.base_currency,
       ]);
     exportCSV(
       `relatorio_mensal_${period.year}_${String(period.month).padStart(2, "0")}.csv`,
-      ["Tipo", "Data", "Descrição", "Categoria", "Origem", "Status", "Valor original", "Moeda original", "Valor convertido", "Moeda-base"],
+      [tr("Tipo"), tr("Data"), tr("Descrição"), tr("Categoria"), tr("Origem"), tr("Status"), "Valor original", "Moeda original", "Valor convertido", tr("Moeda-base")],
       rows,
     );
   };
 
   const exportAnnualCSV = () => exportCSV(
     `relatorio_${annualYear}.csv`,
-    ["Mês", `Receita ${annualYear}`, `Despesa ${annualYear}`, `Saldo ${annualYear}`, `Despesa ${annual.prev_year}`],
+    [tr("Mês"), `Receita ${annualYear}`, `Despesa ${annualYear}`, `Saldo ${annualYear}`, `Despesa ${annual.prev_year}`],
     annual.months.map(month => [
       MONTHS[month.month - 1], month.income, month.expense, month.balance,
       annual.prev_months[month.month - 1]?.expense || 0,
@@ -194,37 +192,37 @@ export default function Reports() {
   const exportAnnualPDF = () => exportPDF(
     `Relatório Anual ${annualYear}`,
     `Comparativo com ${annual.prev_year} — gerado para ${user?.name}`,
-    ["Mês", "Receita", "Despesa", "Saldo"],
+    [tr("Mês"), tr("Receita"), tr("Despesa"), tr("Saldo")],
     annual.months.map(month => [
       MONTHS[month.month - 1], fmtMoney(month.income, currency),
       fmtMoney(month.expense, currency), fmtMoney(month.balance, currency),
     ]),
-    ["Total", fmtMoney(annual.totals.income, currency), fmtMoney(annual.totals.expense, currency), fmtMoney(annual.totals.balance, currency)],
+    [tr("Total"), fmtMoney(annual.totals.income, currency), fmtMoney(annual.totals.expense, currency), fmtMoney(annual.totals.balance, currency)],
   );
 
   return (
     <div className="space-y-6" data-testid="reports-page">
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Relatórios</h1>
-          <p className="text-[#6B7068] mt-1">Leitura executiva e detalhada da sua vida financeira.</p>
+          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">{tr("Relatórios")}</h1>
+          <p className="text-[#6B7068] mt-1">{tr("Leitura executiva e detalhada da sua vida financeira.")}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="p-1 rounded-xl bg-[#F1EFE7] flex" data-testid="reports-view-switch">
-            <button onClick={() => setView("monthly")} className={`px-3 py-1.5 rounded-lg text-sm transition ${view === "monthly" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>Mensal</button>
-            <button onClick={() => setView("annual")} className={`px-3 py-1.5 rounded-lg text-sm transition ${view === "annual" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>Anual</button>
+            <button onClick={() => setView("monthly")} className={`px-3 py-1.5 rounded-lg text-sm transition ${view === "monthly" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Mensal")}</button>
+            <button onClick={() => setView("annual")} className={`px-3 py-1.5 rounded-lg text-sm transition ${view === "annual" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Anual")}</button>
           </div>
           <Button variant="outline" disabled={loading || (view === "monthly" ? !monthly : !annual)} onClick={view === "monthly" ? exportMonthlyCSV : exportAnnualCSV} data-testid="export-csv-btn" className="rounded-xl">
-            <FileDown size={16} className="mr-1" /> CSV
+            <FileDown size={16} className="mr-1" /> {tr("CSV")}
           </Button>
           <Button variant="outline" disabled={loading || (view === "monthly" ? !monthly : !annual)} onClick={view === "monthly" ? () => exportMonthlyReportPDF(monthly, user?.name) : exportAnnualPDF} data-testid="export-pdf-btn" className="rounded-xl">
-            <FileText size={16} className="mr-1" /> PDF
+            <FileText size={16} className="mr-1" /> {tr("PDF")}
           </Button>
         </div>
       </div>
 
       <div className="card-soft py-4 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-2 text-sm font-medium"><CalendarDays size={17} className="text-[#061B4A]" /> Período do relatório</div>
+        <div className="flex items-center gap-2 text-sm font-medium"><CalendarDays size={17} className="text-[#061B4A]" /> {tr("Período do relatório")}</div>
         <div className="flex gap-2">
           {view === "monthly" && (
             <select value={period.month} onChange={event => setPeriod({ ...period, month: Number(event.target.value) })} data-testid="reports-month-select" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
@@ -237,7 +235,7 @@ export default function Reports() {
         </div>
       </div>
 
-      {loading && <div className="card-soft text-sm text-[#6B7068]">Carregando relatório...</div>}
+      {loading && <div className="card-soft text-sm text-[#6B7068]">{tr("Carregando relatório...")}</div>}
       {error && <div className="card-soft border-rose-200 text-rose-600">{error}</div>}
       {!loading && !error && view === "monthly" && monthly && <MonthlyReport data={monthly} currency={monthly.base_currency || currency} />}
       {!loading && !error && view === "annual" && annual && <AnnualReport data={annual} currency={annual.base_currency || currency} />}
@@ -249,32 +247,32 @@ function MonthlyReport({ data, currency }) {
   const summary = data.summary;
   const profile = data.expense_profile;
   const composition = [
-    { name: "Fixos", value: profile.fixed, color: "#061B4A" },
-    { name: "Variáveis", value: profile.variable, color: "#D96C5B" },
-    { name: "Parcelas", value: profile.installments, color: "#E5A83B" },
+    { name: tr("Fixos"), value: profile.fixed, color: "#061B4A" },
+    { name: tr("Variáveis"), value: profile.variable, color: "#D96C5B" },
+    { name: tr("Parcelas"), value: profile.installments, color: "#E5A83B" },
   ].filter(item => item.value > 0);
   const previous = data.previous_month?.summary || {};
 
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <SummaryCard label="Entradas" value={summary.income} currency={currency} icon={ArrowUpRight} tone="green" comparison={data.comparison.income} />
-        <SummaryCard label="Saídas" value={summary.expense} currency={currency} icon={ArrowDownRight} tone="red" comparison={data.comparison.expense} invert />
-        <SummaryCard label={summary.balance_status === "negative" ? "Saldo negativo" : "Saldo do mês"} value={summary.balance} currency={currency} icon={Wallet} tone={summary.balance < 0 ? "red" : "primary"} comparison={data.comparison.balance} />
+        <SummaryCard label={tr("Entradas")} value={summary.income} currency={currency} icon={ArrowUpRight} tone="green" comparison={data.comparison.income} />
+        <SummaryCard label={tr("Saídas")} value={summary.expense} currency={currency} icon={ArrowDownRight} tone="red" comparison={data.comparison.expense} invert />
+        <SummaryCard label={summary.balance_status === "negative" ? "Saldo negativo" : tr("Saldo do mês")} value={summary.balance} currency={currency} icon={Wallet} tone={summary.balance < 0 ? "red" : "primary"} comparison={data.comparison.balance} />
         <SummaryCard label="Saldo realizado" value={summary.realized_balance} currency={currency} icon={Landmark} tone={summary.realized_balance < 0 ? "red" : "primary"} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <InsightCard icon={ReceiptText} label="Maior gasto" value={data.largest_expense ? fmtMoney(data.largest_expense.base_amount, currency) : "—"} detail={data.largest_expense?.description || "Sem despesas no mês"} tone="red" />
-        <InsightCard icon={CircleDollarSign} label="Categoria líder" value={data.top_category?.category || "—"} detail={data.top_category ? `${fmtMoney(data.top_category.amount, currency)} · ${data.top_category.percent}% das saídas` : "Sem despesas no mês"} />
-        <InsightCard icon={TrendingUp} label="Taxa de economia" value={summary.savings_rate == null ? "—" : `${summary.savings_rate}%`} detail={summary.savings_rate == null ? "Sem entradas para calcular" : "Percentual que restou das entradas"} />
-        <InsightCard icon={CreditCard} label="Saídas pendentes" value={fmtMoney(summary.pending_expense, currency)} detail={`${fmtMoney(summary.paid_expense, currency)} já pagos`} tone="amber" />
+        <InsightCard icon={ReceiptText} label="Maior gasto" value={data.largest_expense ? fmtMoney(data.largest_expense.base_amount, currency) : "—"} detail={data.largest_expense?.description || tr("Sem despesas no mês")} tone="red" />
+        <InsightCard icon={CircleDollarSign} label={tr("Categoria líder")} value={data.top_category?.category || "—"} detail={data.top_category ? `${fmtMoney(data.top_category.amount, currency)} · ${data.top_category.percent}% das saídas` : tr("Sem despesas no mês")} />
+        <InsightCard icon={TrendingUp} label={tr("Taxa de economia")} value={summary.savings_rate == null ? "—" : `${summary.savings_rate}%`} detail={summary.savings_rate == null ? "Sem entradas para calcular" : "Percentual que restou das entradas"} />
+        <InsightCard icon={CreditCard} label={tr("Saídas pendentes")} value={fmtMoney(summary.pending_expense, currency)} detail={`${fmtMoney(summary.paid_expense, currency)} já pagos`} tone="amber" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-soft">
-          <h3 className="text-lg font-semibold">Perfil das saídas</h3>
-          <p className="text-xs text-[#6B7068] mt-1">Fixos, variáveis e compras parceladas.</p>
+          <h3 className="text-lg font-semibold">{tr("Perfil das saídas")}</h3>
+          <p className="text-xs text-[#6B7068] mt-1">{tr("Fixos, variáveis e compras parceladas.")}</p>
           {composition.length ? (
             <div style={{ width: "100%", height: 270 }}>
               <ResponsiveContainer>
@@ -287,11 +285,11 @@ function MonthlyReport({ data, currency }) {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-          ) : <div className="h-[270px] flex items-center justify-center text-sm text-[#6B7068]">Sem saídas no período.</div>}
+          ) : <div className="h-[270px] flex items-center justify-center text-sm text-[#6B7068]">{tr("Sem saídas no período.")}</div>}
         </div>
         <div className="card-soft">
-          <h3 className="text-lg font-semibold">Gastos por categoria</h3>
-          <p className="text-xs text-[#6B7068] mt-1">Participação de cada categoria nas saídas.</p>
+          <h3 className="text-lg font-semibold">{tr("Gastos por categoria")}</h3>
+          <p className="text-xs text-[#6B7068] mt-1">{tr("Participação de cada categoria nas saídas.")}</p>
           {data.category_breakdown.length ? (
             <div style={{ width: "100%", height: 270 }}>
               <ResponsiveContainer>
@@ -304,21 +302,21 @@ function MonthlyReport({ data, currency }) {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          ) : <div className="h-[270px] flex items-center justify-center text-sm text-[#6B7068]">Sem categorias para exibir.</div>}
+          ) : <div className="h-[270px] flex items-center justify-center text-sm text-[#6B7068]">{tr("Sem categorias para exibir.")}</div>}
         </div>
       </div>
 
       <div className="card-soft py-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="stat-label">Comparação rápida</div>
-          <div className="font-medium mt-1">Mês anterior: {fmtMoney(previous.balance || 0, currency)} de saldo</div>
+          <div className="stat-label">{tr("Comparação rápida")}</div>
+          <div className="font-medium mt-1">{tr("Mês anterior:")} {fmtMoney(previous.balance || 0, currency)} {tr("de saldo")}</div>
         </div>
         <div className="text-sm text-[#6B7068]">{summary.transaction_count} movimentações consideradas · transferências não alteram receitas ou despesas</div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MovementColumn title="Entradas" items={data.entries} type="income" currency={currency} />
-        <MovementColumn title="Saídas" items={data.expenses} type="expense" currency={currency} />
+        <MovementColumn title={tr("Entradas")} items={data.entries} type="income" currency={currency} />
+        <MovementColumn title={tr("Saídas")} items={data.expenses} type="expense" currency={currency} />
       </div>
     </>
   );
@@ -337,7 +335,7 @@ function AnnualReport({ data, currency }) {
         <AnnualDeltaCard label="Saldo anual" value={data.totals.balance} prev={data.prev_totals.balance} currency={currency} />
       </div>
       <div className="card-soft">
-        <h3 className="text-lg font-semibold mb-4">Receita e despesa por mês</h3>
+        <h3 className="text-lg font-semibold mb-4">{tr("Receita e despesa por mês")}</h3>
         <div style={{ width: "100%", height: 320 }}>
           <ResponsiveContainer>
             <BarChart data={chartData}>
@@ -346,8 +344,8 @@ function AnnualReport({ data, currency }) {
               <YAxis stroke="#6B7068" fontSize={12} />
               <Tooltip formatter={value => fmtMoney(value, currency)} />
               <Legend />
-              <Bar dataKey="income" name="Receita" fill="#2C7A51" radius={[6, 6, 0, 0]} />
-              <Bar dataKey="expense" name="Despesa" fill="#D9453B" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="income" name={tr("Receita")} fill="#2C7A51" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="expense" name={tr("Despesa")} fill="#D9453B" radius={[6, 6, 0, 0]} />
               <Bar dataKey="prevExpense" name={`Despesa ${data.prev_year}`} fill="#C7BCA1" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -355,9 +353,9 @@ function AnnualReport({ data, currency }) {
       </div>
       <div className="card-soft overflow-x-auto p-0">
         <table className="w-full text-sm">
-          <thead className="bg-[#F1EFE7] text-[#6B7068]"><tr><th className="text-left py-3 px-4">Mês</th><th className="text-right py-3 px-4">Receita</th><th className="text-right py-3 px-4">Despesa</th><th className="text-right py-3 px-4">Saldo</th></tr></thead>
+          <thead className="bg-[#F1EFE7] text-[#6B7068]"><tr><th className="text-left py-3 px-4">{tr("Mês")}</th><th className="text-right py-3 px-4">{tr("Receita")}</th><th className="text-right py-3 px-4">{tr("Despesa")}</th><th className="text-right py-3 px-4">{tr("Saldo")}</th></tr></thead>
           <tbody>{data.months.map(month => <tr key={month.month} className="border-b border-[#E5E4E0]"><td className="py-3 px-4 font-medium">{MONTHS[month.month - 1]}</td><td className="py-3 px-4 text-right text-emerald-600">{fmtMoney(month.income, currency)}</td><td className="py-3 px-4 text-right text-rose-600">{fmtMoney(month.expense, currency)}</td><td className={`py-3 px-4 text-right font-semibold ${month.balance >= 0 ? "text-[#061B4A]" : "text-rose-600"}`}>{fmtMoney(month.balance, currency)}</td></tr>)}</tbody>
-          <tfoot><tr className="bg-[#F1EFE7] font-semibold"><td className="py-3 px-4">Total</td><td className="py-3 px-4 text-right text-emerald-600">{fmtMoney(data.totals.income, currency)}</td><td className="py-3 px-4 text-right text-rose-600">{fmtMoney(data.totals.expense, currency)}</td><td className="py-3 px-4 text-right text-[#061B4A]">{fmtMoney(data.totals.balance, currency)}</td></tr></tfoot>
+          <tfoot><tr className="bg-[#F1EFE7] font-semibold"><td className="py-3 px-4">{tr("Total")}</td><td className="py-3 px-4 text-right text-emerald-600">{fmtMoney(data.totals.income, currency)}</td><td className="py-3 px-4 text-right text-rose-600">{fmtMoney(data.totals.expense, currency)}</td><td className="py-3 px-4 text-right text-[#061B4A]">{fmtMoney(data.totals.balance, currency)}</td></tr></tfoot>
         </table>
       </div>
     </>

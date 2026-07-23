@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api, { formatApiError } from "@/lib/api";
+import { syncLanguage } from "@/i18n";
 
 const AuthContext = createContext(null);
 
@@ -11,7 +12,11 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem("token");
     if (!token) { setLoading(false); return; }
     api.get("/auth/me")
-      .then((r) => setUser(r.data))
+      .then((r) => {
+        const changed = syncLanguage(r.data?.language);
+        setUser(r.data);
+        if (changed) window.location.reload();
+      })
       .catch(() => { localStorage.removeItem("token"); })
       .finally(() => setLoading(false));
   }, []);
@@ -19,6 +24,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
     localStorage.setItem("token", data.token);
+    syncLanguage(data.user?.language);
     setUser(data.user);
     return data.user;
   };

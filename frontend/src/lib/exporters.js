@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+import { translate as tr } from "@/i18n";
 export function exportCSV(filename, headers, rows) {
   const esc = (v) => {
     const s = v == null ? "" : String(v);
@@ -63,7 +64,7 @@ export function exportMonthlyReportPDF(report, ownerName) {
 
   autoTable(doc, {
     startY: 31,
-    head: [["Entradas", "Saídas", "Saldo", "Saldo realizado"]],
+    head: [[tr("Entradas"), tr("Saídas"), tr("Saldo"), "Saldo realizado"]],
     body: [[
       money(summary.income), money(summary.expense),
       money(summary.balance), money(summary.realized_balance),
@@ -75,7 +76,7 @@ export function exportMonthlyReportPDF(report, ownerName) {
 
   autoTable(doc, {
     startY: doc.lastAutoTable.finalY + 6,
-    head: [["Fixos", "Variáveis", "Parcelas", "Saídas pendentes", "Taxa de economia"]],
+    head: [[tr("Fixos"), tr("Variáveis"), tr("Parcelas"), tr("Saídas pendentes"), tr("Taxa de economia")]],
     body: [[
       money(profile.fixed), money(profile.variable), money(profile.installments),
       money(summary.pending_expense),
@@ -90,19 +91,19 @@ export function exportMonthlyReportPDF(report, ownerName) {
     .sort((a, b) => String(b.date).localeCompare(String(a.date)))
     .map((item) => [
       item.date?.split("-").reverse().join("/") || "—",
-      item.type === "income" ? "Entrada" : "Saída",
-      item.description || "Sem descrição",
+      item.type === "income" ? "Entrada" : tr("Saída"),
+      item.description || tr("Sem descrição"),
       item.category || "Sem categoria",
-      item.source === "installment" ? "Parcela" : item.source === "recurrence" ? "Recorrência" : "Manual",
-      item.status === "paid" ? "Pago" : "Pendente",
+      item.source === "installment" ? tr("Parcela") : item.source === "recurrence" ? "Recorrência" : "Manual",
+      item.status === "paid" ? tr("Pago") : tr("Pendente"),
       money(item.base_amount),
     ]);
 
   autoTable(doc, {
     startY: doc.lastAutoTable.finalY + 8,
-    head: [["Data", "Tipo", "Descrição", "Categoria", "Origem", "Status", `Valor (${currency})`]],
+    head: [[tr("Data"), tr("Tipo"), tr("Descrição"), tr("Categoria"), tr("Origem"), tr("Status"), `Valor (${currency})`]],
     body: detailRows,
-    foot: [["", "", "Total", "", "", "", money(summary.balance)]],
+    foot: [["", "", tr("Total"), "", "", "", money(summary.balance)]],
     theme: "striped",
     headStyles: { fillColor: [30, 63, 51], textColor: 255 },
     footStyles: { fillColor: [241, 239, 231], textColor: [30, 63, 51], fontStyle: "bold" },

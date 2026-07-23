@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import api, { fmtMoney } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
+import { getMonthNames, translate as tr } from "@/i18n";
 const COLORS = ["#061B4A", "#D96C5B", "#E5A83B", "#7EA193", "#C7BCA1"];
-const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const MONTHS = getMonthNames("short");
 
 export default function Budget() {
   const { user } = useAuth();
@@ -23,8 +24,8 @@ export default function Budget() {
     <div className="space-y-6" data-testid="budget-page">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Orçamento Mensal</h1>
-          <p className="text-[#6B7068]">Divisão automática baseada na sua receita do mês</p>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Orçamento Mensal")}</h1>
+          <p className="text-[#6B7068]">{tr("Divisão automática baseada na sua receita do mês")}</p>
         </div>
         <div className="flex gap-2">
           <select value={period.month} onChange={e => setPeriod({ ...period, month: +e.target.value })}
@@ -38,16 +39,16 @@ export default function Budget() {
         </div>
       </div>
 
-      {!data ? <div className="text-[#6B7068]">Carregando...</div> : (
+      {!data ? <div className="text-[#6B7068]">{tr("Carregando...")}</div> : (
       <>
       <div className="card-soft">
-        <div className="text-sm text-[#6B7068]">Receita de {MONTHS[period.month - 1]}/{period.year}</div>
+        <div className="text-sm text-[#6B7068]">{tr("Receita de")} {MONTHS[period.month - 1]}/{period.year}</div>
         <div className="text-4xl font-semibold mt-1" style={{ fontFamily: "Outfit" }} data-testid="budget-income">
           {fmtMoney(b.income, curr)}
         </div>
         {b.income === 0 && (
           <div className="mt-3 text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
-            Sem receita cadastrada neste mês. Cadastre uma receita (ou recorrência) para ver a divisão automática.
+            {tr("Sem receita cadastrada neste mês. Cadastre uma receita (ou recorrência) para ver a divisão automática.")}
           </div>
         )}
       </div>
@@ -72,13 +73,13 @@ export default function Budget() {
       </div>
 
       <div className="card-soft">
-        <h3 className="text-lg font-semibold mb-3" style={{ fontFamily: "Outfit" }}>Como funciona?</h3>
+        <h3 className="text-lg font-semibold mb-3" style={{ fontFamily: "Outfit" }}>{tr("Como funciona?")}</h3>
         <ul className="text-sm text-[#6B7068] space-y-2 list-disc pl-5">
-          <li><strong>50% Necessidades</strong>: moradia, contas fixas, mercado, transporte essencial.</li>
-          <li><strong>20% Reserva / Investimentos</strong>: poupança, fundos, aplicações.</li>
-          <li><strong>10% Lazer</strong>: restaurantes, entretenimento, viagens curtas.</li>
-          <li><strong>10% Educação</strong>: cursos, livros, formação.</li>
-          <li><strong>10% Outros objetivos</strong>: metas pessoais, presentes, doações.</li>
+          <li><strong>{tr("50% Necessidades")}</strong>: moradia, contas fixas, mercado, transporte essencial.</li>
+          <li><strong>{tr("20% Reserva / Investimentos")}</strong>: poupança, fundos, aplicações.</li>
+          <li><strong>{tr("10% Lazer")}</strong>: restaurantes, entretenimento, viagens curtas.</li>
+          <li><strong>{tr("10% Educação")}</strong>: cursos, livros, formação.</li>
+          <li><strong>{tr("10% Outros objetivos")}</strong>: metas pessoais, presentes, doações.</li>
         </ul>
       </div>
       </>
@@ -86,4 +87,3 @@ export default function Budget() {
     </div>
   );
 }
-

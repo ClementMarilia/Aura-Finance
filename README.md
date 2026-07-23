@@ -73,6 +73,7 @@ Cada card no Dashboard navega direto para a tela com filtro aplicado, mostrando 
 
 ### Conta & segurança
 - Auth JWT + bcrypt.
+- **Interface multilíngue** em Português, Italiano, Inglês e Espanhol. O primeiro acesso considera o idioma do dispositivo; a escolha manual é salva no perfil e acompanha o usuário em outros dispositivos.
 - **Aprovação de novos usuários**: cadastro entra como `pending`, sem token e sem estrutura financeira. Apenas administradores configurados em `ADMIN_EMAILS` podem aprovar ou rejeitar.
 - A área administrativa exibe somente nome, e-mail, data do cadastro e status. Ela não consulta carteiras, saldos, lançamentos ou relatórios.
 - Usuários existentes sem o campo `status` continuam ativos para garantir compatibilidade.

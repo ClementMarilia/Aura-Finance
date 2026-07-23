@@ -398,6 +398,7 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str
     currency: str = "EUR"
+    language: Literal["pt", "it", "en", "es"] = "pt"
 
 
 class LoginIn(BaseModel):
@@ -412,6 +413,7 @@ class UserOut(BaseModel):
     currency: str
     avatar_color: str
     created_at: str
+    language: Literal["pt", "it", "en", "es"] = "pt"
 
 
 class AdminUserOut(BaseModel):
@@ -426,6 +428,7 @@ class AdminUserOut(BaseModel):
 class UpdateProfileIn(BaseModel):
     name: Optional[str] = None
     currency: Optional[str] = None
+    language: Optional[Literal["pt", "it", "en", "es"]] = None
 
 
 class ChangePasswordIn(BaseModel):
@@ -568,6 +571,7 @@ def public_user(u: dict) -> dict:
     return {
         "id": u["id"], "name": u["name"], "email": u["email"],
         "currency": u.get("currency", "EUR"),
+        "language": u.get("language", "pt"),
         "avatar_color": u.get("avatar_color", "#1E3F33"),
         "created_at": u.get("created_at", ""),
         "security_question": u.get("security_question") or None,
@@ -601,6 +605,7 @@ async def register(payload: RegisterIn):
         "id": uid, "name": payload.name, "email": email,
         "password_hash": hash_password(payload.password),
         "currency": currency, "avatar_color": user_color(payload.name),
+        "language": payload.language,
         "status": "pending",
         "created_at": now_iso(),
     }

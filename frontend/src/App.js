@@ -24,10 +24,11 @@ import Wallets from "@/pages/Wallets";
 import AdminUsers from "@/pages/AdminUsers";
 import InstallPrompt from "@/components/InstallPrompt";
 import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
+import { translate as tr } from "@/i18n";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="p-10 text-[#6B7068]">Carregando...</div>;
+  if (loading) return <div className="p-10 text-[#6B7068]">{tr("Carregando...")}</div>;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
@@ -41,13 +42,13 @@ function PublicOnly({ children }) {
 
 function AdminOnly({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="p-10 text-[#6B7068]">Carregando...</div>;
+  if (loading) return <div className="p-10 text-[#6B7068]">{tr("Carregando...")}</div>;
   if (!user?.is_admin) return <Navigate to="/" replace />;
   return children;
 }
 
 function App() {
-  useEffect(() => { document.title = "Crelith Finance — Controle Financeiro"; }, []);
+  useEffect(() => { document.title = tr("Crelith Finance — Controle Financeiro"); }, []);
   return (
     <AuthProvider>
       <BrowserRouter>

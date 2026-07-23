@@ -65,6 +65,7 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build && node scripts/stamp-service-worker.js",
+    "verify:i18n": "node scripts/verify-i18n.js",
     "verify:pwa": "node scripts/verify-pwa-update.js",
     "test": "craco test"
   },

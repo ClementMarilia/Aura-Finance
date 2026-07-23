@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, UserCircle, Settings, LogOut, ShieldCheck } from "lucide-react";
+import { translate as tr } from "@/i18n";
 
 /**
  * UserMenu — avatar + nome do usuário no canto superior direito.
@@ -70,14 +71,14 @@ export default function UserMenu({ compact = false }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => navigate("/perfil")} data-testid="user-menu-perfil">
-          <UserCircle size={16} className="mr-2" /> Perfil
+          <UserCircle size={16} className="mr-2" /> {tr("Perfil")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate("/configuracoes")} data-testid="user-menu-configuracoes">
-          <Settings size={16} className="mr-2" /> Configurações
+          <Settings size={16} className="mr-2" /> {tr("Configurações")}
         </DropdownMenuItem>
         {user.is_admin && (
           <DropdownMenuItem onClick={() => navigate("/admin/usuarios")} data-testid="user-menu-admin-users">
-            <ShieldCheck size={16} className="mr-2" /> Aprovar usuários
+            <ShieldCheck size={16} className="mr-2" /> {tr("Aprovar usuários")}
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
@@ -86,7 +87,7 @@ export default function UserMenu({ compact = false }) {
           data-testid="user-menu-logout"
           className="text-rose-600 focus:text-rose-700 focus:bg-rose-50"
         >
-          <LogOut size={16} className="mr-2" /> Sair
+          <LogOut size={16} className="mr-2" /> {tr("Sair")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

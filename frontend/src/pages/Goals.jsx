@@ -14,6 +14,7 @@ import { Target, Plus, Pencil, Trash2, PiggyBank, Banknote } from "lucide-react"
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
+import { translate as tr } from "@/i18n";
 const emptyForm = { title: "", target_amount: "", current_amount: "", deadline: "", color: "#061B4A", account_id: "" };
 
 export default function Goals() {
@@ -54,8 +55,8 @@ export default function Goals() {
       account_id: form.account_id || null,
     };
     try {
-      if (editing) { await api.put(`/goals/${editing.id}`, payload); toast.success("Meta atualizada"); }
-      else { await api.post("/goals", payload); toast.success("Meta criada"); }
+      if (editing) { await api.put(`/goals/${editing.id}`, payload); toast.success(tr("Meta atualizada")); }
+      else { await api.post("/goals", payload); toast.success(tr("Meta criada")); }
       setOpen(false);
       load();
     } catch (err) { toast.error(formatApiError(err)); }
@@ -65,7 +66,7 @@ export default function Goals() {
     if (!confirmDel) return;
     await api.delete(`/goals/${confirmDel.id}`);
     setConfirmDel(null);
-    toast.success("Meta excluída");
+    toast.success(tr("Meta excluída"));
     load();
   };
 
@@ -109,18 +110,18 @@ export default function Goals() {
     <div className="space-y-6" data-testid="goals-page">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Metas Financeiras</h1>
-          <p className="text-[#6B7068]">Defina objetivos e acompanhe seu progresso</p>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Metas Financeiras")}</h1>
+          <p className="text-[#6B7068]">{tr("Defina objetivos e acompanhe seu progresso")}</p>
         </div>
         <Button onClick={openNew} data-testid="goal-new-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-          <Plus size={16} className="mr-1" /> Nova meta
+          <Plus size={16} className="mr-1" /> {tr("Nova meta")}
         </Button>
       </div>
 
       {goals.length === 0 && (
         <div className="card-soft text-center py-16 flex flex-col items-center gap-3 text-[#6B7068]" data-testid="goals-empty">
           <Target size={32} className="opacity-40" />
-          <span>Nenhuma meta ainda. Crie sua primeira meta de economia!</span>
+          <span>{tr("Nenhuma meta ainda. Crie sua primeira meta de economia!")}</span>
         </div>
       )}
 
@@ -157,17 +158,17 @@ export default function Goals() {
                 <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: done ? "#2C7A51" : g.color }} />
               </div>
               <div className="mt-1.5 flex items-center justify-between">
-                <span className={`text-xs font-medium ${done ? "text-emerald-600" : "text-[#6B7068]"}`}>{done ? "Concluída! 🎉" : `${pct}%`}</span>
+                <span className={`text-xs font-medium ${done ? "text-emerald-600" : "text-[#6B7068]"}`}>{done ? tr("Concluída! 🎉") : `${pct}%`}</span>
                 <div className="flex items-center gap-1">
                   {g.current_amount > 0 && (
                     <button onClick={() => openWithdraw(g)} data-testid={`goal-withdraw-${g.id}`}
                       className="text-xs text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
-                      <Banknote size={13} /> Resgatar
+                      <Banknote size={13} /> {tr("Resgatar")}
                     </button>
                   )}
                   <button onClick={() => openContribute(g)} data-testid={`goal-contribute-${g.id}`}
                     className="text-xs text-[#061B4A] hover:bg-[#F1EFE7] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
-                    <PiggyBank size={13} /> Aportar
+                    <PiggyBank size={13} /> {tr("Aportar")}
                   </button>
                 </div>
               </div>
@@ -180,51 +181,51 @@ export default function Goals() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "Outfit" }}>{editing ? "Editar meta" : "Nova meta"}</DialogTitle>
+            <DialogTitle style={{ fontFamily: "Outfit" }}>{editing ? "Editar meta" : tr("Nova meta")}</DialogTitle>
           </DialogHeader>
           <form onSubmit={save} className="space-y-3">
             <div>
-              <Label>Título</Label>
+              <Label>{tr("Título")}</Label>
               <Input value={form.title} required data-testid="goal-title-input"
                 onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Ex: Viagem, Reserva de emergência" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Valor alvo</Label>
+                <Label>{tr("Valor alvo")}</Label>
                 <Input type="number" step="0.01" value={form.target_amount} required data-testid="goal-target-input"
                   onChange={e => setForm({ ...form, target_amount: e.target.value })} />
               </div>
               <div>
-                <Label>Já guardado</Label>
+                <Label>{tr("Já guardado")}</Label>
                 <Input type="number" step="0.01" value={form.current_amount} data-testid="goal-current-input"
                   onChange={e => setForm({ ...form, current_amount: e.target.value })} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Prazo (opcional)</Label>
+                <Label>{tr("Prazo (opcional)")}</Label>
                 <Input type="date" value={form.deadline} data-testid="goal-deadline-input"
                   onChange={e => setForm({ ...form, deadline: e.target.value })} />
               </div>
               <div>
-                <Label>Cor</Label>
+                <Label>{tr("Cor")}</Label>
                 <Input type="color" value={form.color} className="w-16 h-10 p-1" data-testid="goal-color-input"
                   onChange={e => setForm({ ...form, color: e.target.value })} />
               </div>
             </div>
             <div>
-              <Label>Conta vinculada (opcional)</Label>
+              <Label>{tr("Conta vinculada (opcional)")}</Label>
               <Select value={form.account_id || "none"} onValueChange={(v) => setForm({ ...form, account_id: v === "none" ? "" : v })}>
-                <SelectTrigger data-testid="goal-account-select"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
+                <SelectTrigger data-testid="goal-account-select"><SelectValue placeholder={tr("Nenhuma")} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Nenhuma</SelectItem>
-                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  <SelectItem value="none">{tr("Nenhuma")}</SelectItem>
+                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-[#6B7068] mt-1">Aportes podem virar uma transferência para esta conta.</p>
+              <p className="text-xs text-[#6B7068] mt-1">{tr("Aportes podem virar uma transferência para esta conta.")}</p>
             </div>
             <DialogFooter>
-              <Button type="submit" data-testid="goal-save-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Salvar</Button>
+              <Button type="submit" data-testid="goal-save-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">{tr("Salvar")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -238,27 +239,27 @@ export default function Goals() {
           </DialogHeader>
           <form onSubmit={contribute} className="space-y-3">
             <div>
-              <Label>Valor do aporte</Label>
+              <Label>{tr("Valor do aporte")}</Label>
               <Input type="number" step="0.01" autoFocus value={contribAmt} required data-testid="goal-contrib-input"
                 onChange={e => setContribAmt(e.target.value)} />
             </div>
             <div>
-              <Label>Debitar da conta (opcional)</Label>
+              <Label>{tr("Debitar da conta (opcional)")}</Label>
               <Select value={contribFrom || "none"} onValueChange={(v) => setContribFrom(v === "none" ? "" : v)}>
-                <SelectTrigger data-testid="goal-contrib-account"><SelectValue placeholder="Não criar lançamento" /></SelectTrigger>
+                <SelectTrigger data-testid="goal-contrib-account"><SelectValue placeholder={tr("Não criar lançamento")} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Não criar lançamento</SelectItem>
-                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  <SelectItem value="none">{tr("Não criar lançamento")}</SelectItem>
+                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
                 </SelectContent>
               </Select>
               <p className="text-xs text-[#6B7068] mt-1">
                 {contribFrom && contribFor?.account_id && contribFrom !== contribFor?.account_id
-                  ? "Cria uma transferência para a conta vinculada."
+                  ? tr("Cria uma transferência para a conta vinculada.")
                   : contribFrom ? "Cria uma despesa nesta conta." : "Apenas registra o progresso da meta."}
               </p>
             </div>
             <DialogFooter>
-              <Button type="submit" data-testid="goal-contrib-save" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Adicionar</Button>
+              <Button type="submit" data-testid="goal-contrib-save" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">{tr("Adicionar")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -272,28 +273,28 @@ export default function Goals() {
           </DialogHeader>
           <form onSubmit={withdraw} className="space-y-3">
             <div>
-              <Label>Valor do resgate</Label>
+              <Label>{tr("Valor do resgate")}</Label>
               <Input type="number" step="0.01" autoFocus value={withdrawAmt} required data-testid="goal-withdraw-input"
                 onChange={e => setWithdrawAmt(e.target.value)} />
-              <p className="text-xs text-[#6B7068] mt-1">Disponível: {fmtMoney(withdrawFor?.current_amount || 0, curr)}</p>
+              <p className="text-xs text-[#6B7068] mt-1">{tr("Disponível:")} {fmtMoney(withdrawFor?.current_amount || 0, curr)}</p>
             </div>
             <div>
-              <Label>Creditar na conta (opcional)</Label>
+              <Label>{tr("Creditar na conta (opcional)")}</Label>
               <Select value={withdrawTo || "none"} onValueChange={(v) => setWithdrawTo(v === "none" ? "" : v)}>
-                <SelectTrigger data-testid="goal-withdraw-account"><SelectValue placeholder="Não criar lançamento" /></SelectTrigger>
+                <SelectTrigger data-testid="goal-withdraw-account"><SelectValue placeholder={tr("Não criar lançamento")} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Não criar lançamento</SelectItem>
-                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  <SelectItem value="none">{tr("Não criar lançamento")}</SelectItem>
+                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
                 </SelectContent>
               </Select>
               <p className="text-xs text-[#6B7068] mt-1">
                 {withdrawTo && withdrawFor?.account_id && withdrawTo !== withdrawFor?.account_id
-                  ? "Cria uma transferência da conta vinculada de volta."
+                  ? tr("Cria uma transferência da conta vinculada de volta.")
                   : withdrawTo ? "Cria uma receita nesta conta." : "Apenas reduz o progresso da meta."}
               </p>
             </div>
             <DialogFooter>
-              <Button type="submit" data-testid="goal-withdraw-save" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">Resgatar</Button>
+              <Button type="submit" data-testid="goal-withdraw-save" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">{tr("Resgatar")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -302,8 +303,8 @@ export default function Goals() {
       <ConfirmDialog
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
-        title="Excluir meta?"
-        description={confirmDel ? `"${confirmDel.title}" será removida permanentemente.` : ""}
+        title={tr("Excluir meta?")}
+        description={confirmDel ? tr("\"{name}\" será removida permanentemente.", { name: confirmDel.title }) : ""}
         onConfirm={remove}
         testId="goal-confirm-delete"
       />

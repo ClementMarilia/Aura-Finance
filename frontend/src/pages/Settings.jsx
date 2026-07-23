@@ -10,15 +10,17 @@ import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ThemeToggle from "@/components/ThemeToggle";
 import { usePWAUpdate } from "@/context/PWAUpdateContext";
+import LanguageSelector from "@/components/LanguageSelector";
+import { translate as tr } from "@/i18n";
 
 const NOTIF_LABELS = {
-  shared_expense_added: { title: "Despesas compartilhadas", desc: "Quando você é adicionado a uma nova despesa." },
-  settlement_paid: { title: "Acertos recebidos", desc: "Quando alguém marca um valor como pago a você." },
-  nudge: { title: "Lembretes (cutucadas)", desc: "Quando alguém te lembra de uma dívida pendente." },
-  group_added: { title: "Grupos", desc: "Quando você é adicionado a um grupo." },
+  shared_expense_added: { title: tr("Despesas compartilhadas"), desc: tr("Quando você é adicionado a uma nova despesa.") },
+  settlement_paid: { title: tr("Acertos recebidos"), desc: tr("Quando alguém marca um valor como pago a você.") },
+  nudge: { title: tr("Lembretes (cutucadas)"), desc: tr("Quando alguém te lembra de uma dívida pendente.") },
+  group_added: { title: tr("Grupos"), desc: tr("Quando você é adicionado a um grupo.") },
 };
 
-const KIND_LABEL = { expense: "Despesa", income: "Receita", both: "Ambos" };
+const KIND_LABEL = { expense: tr("Despesa"), income: tr("Receita"), both: tr("Ambos") };
 const KIND_BADGE = {
   expense: "bg-rose-50 text-rose-700",
   income: "bg-emerald-50 text-emerald-700",
@@ -78,15 +80,15 @@ export default function Settings() {
         kind: form.kind,
       };
       if (!payload.name) {
-        toast.error("Nome é obrigatório");
+        toast.error(tr("Nome é obrigatório"));
         return;
       }
       if (editing) {
         await api.put(`/categories/${editing.id}`, payload);
-        toast.success("Categoria atualizada");
+        toast.success(tr("Categoria atualizada"));
       } else {
         await api.post("/categories", payload);
-        toast.success("Categoria criada");
+        toast.success(tr("Categoria criada"));
       }
       cancelEdit();
       load();
@@ -97,7 +99,7 @@ export default function Settings() {
     if (!confirmDel) return;
     await api.delete(`/categories/${confirmDel.id}`);
     setConfirmDel(null);
-    toast.success("Categoria excluída");
+    toast.success(tr("Categoria excluída"));
     load();
   };
 
@@ -109,24 +111,32 @@ export default function Settings() {
   const handleCheckForUpdate = async () => {
     const result = await checkForUpdate();
     if (result.error) {
-      toast.error("Não foi possível verificar atualizações. Confira sua conexão.");
+      toast.error(tr("Não foi possível verificar atualizações. Confira sua conexão."));
     } else if (result.updateAvailable) {
-      toast.success("Nova versão pronta para instalar.");
+      toast.success(tr("Nova versão pronta para instalar."));
     } else if (!result.supported) {
-      toast.info("A verificação automática está disponível no aplicativo instalado.");
+      toast.info(tr("A verificação automática está disponível no aplicativo instalado."));
     } else {
-      toast.success("Você já está usando a versão mais recente.");
+      toast.success(tr("Você já está usando a versão mais recente."));
     }
   };
 
   return (
     <div className="space-y-6 max-w-2xl" data-testid="settings-page">
-      <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>Configurações</h1>
+      <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Configurações")}</h1>
+
+      <div className="card-soft" data-testid="language-section">
+        <h3 className="text-lg font-semibold mb-1" style={{ fontFamily: "Outfit" }}>{tr("Idioma")}</h3>
+        <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
+          {tr("Selecione o idioma usado no aplicativo.")}
+        </p>
+        <LanguageSelector persist />
+      </div>
 
       <div className="card-soft" data-testid="theme-section">
-        <h3 className="text-lg font-semibold mb-1" style={{ fontFamily: "Outfit" }}>Aparência</h3>
+        <h3 className="text-lg font-semibold mb-1" style={{ fontFamily: "Outfit" }}>{tr("Aparência")}</h3>
         <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
-          Escolha como o app deve aparecer para você. Selecione &ldquo;Sistema&rdquo; para seguir automaticamente as preferências do seu celular ou computador.
+          {tr("Escolha como o app deve aparecer para você. Selecione “Sistema” para seguir automaticamente as preferências do seu celular ou computador.")}
         </p>
         <ThemeToggle />
       </div>
@@ -135,10 +145,10 @@ export default function Settings() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>
-              Atualizações do aplicativo
+              {tr("Atualizações do aplicativo")}
             </h3>
             <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-              A Crelith Finance avisa quando uma nova versão estiver pronta. A atualização só é aplicada quando você confirmar.
+              {tr("A Crelith Finance avisa quando uma nova versão estiver pronta. A atualização só é aplicada quando você confirmar.")}
             </p>
           </div>
           <div
@@ -155,7 +165,7 @@ export default function Settings() {
         <div className="mt-4 rounded-xl border border-[#E5E4E0] p-3">
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-              Versão instalada
+              {tr("Versão instalada")}
             </span>
             <span className="text-sm font-semibold" data-testid="app-version">
               v{appVersion}
@@ -163,7 +173,7 @@ export default function Settings() {
           </div>
           <div className="mt-2 flex items-center justify-between gap-3">
             <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-              Status
+              {tr("Status")}
             </span>
             <span
               className={`text-sm font-medium ${
@@ -171,14 +181,14 @@ export default function Settings() {
               }`}
               data-testid="app-update-status"
             >
-              {updateAvailable ? "Nova versão disponível" : "Aplicativo atualizado"}
+              {updateAvailable ? tr("Nova versão disponível") : tr("Aplicativo atualizado")}
             </span>
           </div>
         </div>
 
         {updateAvailable && (
           <p className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
-            Salve qualquer lançamento em edição antes de atualizar. O aplicativo será recarregado uma única vez.
+            {tr("Salve qualquer lançamento em edição antes de atualizar. O aplicativo será recarregado uma única vez.")}
           </p>
         )}
 
@@ -192,7 +202,7 @@ export default function Settings() {
             className="rounded-xl"
           >
             <RefreshCw size={16} className={`mr-2 ${checkingUpdate ? "animate-spin" : ""}`} />
-            {checkingUpdate ? "Verificando..." : "Verificar atualizações"}
+            {checkingUpdate ? tr("Verificando...") : tr("Verificar atualizações")}
           </Button>
           {updateAvailable && (
             <Button
@@ -203,21 +213,21 @@ export default function Settings() {
               className="rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
             >
               <DownloadCloud size={16} className="mr-2" />
-              {applyingUpdate ? "Atualizando..." : "Atualizar agora"}
+              {applyingUpdate ? tr("Atualizando...") : tr("Atualizar agora")}
             </Button>
           )}
         </div>
 
         {!pwaSupported && (
           <p className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
-            Este navegador não oferece suporte à atualização de PWA.
+            {tr("Este navegador não oferece suporte à atualização de PWA.")}
           </p>
         )}
       </div>
 
       <div className="card-soft" data-testid="notif-prefs-section">
-        <h3 className="text-lg font-semibold mb-1" style={{ fontFamily: "Outfit" }}>Notificações</h3>
-        <p className="text-sm text-[#6B7068] mb-4">Escolha quais alertas você quer receber.</p>
+        <h3 className="text-lg font-semibold mb-1" style={{ fontFamily: "Outfit" }}>{tr("Notificações")}</h3>
+        <p className="text-sm text-[#6B7068] mb-4">{tr("Escolha quais alertas você quer receber.")}</p>
         <div className="space-y-3">
           {Object.entries(NOTIF_LABELS).map(([key, { title, desc }]) => (
             <div key={key} className="flex items-center justify-between gap-4 p-3 border border-[#E5E4E0] rounded-xl">
@@ -238,37 +248,37 @@ export default function Settings() {
 
       <div className="card-soft">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>Categorias</h3>
-          <p className="text-xs text-[#6B7068]">Crie categorias para Receitas (ex: Salário) e Despesas (ex: Gasolina).</p>
+          <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Categorias")}</h3>
+          <p className="text-xs text-[#6B7068]">{tr("Crie categorias para Receitas (ex: Salário) e Despesas (ex: Gasolina).")}</p>
         </div>
 
         <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end mb-4" data-testid="cat-form">
           <div className="sm:col-span-5">
-            <Label>Nome</Label>
+            <Label>{tr("Nome")}</Label>
             <Input value={form.name} required data-testid="settings-cat-name"
               placeholder="Ex: Salário, Gasolina, Mercado"
               onChange={e => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="sm:col-span-3">
-            <Label>Tipo</Label>
+            <Label>{tr("Tipo")}</Label>
             <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v })}>
               <SelectTrigger data-testid="settings-cat-kind"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="expense">Despesa</SelectItem>
-                <SelectItem value="income">Receita</SelectItem>
-                <SelectItem value="both">Ambos</SelectItem>
+                <SelectItem value="expense">{tr("Despesa")}</SelectItem>
+                <SelectItem value="income">{tr("Receita")}</SelectItem>
+                <SelectItem value="both">{tr("Ambos")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="sm:col-span-2">
-            <Label>Cor</Label>
+            <Label>{tr("Cor")}</Label>
             <Input type="color" value={form.color} className="w-full h-10 p-1" data-testid="settings-cat-color"
               onChange={e => setForm({ ...form, color: e.target.value })} />
           </div>
           <div className="sm:col-span-2 flex gap-1">
             <Button type="submit" data-testid="settings-add-cat" className="flex-1 bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
               {editing ? <Pencil size={16} className="mr-1" /> : <Plus size={16} className="mr-1" />}
-              {editing ? "Salvar" : "Adicionar"}
+              {editing ? tr("Salvar") : tr("Adicionar")}
             </Button>
             {editing && (
               <Button type="button" variant="outline" onClick={cancelEdit} data-testid="settings-cancel-edit" className="rounded-xl">
@@ -281,9 +291,9 @@ export default function Settings() {
         {/* Tabs por tipo */}
         <div className="flex gap-1 mb-3 border-b border-[#E5E4E0]" data-testid="cat-tabs">
           {[
-            { key: "expense", label: "Despesas" },
-            { key: "income", label: "Receitas" },
-            { key: "both", label: "Ambos" },
+            { key: "expense", label: tr("Despesas") },
+            { key: "income", label: tr("Receitas") },
+            { key: "both", label: tr("Ambos") },
           ].map(t => (
             <button
               key={t.key}
@@ -316,17 +326,17 @@ export default function Settings() {
                 <div key={c.id} className="flex items-center justify-between p-3 border border-[#E5E4E0] rounded-xl" data-testid={`cat-row-${c.id}`}>
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: c.color }} />
-                    <span className="truncate">{c.name}</span>
+                    <span className="truncate">{tr(c.name)}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${KIND_BADGE[kind]}`}>
                       {KIND_LABEL[kind]}
                     </span>
                     {c.is_default && <span className="text-xs text-[#6B7068]">(padrão)</span>}
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
-                    <button onClick={() => startEdit(c)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`cat-edit-${c.id}`} title="Editar">
+                    <button onClick={() => startEdit(c)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`cat-edit-${c.id}`} title={tr("Editar")}>
                       <Pencil size={14} />
                     </button>
-                    <button onClick={() => setConfirmDel(c)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`cat-delete-${c.id}`} title="Excluir">
+                    <button onClick={() => setConfirmDel(c)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`cat-delete-${c.id}`} title={tr("Excluir")}>
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -340,8 +350,8 @@ export default function Settings() {
       <ConfirmDialog
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
-        title="Excluir categoria?"
-        description={confirmDel ? `"${confirmDel.name}" será removida. Lançamentos existentes não serão afetados.` : ""}
+        title={tr("Excluir categoria?")}
+        description={confirmDel ? tr("\"{name}\" será removida. Lançamentos existentes não serão afetados.", { name: confirmDel.name }) : ""}
         onConfirm={remove}
         testId="cat-confirm-delete"
       />

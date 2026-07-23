@@ -53,6 +53,7 @@ def test_registration_creates_pending_identity_without_token_or_financial_defaul
     assert "token" not in result
     inserted = users.insert_one.await_args.args[0]
     assert inserted["status"] == "pending"
+    assert inserted["language"] == "pt"
     assert inserted["password_hash"] != "secret123"
     seed_defaults.assert_not_awaited()
 
@@ -112,6 +113,38 @@ def test_existing_user_remains_active_and_admin_is_resolved_by_email(monkeypatch
     assert result["token"]
     assert result["user"]["status"] == "active"
     assert result["user"]["is_admin"] is True
+    assert result["user"]["language"] == "pt"
+
+
+def test_registration_preserves_supported_language(monkeypatch):
+    users = SimpleNamespace(
+        find_one=AsyncMock(return_value=None),
+        insert_one=AsyncMock(),
+    )
+    monkeypatch.setattr(server, "db", SimpleNamespace(users=users))
+
+    asyncio.run(server.register(server.RegisterIn(
+        name="Utente Italiano",
+        email="italiano@example.com",
+        password="secret123",
+        currency="EUR",
+        language="it",
+    )))
+
+    inserted = users.insert_one.await_args.args[0]
+    assert inserted["language"] == "it"
+
+
+@pytest.mark.parametrize("language", ["pt", "it", "en", "es"])
+def test_public_user_returns_supported_language(language):
+    result = server.public_user({
+        "id": "user-1",
+        "name": "User",
+        "email": "user@example.com",
+        "language": language,
+    })
+
+    assert result["language"] == language
 
 
 def test_non_admin_is_rejected():

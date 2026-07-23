@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { Bell, Check, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
+import { translate as tr } from "@/i18n";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
@@ -100,7 +101,7 @@ export default function NotificationsBell() {
         <button
           data-testid="notifications-bell"
           className="relative p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A] transition-colors"
-          aria-label="Notificações"
+          aria-label={tr("Notificações")}
         >
           <Bell size={18} />
           {count > 0 && (
@@ -115,21 +116,21 @@ export default function NotificationsBell() {
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end" sideOffset={8}>
         <div className="flex items-center justify-between p-3 border-b border-[#E5E4E0]">
-          <div className="font-semibold" style={{ fontFamily: "Outfit" }}>Notificações</div>
+          <div className="font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Notificações")}</div>
           {items.some(i => !i.read) && (
             <button
               onClick={markAll}
               data-testid="notifications-mark-all"
               className="text-xs text-[#061B4A] hover:underline flex items-center gap-1"
             >
-              <CheckCheck size={12} /> Marcar todas
+              <CheckCheck size={12} /> {tr("Marcar todas")}
             </button>
           )}
         </div>
         <div className="max-h-96 overflow-y-auto">
           {items.length === 0 && (
             <div className="text-center text-sm text-[#6B7068] py-10 px-4">
-              Sem notificações.
+              {tr("Sem notificações.")}
             </div>
           )}
           {items.map(n => (
@@ -159,7 +160,7 @@ export default function NotificationsBell() {
             data-testid="notifications-see-all"
             className="w-full text-center text-sm text-[#061B4A] hover:bg-[#F1EFE7] rounded-lg py-2 font-medium"
           >
-            Ver todas
+            {tr("Ver todas")}
           </button>
         </div>
       </PopoverContent>

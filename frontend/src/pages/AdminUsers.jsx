@@ -4,26 +4,27 @@ import { toast } from "sonner";
 import api, { fmtDate, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { translate as tr } from "@/i18n";
 
 const FILTERS = [
-  { value: "pending", label: "Pendentes" },
-  { value: "active", label: "Ativos" },
-  { value: "rejected", label: "Rejeitados" },
+  { value: "pending", label: tr("Pendentes") },
+  { value: "active", label: tr("Ativos") },
+  { value: "rejected", label: tr("Rejeitados") },
 ];
 
 const STATUS = {
   pending: {
-    label: "Aguardando",
+    label: tr("Aguardando"),
     className: "bg-amber-50 text-amber-700 border-amber-200",
     icon: Clock3,
   },
   active: {
-    label: "Ativo",
+    label: tr("Ativo"),
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: UserCheck,
   },
   rejected: {
-    label: "Rejeitado",
+    label: tr("Rejeitado"),
     className: "bg-rose-50 text-rose-700 border-rose-200",
     icon: UserX,
   },
@@ -76,7 +77,7 @@ export default function AdminUsers() {
     try {
       const { data } = await api.post(`/admin/users/${candidate.id}/approve`);
       updateUser(data);
-      toast.success(`${candidate.name} foi aprovado`);
+      toast.success(tr("{name} foi aprovado", { name: candidate.name }));
     } catch (error) {
       toast.error(formatApiError(error));
     } finally {
@@ -90,7 +91,7 @@ export default function AdminUsers() {
     try {
       const { data } = await api.post(`/admin/users/${rejecting.id}/reject`);
       updateUser(data);
-      toast.success(`${rejecting.name} foi rejeitado`);
+      toast.success(tr("{name} foi rejeitado", { name: rejecting.name }));
       setRejecting(null);
     } catch (error) {
       toast.error(formatApiError(error));
@@ -103,25 +104,24 @@ export default function AdminUsers() {
     <div className="space-y-6 max-w-5xl" data-testid="admin-users-page">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>
-          Aprovação de usuários
+          {tr("Aprovação de usuários")}
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-          Controle quem pode acessar a Crelith Finance.
+          {tr("Controle quem pode acessar a Crelith Finance.")}
         </p>
       </div>
 
       <div className="card-soft flex items-start gap-3 border border-blue-100 bg-blue-50/60">
         <ShieldCheck size={22} className="mt-0.5 flex-shrink-0 text-[#1268F4]" />
         <div>
-          <h2 className="font-medium text-[#061B4A]">Privacidade preservada</h2>
+          <h2 className="font-medium text-[#061B4A]">{tr("Privacidade preservada")}</h2>
           <p className="mt-1 text-sm text-[#42526B]">
-            Esta área mostra somente nome, e-mail, data do cadastro e status.
-            Carteiras, saldos, lançamentos e relatórios permanecem privados.
+            {tr("Esta área mostra somente nome, e-mail, data do cadastro e status. Carteiras, saldos, lançamentos e relatórios permanecem privados.")}
           </p>
         </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Status dos usuários">
+      <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label={tr("Status dos usuários")}>
         {FILTERS.map((item) => (
           <button
             key={item.value}
@@ -144,7 +144,7 @@ export default function AdminUsers() {
       <div className="card-soft p-0 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-            Carregando usuários...
+            {tr("Carregando usuários...")}
           </div>
         ) : visibleUsers.length === 0 ? (
           <div className="flex flex-col items-center px-6 py-12 text-center">
@@ -152,12 +152,12 @@ export default function AdminUsers() {
               {filter === "pending" ? <Check size={22} /> : <Users size={22} />}
             </div>
             <p className="mt-3 font-medium">
-              {filter === "pending" ? "Nenhum cadastro aguardando" : "Nenhum usuário neste status"}
+              {filter === "pending" ? tr("Nenhum cadastro aguardando") : tr("Nenhum usuário neste status")}
             </p>
             <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
               {filter === "pending"
-                ? "Quando alguém se cadastrar, aparecerá aqui para sua decisão."
-                : "Use os filtros acima para consultar os demais usuários."}
+                ? tr("Quando alguém se cadastrar, aparecerá aqui para sua decisão.")
+                : tr("Use os filtros acima para consultar os demais usuários.")}
             </p>
           </div>
         ) : (
@@ -184,7 +184,7 @@ export default function AdminUsers() {
                       {candidate.email}
                     </p>
                     <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-                      Cadastro em {fmtDate(candidate.created_at)}
+                      {tr("Cadastro em")} {fmtDate(candidate.created_at)}
                     </p>
                   </div>
 
@@ -199,7 +199,7 @@ export default function AdminUsers() {
                           data-testid={`reject-user-${candidate.id}`}
                           className="rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50"
                         >
-                          Rejeitar
+                          {tr("Rejeitar")}
                         </Button>
                       )}
                       <Button
@@ -210,10 +210,10 @@ export default function AdminUsers() {
                         className="rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
                       >
                         {acting
-                          ? "Processando..."
+                          ? tr("Processando...")
                           : candidate.status === "rejected"
-                            ? "Aprovar agora"
-                            : "Aprovar"}
+                            ? tr("Aprovar agora")
+                            : tr("Aprovar")}
                       </Button>
                     </div>
                   )}
@@ -227,11 +227,11 @@ export default function AdminUsers() {
       <ConfirmDialog
         open={Boolean(rejecting)}
         onOpenChange={(open) => !open && setRejecting(null)}
-        title="Rejeitar cadastro?"
+        title={tr("Rejeitar cadastro?")}
         description={rejecting
-          ? `${rejecting.name} não poderá entrar na Crelith Finance. Você ainda poderá aprovar esta conta depois.`
+          ? tr("{name} não poderá entrar na Crelith Finance. Você ainda poderá aprovar esta conta depois.", { name: rejecting.name })
           : ""}
-        confirmLabel="Rejeitar"
+        confirmLabel={tr("Rejeitar")}
         onConfirm={reject}
         testId="reject-user-dialog"
       />

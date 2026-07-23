@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download, X, Share } from "lucide-react";
 
+import { translate as tr } from "@/i18n";
 /**
  * Banner não-intrusivo que sugere instalar o Crelith Finance como app.
  * - Android/Chrome: usa o evento beforeinstallprompt (instalação 1-clique).
@@ -88,14 +89,14 @@ export default function InstallPrompt() {
         <Download size={20} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="font-semibold" style={{ fontFamily: "Outfit" }}>Instalar Crelith Finance</div>
+        <div className="font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Instalar Crelith Finance")}</div>
         {iosHint ? (
           <div className="text-sm opacity-90 mt-0.5">
-            Toque em <Share size={14} className="inline mb-1" /> abaixo e depois em <strong>“Adicionar à Tela de Início”</strong> para abrir como um app.
+            Toque em <Share size={14} className="inline mb-1" /> abaixo e depois em <strong>“Adicionar à Tela de Início”</strong> {tr("para abrir como um app.")}
           </div>
         ) : (
           <div className="text-sm opacity-90 mt-0.5">
-            Adicione à tela inicial e use como um app. Abre em tela cheia, sem barra do navegador.
+            {tr("Adicione à tela inicial e use como um app. Abre em tela cheia, sem barra do navegador.")}
           </div>
         )}
         {!iosHint && (
@@ -104,14 +105,14 @@ export default function InstallPrompt() {
             data-testid="install-btn"
             className="mt-2 inline-flex items-center gap-1.5 bg-white text-[#061B4A] px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-[#F1EFE7]"
           >
-            <Download size={14} /> Instalar agora
+            <Download size={14} /> {tr("Instalar agora")}
           </button>
         )}
       </div>
       <button
         onClick={dismiss}
         data-testid="install-dismiss"
-        title="Agora não"
+        title={tr("Agora não")}
         className="text-white/70 hover:text-white p-1 -mr-1"
       >
         <X size={16} />

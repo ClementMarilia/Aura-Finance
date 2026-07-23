@@ -11,26 +11,27 @@ import UserMenu from "@/components/UserMenu";
 import Logo from "@/components/Logo";
 import { useAuth } from "@/context/AuthContext";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { translate as tr } from "@/i18n";
 
 const nav = [
-  { to: "/", icon: LayoutDashboard, label: "Painel", end: true },
-  { to: "/lancamentos", icon: ArrowLeftRight, label: "Lançamentos" },
-  { to: "/recorrencias", icon: Repeat, label: "Recorrências" },
-  { to: "/parcelamentos", icon: CreditCard, label: "Parcelamentos" },
-  { to: "/contas-a-receber", icon: HandCoins, label: "Contas a Receber" },
-  { to: "/orcamento", icon: PiggyBank, label: "Orçamento" },
-  { to: "/carteiras", icon: Wallet, label: "Carteiras" },
-  { to: "/metas", icon: Target, label: "Metas" },
-  { to: "/despesas-compartilhadas", icon: Users, label: "Despesas Compartilhadas" },
-  { to: "/grupos", icon: FolderOpen, label: "Grupos" },
-  { to: "/acertos", icon: Scale, label: "Acertos" },
-  { to: "/relatorios", icon: FileBarChart, label: "Relatórios" },
-  { to: "/notificacoes", icon: Bell, label: "Notificações" },
+  { to: "/", icon: LayoutDashboard, label: tr("Painel"), end: true },
+  { to: "/lancamentos", icon: ArrowLeftRight, label: tr("Lançamentos") },
+  { to: "/recorrencias", icon: Repeat, label: tr("Recorrências") },
+  { to: "/parcelamentos", icon: CreditCard, label: tr("Parcelamentos") },
+  { to: "/contas-a-receber", icon: HandCoins, label: tr("Contas a Receber") },
+  { to: "/orcamento", icon: PiggyBank, label: tr("Orçamento") },
+  { to: "/carteiras", icon: Wallet, label: tr("Carteiras") },
+  { to: "/metas", icon: Target, label: tr("Metas") },
+  { to: "/despesas-compartilhadas", icon: Users, label: tr("Despesas Compartilhadas") },
+  { to: "/grupos", icon: FolderOpen, label: tr("Grupos") },
+  { to: "/acertos", icon: Scale, label: tr("Acertos") },
+  { to: "/relatorios", icon: FileBarChart, label: tr("Relatórios") },
+  { to: "/notificacoes", icon: Bell, label: tr("Notificações") },
 ];
 
-// 4 primary destinations on the mobile bottom bar; everything else lives in "Mais"
+// 4 primary destinations on the mobile bottom bar; everything else lives in tr("Mais")
 const primaryMobile = nav.slice(0, 4);
-const adminNav = { to: "/admin/usuarios", icon: ShieldCheck, label: "Aprovar Usuários" };
+const adminNav = { to: "/admin/usuarios", icon: ShieldCheck, label: tr("Aprovar Usuários") };
 
 export default function Layout() {
   const [moreOpen, setMoreOpen] = useState(false);
@@ -110,7 +111,7 @@ export default function Layout() {
             data-testid="mobile-nav-more"
             className="flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] text-[#6B7068] transition-colors">
             <Menu size={18} />
-            <span>Mais</span>
+            <span>{tr("Mais")}</span>
           </button>
         </nav>
 
@@ -118,7 +119,7 @@ export default function Layout() {
         <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
           <SheetContent side="right" className="w-[86%] max-w-sm overflow-y-auto p-0" data-testid="mobile-more-sheet">
             <SheetHeader className="px-5 pt-5 pb-3">
-              <SheetTitle style={{ fontFamily: "Outfit" }}>Menu</SheetTitle>
+              <SheetTitle style={{ fontFamily: "Outfit" }}>{tr("Menu")}</SheetTitle>
             </SheetHeader>
             <nav className="flex flex-col gap-1 px-3 pb-4">
               {visibleNav.map((n) => (
@@ -131,15 +132,15 @@ export default function Layout() {
               <div className="my-2 border-t" style={{ borderColor: "var(--border)" }} />
               <button onClick={() => go("/perfil")} data-testid="more-nav-perfil"
                 className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#061B4A] transition-colors">
-                <UserCircle size={18} className="text-[#6B7068]" /> <span>Perfil</span>
+                <UserCircle size={18} className="text-[#6B7068]" /> <span>{tr("Perfil")}</span>
               </button>
               <button onClick={() => go("/configuracoes")} data-testid="more-nav-configuracoes"
                 className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-[#1A1C1A] hover:bg-[#F1EFE7] hover:text-[#061B4A] transition-colors">
-                <Settings size={18} className="text-[#6B7068]" /> <span>Configurações</span>
+                <Settings size={18} className="text-[#6B7068]" /> <span>{tr("Configurações")}</span>
               </button>
               <button onClick={() => { setMoreOpen(false); logout(); }} data-testid="more-nav-logout"
                 className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-left text-rose-600 hover:bg-rose-50 transition-colors">
-                <LogOut size={18} /> <span>Sair</span>
+                <LogOut size={18} /> <span>{tr("Sair")}</span>
               </button>
             </nav>
           </SheetContent>
