@@ -7,29 +7,58 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Check } from "lucide-react";
+import { Check, Eye, EyeOff } from "lucide-react";
 import Logo from "@/components/Logo";
 import LanguageSelector from "@/components/LanguageSelector";
 import { getLanguage, translate as tr } from "@/i18n";
 
-function Field({ id, label, type, value, onChange, testid, placeholder, autoComplete }) {
+function Field({
+  id,
+  label,
+  type,
+  value,
+  onChange,
+  testid,
+  placeholder,
+  autoComplete,
+  revealable = false,
+}) {
+  const [revealed, setRevealed] = useState(false);
+  const inputType = revealable && revealed ? "text" : type;
+
   return (
     <div className="text-left">
       <label htmlFor={id} className="block text-[11px] tracking-[0.18em] uppercase text-white/40 mb-2">
         {label}
       </label>
-      <input
-        id={id}
-        data-testid={testid}
-        type={type}
-        value={value}
-        onChange={onChange}
-        required
-        autoComplete={autoComplete}
-        placeholder={placeholder}
-        style={{ background: "transparent", color: "rgba(255,255,255,0.9)", borderColor: "rgba(255,255,255,0.15)" }}
-        className="w-full border-0 border-b placeholder-white/20 text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#08D7A5]"
-      />
+      <div className="relative">
+        <input
+          id={id}
+          data-testid={testid}
+          type={inputType}
+          value={value}
+          onChange={onChange}
+          required
+          autoComplete={autoComplete}
+          placeholder={placeholder}
+          style={{ background: "transparent", color: "rgba(255,255,255,0.9)", borderColor: "rgba(255,255,255,0.15)" }}
+          className={`w-full border-0 border-b placeholder-white/20 text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#08D7A5] ${revealable ? "pr-10" : ""}`}
+        />
+        {revealable && (
+          <button
+            type="button"
+            onClick={() => setRevealed((current) => !current)}
+            className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-white/40 transition-colors hover:text-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#08D7A5] focus-visible:ring-offset-2 focus-visible:ring-offset-[#04112F]"
+            aria-controls={id}
+            aria-label={revealed ? tr("Ocultar senha") : tr("Mostrar senha")}
+            aria-pressed={revealed}
+            title={revealed ? tr("Ocultar senha") : tr("Mostrar senha")}
+            data-testid={`${testid}-visibility-toggle`}
+          >
+            {revealed ? <EyeOff size={18} aria-hidden /> : <Eye size={18} aria-hidden />}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -126,7 +155,7 @@ export default function Login() {
             autoComplete="email" placeholder="voce@exemplo.com"
             onChange={(e) => setEmail(e.target.value)} />
           <Field id="password" label={tr("Senha")} type="password" value={password} testid="login-password-input"
-            autoComplete="current-password" placeholder="••••••••"
+            autoComplete="current-password" placeholder="••••••••" revealable
             onChange={(e) => setPassword(e.target.value)} />
 
           <button type="submit" disabled={loading} data-testid="login-submit-button"

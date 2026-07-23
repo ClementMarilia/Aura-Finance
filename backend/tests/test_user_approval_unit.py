@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 
 os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault(
@@ -43,6 +44,7 @@ def test_registration_creates_pending_identity_without_token_or_financial_defaul
         email="nova@example.com",
         password="secret123",
         currency="EUR",
+        privacy_acknowledged=True,
     )))
 
     assert result == {
@@ -55,7 +57,24 @@ def test_registration_creates_pending_identity_without_token_or_financial_defaul
     assert inserted["status"] == "pending"
     assert inserted["language"] == "pt"
     assert inserted["password_hash"] != "secret123"
+    assert inserted["privacy_acknowledged_at"]
+    assert inserted["privacy_notice_version"] == server.PRIVACY_NOTICE_VERSION
     seed_defaults.assert_not_awaited()
+
+
+@pytest.mark.parametrize("acknowledgement", [None, False])
+def test_registration_requires_privacy_acknowledgement(acknowledgement):
+    payload = {
+        "name": "Nova Pessoa",
+        "email": "nova@example.com",
+        "password": "secret123",
+        "currency": "EUR",
+    }
+    if acknowledgement is not None:
+        payload["privacy_acknowledged"] = acknowledgement
+
+    with pytest.raises(ValidationError):
+        server.RegisterIn(**payload)
 
 
 @pytest.mark.parametrize(
@@ -129,6 +148,7 @@ def test_registration_preserves_supported_language(monkeypatch):
         password="secret123",
         currency="EUR",
         language="it",
+        privacy_acknowledged=True,
     )))
 
     inserted = users.insert_one.await_args.args[0]
