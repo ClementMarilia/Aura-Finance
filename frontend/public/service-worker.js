@@ -4,9 +4,12 @@
  *  - API (/api/...): SEMPRE rede (nunca cachear dados financeiros)
  *  - Offline: se rede falhar para navegação, devolve a shell em cache
  */
-const VERSION = "crelith-v1";
-const STATIC_CACHE = `${VERSION}-static`;
-const RUNTIME_CACHE = `${VERSION}-runtime`;
+// O placeholder é substituído automaticamente após cada build.
+// Isso garante que toda publicação gere um service worker novo.
+const BUILD_VERSION = "__CRELITH_BUILD_VERSION__";
+const CACHE_PREFIX = "crelith";
+const STATIC_CACHE = `${CACHE_PREFIX}-${BUILD_VERSION}-static`;
+const RUNTIME_CACHE = `${CACHE_PREFIX}-${BUILD_VERSION}-runtime`;
 
 const PRECACHE_URLS = [
   "/",
@@ -23,7 +26,7 @@ const PRECACHE_URLS = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting()),
+    caches.open(STATIC_CACHE).then((cache) => cache.addAll(PRECACHE_URLS)),
   );
 });
 
@@ -31,7 +34,9 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
-        keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k)),
+        keys
+          .filter((key) => key.startsWith(`${CACHE_PREFIX}-`) && !key.includes(BUILD_VERSION))
+          .map((key) => caches.delete(key)),
       ),
     ).then(() => self.clients.claim()),
   );
@@ -82,7 +87,8 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
-// Permitir que o app force atualização do SW (ex: ao publicar nova versão)
+// A nova versão só assume o controle após uma ação explícita do usuário.
 self.addEventListener("message", (event) => {
-  if (event.data === "SKIP_WAITING") self.skipWaiting();
+  const type = typeof event.data === "string" ? event.data : event.data?.type;
+  if (type === "SKIP_WAITING") self.skipWaiting();
 });
