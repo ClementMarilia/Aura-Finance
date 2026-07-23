@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "dependencies": {
     "@hookform/resolvers": "5.0.1",
@@ -64,7 +64,8 @@
   },
   "scripts": {
     "start": "craco start",
-    "build": "craco build",
+    "build": "craco build && node scripts/stamp-service-worker.js",
+    "verify:pwa": "node scripts/verify-pwa-update.js",
     "test": "craco test"
   },
   "browserslist": {
