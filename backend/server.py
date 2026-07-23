@@ -798,6 +798,11 @@ async def list_admin_users(
     return [admin_user_summary(candidate) for candidate in users]
 
 
+@api.get("/admin/users/pending-count")
+async def pending_admin_users_count(admin=Depends(require_admin)):
+    return {"count": await db.users.count_documents({"status": "pending"})}
+
+
 @api.post("/admin/users/{user_id}/approve", response_model=AdminUserOut)
 async def approve_user(user_id: str, admin=Depends(require_admin)):
     user = await db.users.find_one({"id": user_id})

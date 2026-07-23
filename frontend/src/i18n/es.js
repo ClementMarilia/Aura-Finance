@@ -362,6 +362,7 @@ export default {
   "Qual o seu prato de comida favorito?": "¿Cuál es tu comida favorita?",
   "{name} foi aprovado": "{name} fue aprobado",
   "{name} foi rejeitado": "{name} fue rechazado",
+  "{count} cadastros pendentes": "{count} registros pendientes",
   "Nenhum cadastro aguardando": "No hay registros pendientes",
   "Nenhum usuário neste status": "No hay usuarios con este estado",
   "Quando alguém se cadastrar, aparecerá aqui para sua decisão.": "Los nuevos registros aparecerán aquí para que decidas.",

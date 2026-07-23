@@ -34,14 +34,17 @@ export default function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [filter, setFilter] = useState("pending");
   const [loading, setLoading] = useState(true);
+  const [usersLoaded, setUsersLoaded] = useState(false);
   const [actingId, setActingId] = useState("");
   const [rejecting, setRejecting] = useState(null);
 
   const load = async () => {
     setLoading(true);
+    setUsersLoaded(false);
     try {
       const { data } = await api.get("/admin/users", { params: { status: "all" } });
       setUsers(data);
+      setUsersLoaded(true);
     } catch (error) {
       toast.error(formatApiError(error));
     } finally {
@@ -65,6 +68,15 @@ export default function AdminUsers() {
   );
 
   const visibleUsers = users.filter((user) => user.status === filter);
+  const pendingCount = counts.pending || 0;
+
+  useEffect(() => {
+    if (!usersLoaded) return;
+    window.dispatchEvent(new CustomEvent(
+      "crelith:pending-user-count",
+      { detail: pendingCount },
+    ));
+  }, [usersLoaded, pendingCount]);
 
   const updateUser = (updated) => {
     setUsers((current) => current.map((user) => (

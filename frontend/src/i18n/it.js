@@ -362,6 +362,7 @@ export default {
   "Qual o seu prato de comida favorito?": "Qual è il tuo piatto preferito?",
   "{name} foi aprovado": "{name} è stato approvato",
   "{name} foi rejeitado": "{name} è stato rifiutato",
+  "{count} cadastros pendentes": "{count} registrazioni in attesa",
   "Nenhum cadastro aguardando": "Nessuna registrazione in attesa",
   "Nenhum usuário neste status": "Nessun utente con questo stato",
   "Quando alguém se cadastrar, aparecerá aqui para sua decisão.": "Le nuove registrazioni appariranno qui per la tua decisione.",

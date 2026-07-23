@@ -17,8 +17,9 @@ import { translate as tr } from "@/i18n";
  *
  * Props:
  *  - compact (bool): no mobile mostra só o avatar; no desktop mostra avatar + nome
+ *  - pendingUserCount (number): cadastros aguardando aprovação administrativa
  */
-export default function UserMenu({ compact = false }) {
+export default function UserMenu({ compact = false, pendingUserCount = 0 }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const initials = (user?.name || "")
@@ -79,6 +80,15 @@ export default function UserMenu({ compact = false }) {
         {user.is_admin && (
           <DropdownMenuItem onClick={() => navigate("/admin/usuarios")} data-testid="user-menu-admin-users">
             <ShieldCheck size={16} className="mr-2" /> {tr("Aprovar usuários")}
+            {pendingUserCount > 0 && (
+              <span
+                data-testid="user-menu-admin-pending-count"
+                aria-label={tr("{count} cadastros pendentes", { count: pendingUserCount })}
+                className="ml-auto inline-flex min-w-[20px] h-5 items-center justify-center rounded-full bg-[#D96C5B] px-1.5 text-[10px] font-semibold text-white"
+              >
+                {pendingUserCount > 99 ? "99+" : pendingUserCount}
+              </span>
+            )}
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />

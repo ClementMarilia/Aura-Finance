@@ -222,3 +222,15 @@ def test_admin_summary_never_exposes_password_or_financial_fields():
     assert "password_hash" not in result
     assert "balance" not in result
     assert "transactions" not in result
+
+
+def test_pending_count_returns_only_the_total(monkeypatch):
+    users = SimpleNamespace(count_documents=AsyncMock(return_value=3))
+    monkeypatch.setattr(server, "db", SimpleNamespace(users=users))
+
+    result = asyncio.run(server.pending_admin_users_count(
+        admin={"id": "admin-1", "email": "clementmarilia@gmail.com"},
+    ))
+
+    assert result == {"count": 3}
+    users.count_documents.assert_awaited_once_with({"status": "pending"})
