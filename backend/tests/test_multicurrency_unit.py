@@ -2,6 +2,7 @@ import asyncio
 import importlib
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,38 @@ def test_fetch_snapshot_from_official_provider(monkeypatch):
     assert snapshot["source"] == "frankfurter"
 
 
+def test_future_date_uses_latest_available_rate_as_estimate(monkeypatch):
+    server._fx_cache.clear()
+    request_params = {}
+
+    def fake_get(*args, **kwargs):
+        request_params.update(kwargs["params"])
+        return FakeResponse()
+
+    monkeypatch.setattr(server.requests, "get", fake_get)
+    snapshot = asyncio.run(server.fetch_currency_snapshot("EUR", "2999-08-14"))
+
+    assert request_params["date"] == datetime.now(timezone.utc).date().isoformat()
+    assert snapshot["requested_date"] == "2999-08-14"
+    assert snapshot["date"] == "2026-07-21"
+    assert snapshot["estimated"] is True
+
+
+def test_missing_target_rate_never_falls_back_to_one(monkeypatch):
+    async def incomplete_snapshot(*args, **kwargs):
+        return {
+            "base": "BRL",
+            "date": "2026-07-21",
+            "rates": {"BRL": 1.0},
+            "source": "frankfurter",
+        }
+
+    monkeypatch.setattr(server, "fetch_currency_snapshot", incomplete_snapshot)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(server.monetary_metadata("BRL", "EUR", "2026-07-22"))
+    assert exc.value.status_code == 503
+
+
 def test_manual_rate_survives_provider_failure(monkeypatch):
     async def fail(*args, **kwargs):
         raise HTTPException(503, "offline")
@@ -104,3 +137,32 @@ def test_transfer_keeps_sent_and_received_amounts(monkeypatch):
     assert values["target_amount"] == 90
     assert values["target_currency"] == "EUR"
     assert values["transfer_exchange_rate"] == 0.9
+
+
+def test_automatic_transaction_rate_cannot_be_overridden_by_one_to_one(monkeypatch):
+    async def account_map(_user):
+        return {}
+
+    async def snapshot(_currency, _date=None):
+        return {
+            "base": "BRL",
+            "date": "2026-07-22",
+            "rates": {"BRL": 1.0, "EUR": 0.16, "USD": 0.18, "CHF": 0.15},
+            "source": "frankfurter",
+        }
+
+    monkeypatch.setattr(server, "account_currency_map", account_map)
+    monkeypatch.setattr(server, "fetch_currency_snapshot", snapshot)
+    payload = server.TransactionIn(
+        type="expense",
+        date="2026-07-22",
+        amount=1786,
+        currency="BRL",
+        exchange_rate=1,
+        rate_source="automatic",
+    )
+
+    values = asyncio.run(server.transaction_values(payload, {"id": "u1", "currency": "EUR"}))
+
+    assert values["exchange_rate_to_base"] == pytest.approx(0.16)
+    assert values["base_amount"] == pytest.approx(285.76)

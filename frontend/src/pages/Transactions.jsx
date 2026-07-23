@@ -44,6 +44,8 @@ export default function Transactions() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
+  const [rateLoading, setRateLoading] = useState(false);
+  const [rateError, setRateError] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
   const [selected, setSelected] = useState([]);
   const [bulkConfirm, setBulkConfirm] = useState(false);
@@ -69,6 +71,8 @@ export default function Transactions() {
       exchange_rate: "",
       target_amount: "",
       rate_source: "automatic",
+      rate_date: "",
+      rate_estimated: false,
     };
   }
 
@@ -91,6 +95,12 @@ export default function Transactions() {
     : null;
   const sourceCurrency = sourceAccount?.currency || form.currency || curr;
   const targetCurrency = targetAccount?.currency || curr;
+  const needsExchangeRate = sourceCurrency !== targetCurrency;
+  const numericRate = Number(form.exchange_rate);
+  const numericAmount = Number(form.amount);
+  const convertedAmount = numericAmount > 0 && numericRate > 0
+    ? numericAmount * numericRate
+    : null;
   const rateContext = `${form.type}|${form.currency}|${form.account_id}|${form.from_account_id}|${form.to_account_id}|${form.date}`;
   const editingRateContext = editing
     ? `${editing.type}|${editing.currency || curr}|${editing.account_id || ""}|${editing.from_account_id || ""}|${editing.to_account_id || ""}|${editing.date}`
@@ -99,14 +109,40 @@ export default function Transactions() {
   useEffect(() => {
     if (!open || (form.type === "transfer" && (!sourceAccount || !targetAccount))) return;
     if (editing && rateContext === editingRateContext) return;
+    if (sourceCurrency === targetCurrency) {
+      setRateLoading(false);
+      setRateError("");
+      setForm(previous => ({
+        ...previous,
+        exchange_rate: "1",
+        target_amount: previous.type === "transfer" ? previous.amount : previous.target_amount,
+        rate_source: "automatic",
+        rate_date: previous.date,
+        rate_estimated: false,
+      }));
+      return;
+    }
     let active = true;
+    setRateLoading(true);
+    setRateError("");
+    if (sourceCurrency !== targetCurrency) {
+      setForm(previous => ({
+        ...previous,
+        exchange_rate: "",
+        rate_date: "",
+        rate_estimated: false,
+      }));
+    }
     api.get("/exchange-rates/quote", { params: {
       from_currency: sourceCurrency,
       to_currency: targetCurrency,
       date: form.date,
     }}).then(response => {
       if (!active) return;
-      const rate = Number(response.data.rate || 1);
+      const rate = Number(response.data.rate);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        throw new Error("A API não retornou uma cotação válida");
+      }
       setForm(previous => ({
         ...previous,
         exchange_rate: String(rate),
@@ -114,8 +150,17 @@ export default function Transactions() {
           ? String((Number(previous.amount) * rate).toFixed(2))
           : previous.target_amount,
         rate_source: "automatic",
+        rate_date: response.data.date || "",
+        rate_estimated: Boolean(response.data.estimated),
       }));
-    }).catch(err => { if (active) toast.error(formatApiError(err)); });
+    }).catch(err => {
+      if (!active) return;
+      const message = formatApiError(err);
+      setRateError(message);
+      toast.error(message);
+    }).finally(() => {
+      if (active) setRateLoading(false);
+    });
     return () => { active = false; };
   }, [open, editing, form.type, form.account_id, form.from_account_id, form.to_account_id, form.date, sourceCurrency, targetCurrency, sourceAccount, targetAccount, rateContext, editingRateContext]);
   useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id, filter.year, filter.month, filter.account_id]);
@@ -160,14 +205,36 @@ export default function Transactions() {
       exchange_rate: String(t.type === "transfer" ? (t.transfer_exchange_rate || 1) : (t.exchange_rate_to_base || 1)),
       target_amount: String(t.target_amount ?? t.amount),
       rate_source: t.rate_source === "manual" ? "manual" : "automatic",
+      rate_date: t.rate_date || "",
+      rate_estimated: false,
     });
     setOpen(true);
   };
 
-  const openNew = () => { setEditing(null); setForm(defaultForm()); setOpen(true); };
+  const openNew = () => {
+    setEditing(null);
+    setRateError("");
+    setRateLoading(false);
+    setForm(defaultForm());
+    setOpen(true);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
+    const amount = Number(form.amount);
+    const exchangeRate = needsExchangeRate ? Number(form.exchange_rate) : 1;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Informe um valor maior que zero");
+      return;
+    }
+    if (rateLoading) {
+      toast.error("Aguarde a cotação automática");
+      return;
+    }
+    if (needsExchangeRate && (!Number.isFinite(exchangeRate) || exchangeRate <= 0)) {
+      toast.error("Informe uma cotação válida antes de salvar");
+      return;
+    }
     try {
       // Recurring payment created straight from Lançamentos
       if (!editing && form.repeat && form.repeat !== "none" && form.type !== "transfer") {
@@ -179,7 +246,8 @@ export default function Transactions() {
           payment_method: form.payment_method || null,
           description: form.description,
           currency: sourceCurrency,
-          exchange_rate: parseFloat(form.exchange_rate) || 1,
+          exchange_rate: exchangeRate,
+          rate_source: form.rate_source,
           frequency: form.repeat,
           next_run: form.date,
           active: true,
@@ -196,7 +264,7 @@ export default function Transactions() {
         from_account_id: form.type === "transfer" ? (form.from_account_id || null) : null,
         to_account_id: form.type === "transfer" ? (form.to_account_id || null) : null,
         currency: sourceCurrency,
-        exchange_rate: parseFloat(form.exchange_rate) || 1,
+        exchange_rate: exchangeRate,
         target_amount: form.type === "transfer" ? (parseFloat(form.target_amount) || 0) : null,
         rate_source: form.rate_source,
       };
@@ -341,7 +409,7 @@ export default function Transactions() {
                   <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required data-testid="tx-date-input" />
                 </div>
                 <div>
-                  <Label>Valor ({sourceCurrency})</Label>
+                  <Label>Valor</Label>
                   <Input type="number" step="0.01" value={form.amount}
                     onChange={e => {
                       const amount = e.target.value;
@@ -361,6 +429,8 @@ export default function Transactions() {
                       account_id: selectedAccount && selectedAccount.currency !== value ? "" : form.account_id,
                       exchange_rate: "",
                       rate_source: "automatic",
+                      rate_date: "",
+                      rate_estimated: false,
                     });
                   }}>
                     <SelectTrigger data-testid="tx-currency-select"><SelectValue /></SelectTrigger>
@@ -400,6 +470,8 @@ export default function Transactions() {
                       currency: account?.currency || form.currency || curr,
                       exchange_rate: "",
                       rate_source: "automatic",
+                      rate_date: "",
+                      rate_estimated: false,
                     });
                   }}>
                     <SelectTrigger data-testid="tx-account-select"><SelectValue placeholder="Selecione" /></SelectTrigger>
@@ -429,7 +501,14 @@ export default function Transactions() {
                         const rate = e.target.value;
                         const target = form.type === "transfer" && rate && form.amount
                           ? (Number(form.amount) * Number(rate)).toFixed(2) : form.target_amount;
-                        setForm({ ...form, exchange_rate: rate, target_amount: target, rate_source: "manual" });
+                        setRateError("");
+                        setForm({
+                          ...form,
+                          exchange_rate: rate,
+                          target_amount: target,
+                          rate_source: "manual",
+                          rate_estimated: false,
+                        });
                       }} />
                   </div>
                   {form.type === "transfer" && (
@@ -443,8 +522,21 @@ export default function Transactions() {
                         }} />
                     </div>
                   )}
+                  {form.type !== "transfer" && convertedAmount !== null && (
+                    <div className="col-span-2 rounded-lg bg-white/70 px-3 py-2 text-sm text-[#1E3F33]" data-testid="tx-conversion-preview">
+                      {fmtMoney(numericAmount, sourceCurrency)} ≈ {fmtMoney(convertedAmount, targetCurrency)}
+                    </div>
+                  )}
                   <p className="col-span-2 text-xs text-[#6B7068]">
-                    {form.rate_source === "automatic" ? "Cotação sugerida automaticamente; ajuste pelo valor real do banco se necessário." : "Cotação ajustada manualmente."}
+                    {rateLoading
+                      ? "Buscando cotação automática..."
+                      : rateError
+                        ? `Cotação automática indisponível: ${rateError} Informe a taxa manualmente.`
+                        : form.rate_source === "automatic"
+                          ? form.rate_estimated
+                            ? `Estimativa com a última cotação disponível de ${fmtDate(form.rate_date)}. Você pode ajustar pelo valor real do banco.`
+                            : `Cotação automática de ${fmtDate(form.rate_date)}; ajuste pelo valor real do banco se necessário.`
+                          : "Cotação ajustada manualmente."}
                   </p>
                 </div>
                 )}
@@ -492,8 +584,8 @@ export default function Transactions() {
                   <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} data-testid="tx-notes-input" />
                 </div>
               </div>
-              <Button type="submit" data-testid="tx-submit-button" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
-                {editing ? "Salvar alterações" : "Salvar"}
+              <Button type="submit" disabled={rateLoading} data-testid="tx-submit-button" className="w-full bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">
+                {rateLoading ? "Buscando cotação..." : editing ? "Salvar alterações" : "Salvar"}
               </Button>
             </form>
           </DialogContent>
