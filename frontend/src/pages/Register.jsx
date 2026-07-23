@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+import { CURRENCIES } from "@/lib/api";
 
 function Field({ id, label, type, value, onChange, testid, placeholder, minLength, autoComplete }) {
   return (
@@ -85,7 +86,7 @@ export default function Register() {
 
           <div className="text-left">
             <label htmlFor="reg-currency" className="block text-[11px] tracking-[0.18em] uppercase text-white/40 mb-2">
-              Moeda padrão
+              Moeda-base
             </label>
             <select
               id="reg-currency"
@@ -95,9 +96,9 @@ export default function Register() {
               style={{ background: "transparent", color: "rgba(255,255,255,0.9)", borderColor: "rgba(255,255,255,0.15)" }}
               className="w-full border-0 border-b text-base py-2 outline-none transition-colors duration-200 focus:border-b-[#6FB597]"
             >
-              <option value="EUR" className="text-black">EUR (€)</option>
-              <option value="BRL" className="text-black">BRL (R$)</option>
-              <option value="USD" className="text-black">USD ($)</option>
+              {CURRENCIES.map(currency => (
+                <option key={currency.value} value={currency.value} className="text-black">{currency.label}</option>
+              ))}
             </select>
           </div>
 

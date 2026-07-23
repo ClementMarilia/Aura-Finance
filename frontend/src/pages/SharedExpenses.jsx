@@ -320,7 +320,7 @@ export default function SharedExpenses() {
         open={!!confirmDelete}
         onOpenChange={(v) => !v && setConfirmDelete(null)}
         title="Excluir despesa?"
-        description={confirmDelete ? `"${confirmDelete.title}" - ${fmtMoney(confirmDelete.amount, curr)}. Esta ação não pode ser desfeita.` : ""}
+        description={confirmDelete ? `"${confirmDelete.title}" - ${fmtMoney(confirmDelete.amount, confirmDelete.currency || curr)}. Esta ação não pode ser desfeita.` : ""}
         onConfirm={doDelete}
         testId="shared-confirm-delete"
       />
@@ -351,13 +351,13 @@ export default function SharedExpenses() {
                       if (isPayer) {
                         return (
                           <span key={p.user_id} className="text-emerald-700">
-                            <strong>{name}</strong> {fmtMoney(p.owed || 0, curr)} (pagou)
+                            <strong>{name}</strong> {fmtMoney(p.owed || 0, e.currency || curr)} (pagou)
                           </span>
                         );
                       }
                       return (
                         <span key={p.user_id} className={p.paid_back ? "text-emerald-600" : ""}>
-                          <strong>{name}</strong> {fmtMoney(p.owed || 0, curr)}{p.paid_back ? " ✓" : ""}
+                          <strong>{name}</strong> {fmtMoney(p.owed || 0, e.currency || curr)}{p.paid_back ? " ✓" : ""}
                         </span>
                       );
                     })}
@@ -365,7 +365,7 @@ export default function SharedExpenses() {
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="text-right">
-                    <div className="text-2xl font-semibold" style={{ fontFamily: "Outfit" }}>{fmtMoney(e.amount, curr)}</div>
+                    <div className="text-2xl font-semibold" style={{ fontFamily: "Outfit" }}>{fmtMoney(e.amount, e.currency || curr)}</div>
                   </div>
                   <div className="flex gap-1">
                     {canEdit && (
@@ -412,7 +412,7 @@ export default function SharedExpenses() {
                         </div>
                         <div className="text-xs text-[#6B7068]">
                           {isPayer
-                            ? `Adiantou ${fmtMoney(e.amount, curr)} pelo grupo`
+                            ? `Adiantou ${fmtMoney(e.amount, e.currency || curr)} pelo grupo`
                             : (p.paid_back ? "Acerto confirmado" : `Deve para ${e.payer?.name}`)}
                         </div>
                       </div>
@@ -420,7 +420,7 @@ export default function SharedExpenses() {
                       <div className={`text-base font-semibold whitespace-nowrap ${
                         isPayer ? "text-[#1E3F33]" : p.paid_back ? "text-emerald-600 line-through opacity-60" : "text-rose-600"
                       }`} style={{ fontFamily: "Outfit" }} data-testid={`participant-amount-${e.id}-${p.user_id}`}>
-                        {fmtMoney(p.owed || 0, curr)}
+                        {fmtMoney(p.owed || 0, e.currency || curr)}
                       </div>
                       {!isPayer && (
                         <button onClick={() => togglePaid(e.id, p.user_id)} data-testid={`settle-${e.id}-${p.user_id}`}

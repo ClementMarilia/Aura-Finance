@@ -1,5 +1,5 @@
 import { useState } from "react";
-import api, { formatApiError } from "@/lib/api";
+import api, { CURRENCIES, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,15 +74,17 @@ export default function Profile() {
           <div><Label>Nome</Label>
             <Input value={form.name} required data-testid="profile-name-input"
               onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-          <div><Label>Moeda padrão</Label>
+          <div><Label>Moeda-base</Label>
             <Select value={form.currency} onValueChange={v => setForm({ ...form, currency: v })}>
               <SelectTrigger data-testid="profile-currency-select"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="EUR">EUR (€)</SelectItem>
-                <SelectItem value="BRL">BRL (R$)</SelectItem>
-                <SelectItem value="USD">USD ($)</SelectItem>
+                {CURRENCIES.map(currency => (
+                  <SelectItem key={currency.value} value={currency.value}>{currency.label}</SelectItem>
+                ))}
               </SelectContent>
-            </Select></div>
+            </Select>
+            <p className="text-xs text-[#6B7068] mt-1">Dashboards e relatórios serão apresentados nesta moeda. Os valores originais não são alterados.</p>
+          </div>
           <Button type="submit" data-testid="profile-save-button" className="bg-[#1E3F33] hover:bg-[#2C5C4A] rounded-xl">Salvar</Button>
         </form>
       </div>

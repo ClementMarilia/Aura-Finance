@@ -135,7 +135,7 @@ export default function Receivables() {
                     {r.status === "received" ? "Recebido" : "Pendente"}
                   </span>
                 </td>
-                <td className="py-3 px-4 text-right font-semibold">{fmtMoney(r.amount, curr)}</td>
+                <td className="py-3 px-4 text-right font-semibold">{fmtMoney(r.amount, r.currency || curr)}</td>
                 <td className="py-3 px-4 flex gap-1 justify-end">
                   <button onClick={() => receive(r.id)} className="text-emerald-600 hover:text-emerald-800 p-1" data-testid={`rec-receive-${r.id}`} title="Marcar como recebido">
                     <Check size={16} />
@@ -157,7 +157,7 @@ export default function Receivables() {
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
         title="Excluir conta a receber?"
-        description={confirmDel ? `"${confirmDel.person}" - ${fmtMoney(confirmDel.amount, curr)}. Esta ação não pode ser desfeita.` : ""}
+        description={confirmDel ? `"${confirmDel.person}" - ${fmtMoney(confirmDel.amount, confirmDel.currency || curr)}. Esta ação não pode ser desfeita.` : ""}
         onConfirm={remove}
         testId="rec-confirm-delete"
       />
