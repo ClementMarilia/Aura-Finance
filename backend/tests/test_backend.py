@@ -49,7 +49,13 @@ def test_me_ok(wendy):
 
 def test_register_creates_pending_user_without_session():
     em = f"test_{uuid.uuid4().hex[:8]}@demo.com"
-    r = requests.post(f"{API}/auth/register", json={"name": "Tester", "email": em, "password": "pass123", "currency": "EUR"})
+    r = requests.post(f"{API}/auth/register", json={
+        "name": "Tester",
+        "email": em,
+        "password": "pass123",
+        "currency": "EUR",
+        "privacy_acknowledged": True,
+    })
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["status"] == "pending"
@@ -190,7 +196,12 @@ def test_shared_expense_create_equal(wendy, marilia, nathalia):
 
 def test_pending_user_cannot_change_password():
     em = f"pw_{uuid.uuid4().hex[:8]}@demo.com"
-    r = requests.post(f"{API}/auth/register", json={"name": "X", "email": em, "password": "old123"})
+    r = requests.post(f"{API}/auth/register", json={
+        "name": "X",
+        "email": em,
+        "password": "old123",
+        "privacy_acknowledged": True,
+    })
     assert r.status_code == 200
     denied = requests.post(
         f"{API}/auth/change-password",

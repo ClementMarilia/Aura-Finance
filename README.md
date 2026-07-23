@@ -76,6 +76,8 @@ Cada card no Dashboard navega direto para a tela com filtro aplicado, mostrando 
 - **Interface multilíngue** em Português, Italiano, Inglês e Espanhol. O primeiro acesso considera o idioma do dispositivo; a escolha manual é salva no perfil e acompanha o usuário em outros dispositivos.
 - **Aprovação de novos usuários**: cadastro entra como `pending`, sem token e sem estrutura financeira. Apenas administradores configurados em `ADMIN_EMAILS` podem aprovar ou rejeitar.
 - A área administrativa exibe somente nome, e-mail, data do cadastro e status. Ela não consulta carteiras, saldos, lançamentos ou relatórios.
+- O cadastro exige a confirmação do aviso de privacidade. O backend registra a data e a versão aceita, e rejeita solicitações que tentem contornar o checkbox.
+- Login e cadastro permitem mostrar ou ocultar a senha sem alterar o valor digitado.
 - Usuários existentes sem o campo `status` continuam ativos para garantir compatibilidade.
 - **Recuperação de senha** por pergunta de segurança (fluxo público de 2 passos no Login + configuração em Perfil).
 - **Notificações in-app** + push em **WebSocket** (`/api/ws/notifications`) com fallback de polling; preferências por tipo (mute).

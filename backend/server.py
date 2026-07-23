@@ -68,6 +68,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("finance")
 
 SUPPORTED_CURRENCIES = ("EUR", "BRL", "USD", "CHF")
+PRIVACY_NOTICE_VERSION = "2026-07-23"
 FX_API_URL = "https://api.frankfurter.dev/v2/rates"
 _fx_cache = {}
 
@@ -399,6 +400,7 @@ class RegisterIn(BaseModel):
     password: str
     currency: str = "EUR"
     language: Literal["pt", "it", "en", "es"] = "pt"
+    privacy_acknowledged: Literal[True]
 
 
 class LoginIn(BaseModel):
@@ -607,6 +609,8 @@ async def register(payload: RegisterIn):
         "currency": currency, "avatar_color": user_color(payload.name),
         "language": payload.language,
         "status": "pending",
+        "privacy_acknowledged_at": now_iso(),
+        "privacy_notice_version": PRIVACY_NOTICE_VERSION,
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
