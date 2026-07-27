@@ -1,4 +1,5 @@
 export default {
+  "Salvando...": "Saving...",
   "Crelith Finance — Controle Financeiro": "Crelith Finance — Financial Management",
   "Olá,": "Hello,",
   "Receita do mês": "Monthly income",

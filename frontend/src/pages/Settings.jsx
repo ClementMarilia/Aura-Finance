@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import api, { formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -14,6 +15,7 @@ import { usePWAUpdate } from "@/context/PWAUpdateContext";
 import { useAuth } from "@/context/AuthContext";
 import LanguageSelector from "@/components/LanguageSelector";
 import EmailTemplateEditor from "@/components/EmailTemplateEditor";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { translate as tr } from "@/i18n";
 import { useNavigate } from "react-router-dom";
 
@@ -48,6 +50,7 @@ export default function Settings() {
   const [cats, setCats] = useState([]);
   const [form, setForm] = useState(defaultCatForm());
   const [editing, setEditing] = useState(null);
+  const { isRunning: isSavingCategory, run: runCategorySave } = useSingleFlight();
   const [confirmDel, setConfirmDel] = useState(null);
   const [prefs, setPrefs] = useState(null);
   const [tab, setTab] = useState("expense"); // expense | income | both
@@ -97,26 +100,31 @@ export default function Settings() {
 
   const submit = async (e) => {
     e.preventDefault();
-    try {
-      const payload = {
-        name: form.name.trim(),
-        color: form.color,
-        kind: form.kind,
-      };
-      if (!payload.name) {
-        toast.error(tr("Nome é obrigatório"));
-        return;
+    const payload = {
+      name: form.name.trim(),
+      color: form.color,
+      kind: form.kind,
+    };
+    if (!payload.name) {
+      toast.error(tr("Nome é obrigatório"));
+      return;
+    }
+
+    await runCategorySave(async () => {
+      try {
+        if (editing) {
+          await api.put(`/categories/${editing.id}`, payload);
+          toast.success(tr("Categoria atualizada"));
+        } else {
+          await api.post("/categories", payload);
+          toast.success(tr("Categoria criada"));
+        }
+        cancelEdit();
+        await load();
+      } catch (err) {
+        toast.error(formatApiError(err));
       }
-      if (editing) {
-        await api.put(`/categories/${editing.id}`, payload);
-        toast.success(tr("Categoria atualizada"));
-      } else {
-        await api.post("/categories", payload);
-        toast.success(tr("Categoria criada"));
-      }
-      cancelEdit();
-      load();
-    } catch (err) { toast.error(formatApiError(err)); }
+    });
   };
 
   const remove = async () => {
@@ -360,13 +368,13 @@ export default function Settings() {
         <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end mb-4" data-testid="cat-form">
           <div className="sm:col-span-5">
             <Label>{tr("Nome")}</Label>
-            <Input value={form.name} required data-testid="settings-cat-name"
+            <Input value={form.name} required disabled={isSavingCategory} data-testid="settings-cat-name"
               placeholder="Ex: Salário, Gasolina, Mercado"
               onChange={e => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="sm:col-span-3">
             <Label>{tr("Tipo")}</Label>
-            <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v })}>
+            <Select value={form.kind} disabled={isSavingCategory} onValueChange={(v) => setForm({ ...form, kind: v })}>
               <SelectTrigger data-testid="settings-cat-kind"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="expense">{tr("Despesa")}</SelectItem>
@@ -377,16 +385,23 @@ export default function Settings() {
           </div>
           <div className="sm:col-span-2">
             <Label>{tr("Cor")}</Label>
-            <Input type="color" value={form.color} className="w-full h-10 p-1" data-testid="settings-cat-color"
+            <Input type="color" value={form.color} disabled={isSavingCategory} className="w-full h-10 p-1" data-testid="settings-cat-color"
               onChange={e => setForm({ ...form, color: e.target.value })} />
           </div>
           <div className="sm:col-span-2 flex gap-1">
-            <Button type="submit" data-testid="settings-add-cat" className="flex-1 bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
+            <LoadingButton
+              type="submit"
+              loading={isSavingCategory}
+              loadingText={tr("Salvando...")}
+              data-testid="settings-add-cat"
+              className="flex-1 bg-[#061B4A] hover:bg-[#1268F4] rounded-xl"
+            >
               {editing ? <Pencil size={16} className="mr-1" /> : <Plus size={16} className="mr-1" />}
               {editing ? tr("Salvar") : tr("Adicionar")}
-            </Button>
+            </LoadingButton>
             {editing && (
-              <Button type="button" variant="outline" onClick={cancelEdit} data-testid="settings-cancel-edit" className="rounded-xl">
+              <Button type="button" variant="outline" onClick={cancelEdit} disabled={isSavingCategory}
+                data-testid="settings-cancel-edit" className="rounded-xl">
                 <X size={16} />
               </Button>
             )}
@@ -438,10 +453,14 @@ export default function Settings() {
                     {c.is_default && <span className="text-xs text-[#6B7068]">(padrão)</span>}
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
-                    <button onClick={() => startEdit(c)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`cat-edit-${c.id}`} title={tr("Editar")}>
+                    <button onClick={() => startEdit(c)} disabled={isSavingCategory}
+                      className="text-[#6B7068] hover:text-[#061B4A] p-1 disabled:pointer-events-none disabled:opacity-50"
+                      data-testid={`cat-edit-${c.id}`} title={tr("Editar")}>
                       <Pencil size={14} />
                     </button>
-                    <button onClick={() => setConfirmDel(c)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`cat-delete-${c.id}`} title={tr("Excluir")}>
+                    <button onClick={() => setConfirmDel(c)} disabled={isSavingCategory}
+                      className="text-[#6B7068] hover:text-[#D9453B] p-1 disabled:pointer-events-none disabled:opacity-50"
+                      data-testid={`cat-delete-${c.id}`} title={tr("Excluir")}>
                       <Trash2 size={14} />
                     </button>
                   </div>
