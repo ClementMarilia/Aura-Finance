@@ -34,6 +34,12 @@ const KIND_BADGE = {
 };
 
 const defaultCatForm = () => ({ name: "", color: "#061B4A", kind: "expense" });
+const categoryNameKey = (value) => String(value || "")
+  .trim()
+  .replace(/\s+/g, " ")
+  .normalize("NFKD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .toLocaleLowerCase();
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -107,6 +113,14 @@ export default function Settings() {
     };
     if (!payload.name) {
       toast.error(tr("Nome é obrigatório"));
+      return;
+    }
+    const duplicate = cats.some((category) => (
+      category.id !== editing?.id
+      && categoryNameKey(category.name) === categoryNameKey(payload.name)
+    ));
+    if (duplicate) {
+      toast.error(tr("Já existe uma categoria com esse nome"));
       return;
     }
 
