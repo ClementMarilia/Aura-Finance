@@ -295,6 +295,14 @@ class ConnectionManager:
             except Exception:
                 self.active[user_id].discard(ws)
 
+    async def disconnect_user(self, user_id: str, code: int = 1008):
+        sockets = list(self.active.pop(user_id, set()))
+        for ws in sockets:
+            try:
+                await ws.close(code=code)
+            except Exception:
+                pass
+
 
 ws_manager = ConnectionManager()
 
@@ -338,6 +346,8 @@ def is_admin_user(user: dict) -> bool:
 
 
 def ensure_active_user(user: dict) -> dict:
+    if user.get("deletion_in_progress"):
+        raise HTTPException(status_code=403, detail="Conta em processo de exclusão")
     status = account_status(user)
     if status == "pending":
         raise HTTPException(
@@ -425,6 +435,14 @@ class AdminUserOut(BaseModel):
     status: Literal["pending", "active", "rejected"]
     created_at: str
     reviewed_at: Optional[str] = None
+
+
+class AdminUserDeletionImpactOut(BaseModel):
+    user: AdminUserOut
+    can_delete: bool
+    blockers: List[str]
+    impact: dict[str, int]
+    sessions_will_be_terminated: bool = True
 
 
 class UpdateProfileIn(BaseModel):
@@ -772,6 +790,120 @@ async def search_users(email: str, user=Depends(get_current_user)):
 
 
 # ---------- User approval administration ----------
+FINANCIAL_DELETION_BLOCKERS = (
+    "income",
+    "expenses",
+    "transfers",
+    "wallets",
+    "goals",
+    "shared_expenses",
+    "pending_settlements",
+    "recurrences",
+    "installment_purchases",
+    "receivables",
+    "groups_created",
+)
+
+
+async def user_financial_impact(user_id: str) -> dict[str, int]:
+    shared_query = {
+        "$or": [
+            {"participant_ids": user_id},
+            {"creator_id": user_id},
+            {"payer_id": user_id},
+        ],
+    }
+    (
+        income,
+        expenses,
+        transfers,
+        wallets,
+        goals,
+        shared_expenses,
+        recurrences,
+        installment_purchases,
+        receivables,
+        groups_created,
+        shared_items,
+    ) = await asyncio.gather(
+        db.transactions.count_documents({"user_id": user_id, "type": "income"}),
+        db.transactions.count_documents({"user_id": user_id, "type": "expense"}),
+        db.transactions.count_documents({"user_id": user_id, "type": "transfer"}),
+        db.accounts.count_documents({
+            "user_id": user_id,
+            "$or": [
+                {"initial_balance": {"$gt": 0}},
+                {"initial_balance": {"$lt": 0}},
+            ],
+        }),
+        db.goals.count_documents({"user_id": user_id}),
+        db.shared_expenses.count_documents(shared_query),
+        db.recurrences.count_documents({"user_id": user_id}),
+        db.installment_purchases.count_documents({"user_id": user_id}),
+        db.receivables.count_documents({"user_id": user_id}),
+        db.groups.count_documents({"creator_id": user_id}),
+        db.shared_expenses.find(shared_query, {"_id": 0}).to_list(5000),
+    )
+
+    pending_settlements = 0
+    for expense in shared_items:
+        payer_id = expense.get("payer_id")
+        has_pending_for_user = any(
+            not participant.get("paid_back")
+            and participant.get("user_id") != payer_id
+            and user_id in (participant.get("user_id"), payer_id)
+            for participant in expense.get("participants", [])
+        )
+        if has_pending_for_user:
+            pending_settlements += 1
+
+    return {
+        "income": income,
+        "expenses": expenses,
+        "transfers": transfers,
+        "wallets": wallets,
+        "goals": goals,
+        "shared_expenses": shared_expenses,
+        "pending_settlements": pending_settlements,
+        "recurrences": recurrences,
+        "installment_purchases": installment_purchases,
+        "receivables": receivables,
+        "groups_created": groups_created,
+    }
+
+
+async def build_user_deletion_impact(
+    candidate: dict,
+    admin: dict,
+) -> dict:
+    blockers = []
+    if candidate["id"] == admin["id"]:
+        blockers.append("self_delete")
+
+    if is_admin_user(candidate) and account_status(candidate) == "active":
+        active_admins = await db.users.count_documents({
+            "email": {"$in": list(configured_admin_emails())},
+            "$or": [
+                {"status": "active"},
+                {"status": {"$exists": False}},
+            ],
+        })
+        if active_admins <= 1:
+            blockers.append("last_active_admin")
+
+    impact = await user_financial_impact(candidate["id"])
+    blockers.extend(
+        key for key in FINANCIAL_DELETION_BLOCKERS if impact.get(key, 0) > 0
+    )
+    return {
+        "user": admin_user_summary(candidate),
+        "can_delete": not blockers,
+        "blockers": blockers,
+        "impact": impact,
+        "sessions_will_be_terminated": True,
+    }
+
+
 @api.get("/admin/users", response_model=List[AdminUserOut])
 async def list_admin_users(
     status: Literal["pending", "active", "rejected", "all"] = "pending",
@@ -805,6 +937,123 @@ async def list_admin_users(
 @api.get("/admin/users/pending-count")
 async def pending_admin_users_count(admin=Depends(require_admin)):
     return {"count": await db.users.count_documents({"status": "pending"})}
+
+
+@api.get(
+    "/admin/users/{user_id}/deletion-impact",
+    response_model=AdminUserDeletionImpactOut,
+)
+async def admin_user_deletion_impact(
+    user_id: str,
+    admin=Depends(require_admin),
+):
+    candidate = await db.users.find_one({"id": user_id})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    return await build_user_deletion_impact(candidate, admin)
+
+
+@api.delete("/admin/users/{user_id}")
+async def delete_admin_user(
+    user_id: str,
+    admin=Depends(require_admin),
+):
+    candidate = await db.users.find_one({"id": user_id})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    preview = await build_user_deletion_impact(candidate, admin)
+    if not preview["can_delete"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "A exclusão está bloqueada. Resolva os itens informados antes de continuar.",
+                "blockers": preview["blockers"],
+                "impact": preview["impact"],
+            },
+        )
+
+    lock = await db.users.update_one(
+        {
+            "id": user_id,
+            "deletion_in_progress": {"$ne": True},
+        },
+        {"$set": {"deletion_in_progress": True}},
+    )
+    if not lock.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="A exclusão deste usuário já está sendo processada",
+        )
+
+    try:
+        # Recheck after locking the account so a concurrent financial write
+        # cannot silently bypass the deletion guard.
+        impact = await user_financial_impact(user_id)
+        financial_blockers = [
+            key for key in FINANCIAL_DELETION_BLOCKERS if impact.get(key, 0) > 0
+        ]
+        if financial_blockers:
+            await db.users.update_one(
+                {"id": user_id},
+                {"$unset": {"deletion_in_progress": ""}},
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Novas pendências foram encontradas. Revise o impacto e tente novamente.",
+                    "blockers": financial_blockers,
+                    "impact": impact,
+                },
+            )
+
+        await ws_manager.disconnect_user(user_id, code=4001)
+
+        # Only housekeeping and empty wallets remain here. Financial activity
+        # and history are never cascade-deleted by this administrative action.
+        await db.categories.delete_many({"user_id": user_id})
+        await db.accounts.delete_many({"user_id": user_id})
+        await db.notifications.delete_many({"user_id": user_id})
+        await db.files.delete_many({"user_id": user_id})
+        await db.settlement_history.delete_many({
+            "$or": [
+                {"debtor_id": user_id},
+                {"creditor_id": user_id},
+            ],
+        })
+        await db.groups.update_many(
+            {"member_ids": user_id},
+            {"$pull": {"member_ids": user_id}},
+        )
+        deleted = await db.users.delete_one({
+            "id": user_id,
+            "deletion_in_progress": True,
+        })
+        if not deleted.deleted_count:
+            raise RuntimeError("User deletion lock was lost")
+    except HTTPException:
+        raise
+    except Exception:
+        await db.users.update_one(
+            {"id": user_id},
+            {"$unset": {"deletion_in_progress": ""}},
+        )
+        logger.exception(
+            "Administrative user deletion failed: target=%s admin=%s",
+            user_id,
+            admin["id"],
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível concluir a exclusão com segurança",
+        )
+
+    logger.info(
+        "Administrative user deletion completed: target=%s admin=%s",
+        user_id,
+        admin["id"],
+    )
+    return {"ok": True, "deleted_user_id": user_id}
 
 
 @api.post("/admin/users/{user_id}/approve", response_model=AdminUserOut)
@@ -2026,6 +2275,13 @@ async def ws_notifications(websocket: WebSocket):
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             user_id = payload.get("sub")
+            user = await db.users.find_one(
+                {"id": user_id},
+                {"_id": 0, "password_hash": 0},
+            )
+            if not user:
+                raise ValueError("User not found")
+            ensure_active_user(user)
         except Exception:
             user_id = None
     if not user_id:

@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clock3, ShieldCheck, UserCheck, UserX, Users } from "lucide-react";
+import {
+  AlertTriangle, Check, Clock3, Loader2, ShieldCheck, Trash2,
+  UserCheck, UserX, Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import api, { fmtDate, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { translate as tr } from "@/i18n";
+import { useAuth } from "@/context/AuthContext";
 
 const FILTERS = [
   { value: "pending", label: tr("Pendentes") },
@@ -30,13 +37,31 @@ const STATUS = {
   },
 };
 
+const IMPACT_LABELS = {
+  income: "Receitas",
+  expenses: "Despesas",
+  transfers: "Transferências",
+  wallets: "Carteiras",
+  goals: "Metas financeiras",
+  shared_expenses: "Despesas compartilhadas",
+  pending_settlements: "Acertos pendentes",
+  recurrences: "Recorrências",
+  installment_purchases: "Parcelamentos",
+  receivables: "Contas a receber",
+  groups_created: "Grupos criados",
+};
+
 export default function AdminUsers() {
+  const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [filter, setFilter] = useState("pending");
   const [loading, setLoading] = useState(true);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [actingId, setActingId] = useState("");
   const [rejecting, setRejecting] = useState(null);
+  const [deletingCandidate, setDeletingCandidate] = useState(null);
+  const [deletionImpact, setDeletionImpact] = useState(null);
+  const [loadingImpact, setLoadingImpact] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -112,11 +137,65 @@ export default function AdminUsers() {
     }
   };
 
+  const closeDeletion = () => {
+    setDeletingCandidate(null);
+    setDeletionImpact(null);
+    setLoadingImpact(false);
+  };
+
+  const reviewDeletion = async (candidate) => {
+    setDeletingCandidate(candidate);
+    setDeletionImpact(null);
+    setLoadingImpact(true);
+    try {
+      const { data } = await api.get(`/admin/users/${candidate.id}/deletion-impact`);
+      setDeletionImpact(data);
+    } catch (error) {
+      toast.error(formatApiError(error));
+      closeDeletion();
+    } finally {
+      setLoadingImpact(false);
+    }
+  };
+
+  const deleteUser = async () => {
+    if (!deletingCandidate || !deletionImpact?.can_delete) return;
+    setActingId(deletingCandidate.id);
+    try {
+      await api.delete(`/admin/users/${deletingCandidate.id}`);
+      setUsers((current) => current.filter(
+        (candidate) => candidate.id !== deletingCandidate.id,
+      ));
+      toast.success(tr("{name} foi excluído", { name: deletingCandidate.name }));
+      closeDeletion();
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(
+        typeof detail?.message === "string"
+          ? tr(detail.message)
+          : formatApiError(error),
+      );
+      try {
+        const { data } = await api.get(
+          `/admin/users/${deletingCandidate.id}/deletion-impact`,
+        );
+        setDeletionImpact(data);
+      } catch {
+        closeDeletion();
+      }
+    } finally {
+      setActingId("");
+    }
+  };
+
+  const impactItems = Object.entries(deletionImpact?.impact || {})
+    .filter(([, count]) => count > 0);
+
   return (
     <div className="space-y-6 max-w-5xl" data-testid="admin-users-page">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>
-          {tr("Aprovação de usuários")}
+          {tr("Gerenciamento de usuários")}
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
           {tr("Controle quem pode acessar a Crelith Finance.")}
@@ -128,7 +207,7 @@ export default function AdminUsers() {
         <div>
           <h2 className="font-medium text-[#061B4A]">{tr("Privacidade preservada")}</h2>
           <p className="mt-1 text-sm text-[#42526B]">
-            {tr("Esta área mostra somente nome, e-mail, data do cadastro e status. Carteiras, saldos, lançamentos e relatórios permanecem privados.")}
+            {tr("Esta área não exibe saldos, valores, lançamentos ou relatórios. Na exclusão, mostra somente a quantidade de itens que precisam ser resolvidos.")}
           </p>
         </div>
       </div>
@@ -200,8 +279,9 @@ export default function AdminUsers() {
                     </p>
                   </div>
 
-                  {candidate.status !== "active" && (
-                    <div className="flex flex-shrink-0 gap-2">
+                  <div className="flex flex-shrink-0 flex-wrap gap-2">
+                    {candidate.status !== "active" && (
+                      <>
                       {candidate.status === "pending" && (
                         <Button
                           type="button"
@@ -227,8 +307,22 @@ export default function AdminUsers() {
                             ? tr("Aprovar agora")
                             : tr("Aprovar")}
                       </Button>
-                    </div>
-                  )}
+                      </>
+                    )}
+                    {candidate.id !== user?.id && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={acting}
+                        onClick={() => reviewDeletion(candidate)}
+                        data-testid={`delete-user-${candidate.id}`}
+                        className="rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50"
+                      >
+                        <Trash2 size={15} className="mr-1.5" />
+                        {tr("Excluir")}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -247,6 +341,109 @@ export default function AdminUsers() {
         onConfirm={reject}
         testId="reject-user-dialog"
       />
+
+      <Dialog
+        open={Boolean(deletingCandidate)}
+        onOpenChange={(open) => !open && closeDeletion()}
+      >
+        <DialogContent
+          className="max-h-[90vh] max-w-lg overflow-y-auto"
+          data-testid="delete-user-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>{tr("Excluir usuário?")}</DialogTitle>
+          </DialogHeader>
+
+          {deletingCandidate && (
+            <div className="rounded-xl border border-[color:var(--border)] p-3">
+              <p className="font-medium">{deletingCandidate.name}</p>
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                {deletingCandidate.email}
+              </p>
+            </div>
+          )}
+
+          {loadingImpact ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm">
+              <Loader2 size={18} className="animate-spin" />
+              {tr("Verificando impacto da exclusão...")}
+            </div>
+          ) : deletionImpact && (
+            <div className="space-y-4">
+              {impactItems.length > 0 ? (
+                <div>
+                  <h3 className="text-sm font-medium">{tr("Itens encontrados")}</h3>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {impactItems.map(([key, count]) => (
+                      <div
+                        key={key}
+                        className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2"
+                      >
+                        <p className="text-xs text-amber-800">
+                          {tr(IMPACT_LABELS[key] || key)}
+                        </p>
+                        <p className="text-lg font-semibold text-amber-900">{count}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                  {tr("Nenhuma pendência financeira encontrada.")}
+                </div>
+              )}
+
+              {!deletionImpact.can_delete && (
+                <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                  <AlertTriangle size={18} className="mt-0.5 flex-shrink-0" />
+                  <p>
+                    {deletionImpact.blockers.includes("self_delete")
+                      ? tr("Você não pode excluir sua própria conta por esta funcionalidade.")
+                      : deletionImpact.blockers.includes("last_active_admin")
+                        ? tr("O último administrador ativo não pode ser excluído.")
+                        : tr("Resolva ou remova os itens acima antes de excluir este usuário.")}
+                  </p>
+                </div>
+              )}
+
+              {deletionImpact.can_delete && (
+                <div className="space-y-2 text-sm" style={{ color: "var(--text-muted)" }}>
+                  <p>{tr("O acesso será encerrado imediatamente em todos os dispositivos.")}</p>
+                  <p className="font-medium text-rose-700">
+                    {tr("Esta ação é permanente e não pode ser desfeita.")}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="flex gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeDeletion}
+              className="rounded-xl"
+            >
+              {tr("Cancelar")}
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                loadingImpact
+                || !deletionImpact?.can_delete
+                || actingId === deletingCandidate?.id
+              }
+              onClick={deleteUser}
+              data-testid="delete-user-confirm"
+              className="rounded-xl bg-[#D9453B] text-white hover:bg-[#B83A30]"
+            >
+              {actingId === deletingCandidate?.id
+                ? tr("Excluindo...")
+                : tr("Excluir usuário")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

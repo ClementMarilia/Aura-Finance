@@ -32,7 +32,7 @@ const nav = [
 
 // 4 primary destinations on the mobile bottom bar; everything else lives in tr("Mais")
 const primaryMobile = nav.slice(0, 4);
-const adminNav = { to: "/admin/usuarios", icon: ShieldCheck, label: tr("Aprovar Usuários") };
+const adminNav = { to: "/admin/usuarios", icon: ShieldCheck, label: tr("Usuários") };
 
 export default function Layout() {
   const [moreOpen, setMoreOpen] = useState(false);
