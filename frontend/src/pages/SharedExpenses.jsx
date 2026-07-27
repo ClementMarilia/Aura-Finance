@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import api, { fmtMoney, fmtDate, formatApiError } from "@/lib/api";
+import api, { fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -142,7 +142,7 @@ export default function SharedExpenses() {
         await api.put(`/shared-expenses/${editing.id}`, body);
         toast.success(tr("Despesa atualizada"));
       } else {
-        await api.post("/shared-expenses", body);
+        await postCreate("/shared-expenses", body);
         toast.success(tr("Despesa compartilhada criada"));
       }
       setOpen(false); setEditing(null); setParticipants([]);

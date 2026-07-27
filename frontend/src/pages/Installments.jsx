@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { fmtMoney, fmtDate, formatApiError } from "@/lib/api";
+import api, { fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,7 +37,7 @@ export default function Installments() {
   const submit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/installments/purchases", {
+      await postCreate("/installments/purchases", {
         ...form,
         total_amount: parseFloat(form.total_amount),
         installments: parseInt(form.installments, 10),

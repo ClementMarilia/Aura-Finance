@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { fmtMoney, fmtDate, formatApiError } from "@/lib/api";
+import api, { fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,7 +43,7 @@ export default function Receivables() {
         await api.put(`/receivables/${editing.id}`, body);
         toast.success(tr("Atualizado"));
       } else {
-        await api.post("/receivables", body);
+        await postCreate("/receivables", body);
         toast.success(tr("Conta a receber criada"));
       }
       setOpen(false); setEditing(null);

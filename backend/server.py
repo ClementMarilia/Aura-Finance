@@ -5,6 +5,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 import os
 import uuid
+import json
 import logging
 import asyncio
 import calendar
@@ -24,6 +25,7 @@ from fastapi.responses import Response
 from fastapi.security import HTTPBearer
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from collections import defaultdict
 from email_service import EmailService
@@ -377,6 +379,89 @@ def now_iso() -> str:
 
 def new_id() -> str:
     return str(uuid.uuid4())
+
+
+def idempotency_fingerprint(payload: dict) -> str:
+    serialized = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+async def run_idempotent_create(
+    operation: str,
+    owner_id: str,
+    idempotency_key: Optional[str],
+    payload: dict,
+    create,
+):
+    """Run a create operation once while keeping legacy clients compatible."""
+    key = (idempotency_key or "").strip()
+    if not key:
+        return await create()
+    if not 16 <= len(key) <= 200:
+        raise HTTPException(400, "Idempotency-Key inválida")
+
+    fingerprint = idempotency_fingerprint(payload)
+    claim = {
+        "operation": operation,
+        "owner_id": owner_id,
+        "key": key,
+        "fingerprint": fingerprint,
+        "status": "processing",
+        "created_at": datetime.now(timezone.utc),
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=1),
+    }
+    try:
+        await db.idempotency_requests.insert_one(claim)
+    except DuplicateKeyError:
+        existing = await db.idempotency_requests.find_one(
+            {"operation": operation, "owner_id": owner_id, "key": key},
+            {"_id": 0},
+        )
+        if not existing:
+            raise HTTPException(409, "Operação já está sendo processada")
+        if existing.get("fingerprint") != fingerprint:
+            raise HTTPException(
+                409,
+                "A mesma Idempotency-Key não pode ser usada com dados diferentes",
+            )
+        for _ in range(50):
+            if existing.get("status") == "completed":
+                return existing.get("response")
+            await asyncio.sleep(0.1)
+            existing = await db.idempotency_requests.find_one(
+                {"operation": operation, "owner_id": owner_id, "key": key},
+                {"_id": 0},
+            )
+            if not existing:
+                break
+        raise HTTPException(409, "Operação já está sendo processada")
+
+    try:
+        response = await create()
+    except Exception:
+        await db.idempotency_requests.delete_one({
+            "operation": operation,
+            "owner_id": owner_id,
+            "key": key,
+            "status": "processing",
+        })
+        raise
+
+    await db.idempotency_requests.update_one(
+        {"operation": operation, "owner_id": owner_id, "key": key},
+        {"$set": {
+            "status": "completed",
+            "response": response,
+            "completed_at": datetime.now(timezone.utc),
+        }},
+    )
+    return response
 
 
 def hash_password(pw: str) -> str:
@@ -2021,12 +2106,22 @@ async def list_categories(user=Depends(get_current_user)):
 
 
 @api.post("/categories")
-async def create_category(payload: CategoryIn, user=Depends(get_current_user)):
-    doc = {"id": new_id(), "user_id": user["id"], **payload.model_dump(),
-           "is_default": False, "created_at": now_iso()}
-    await db.categories.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+async def create_category(
+    payload: CategoryIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def create():
+        doc = {"id": new_id(), "user_id": user["id"], **payload.model_dump(),
+               "is_default": False, "created_at": now_iso()}
+        await db.categories.insert_one(doc)
+        doc.pop("_id", None)
+        return doc
+
+    return await run_idempotent_create(
+        "create_category", user["id"], idempotency_key,
+        payload.model_dump(), create,
+    )
 
 
 @api.put("/categories/{cid}")
@@ -2136,15 +2231,25 @@ async def list_accounts(user=Depends(get_current_user)):
 
 
 @api.post("/accounts")
-async def create_account(payload: AccountIn, user=Depends(get_current_user)):
-    currency = normalize_currency(payload.currency, user.get("currency", "EUR"))
-    meta = await monetary_metadata(currency, user.get("currency", "EUR"))
-    values = payload.model_dump(exclude={"currency"})
-    doc = {"id": new_id(), "user_id": user["id"], **values, **meta,
-           "created_at": now_iso()}
-    await db.accounts.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+async def create_account(
+    payload: AccountIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def create():
+        currency = normalize_currency(payload.currency, user.get("currency", "EUR"))
+        meta = await monetary_metadata(currency, user.get("currency", "EUR"))
+        values = payload.model_dump(exclude={"currency"})
+        doc = {"id": new_id(), "user_id": user["id"], **values, **meta,
+               "created_at": now_iso()}
+        await db.accounts.insert_one(doc)
+        doc.pop("_id", None)
+        return doc
+
+    return await run_idempotent_create(
+        "create_account", user["id"], idempotency_key,
+        payload.model_dump(), create,
+    )
 
 
 @api.put("/accounts/{aid}")
@@ -2350,14 +2455,24 @@ async def transaction_values(payload: TransactionIn, user: dict) -> dict:
 
 
 @api.post("/transactions")
-async def create_transaction(payload: TransactionIn, user=Depends(get_current_user)):
-    await _validate_transfer(payload, user)
-    values = await transaction_values(payload, user)
-    doc = {"id": new_id(), "user_id": user["id"], **values,
-           "created_at": now_iso()}
-    await db.transactions.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+async def create_transaction(
+    payload: TransactionIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def create():
+        await _validate_transfer(payload, user)
+        values = await transaction_values(payload, user)
+        doc = {"id": new_id(), "user_id": user["id"], **values,
+               "created_at": now_iso()}
+        await db.transactions.insert_one(doc)
+        doc.pop("_id", None)
+        return doc
+
+    return await run_idempotent_create(
+        "create_transaction", user["id"], idempotency_key,
+        payload.model_dump(), create,
+    )
 
 
 async def _validate_transfer(payload: TransactionIn, user):
@@ -2587,20 +2702,30 @@ async def list_recurrences(user=Depends(get_current_user)):
 
 
 @api.post("/recurrences")
-async def create_recurrence(payload: RecurrenceIn, user=Depends(get_current_user)):
-    currencies = await account_currency_map(user)
-    base_currency = normalize_currency(user.get("currency"))
-    currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
-    manual_rate = payload.exchange_rate if payload.rate_source != "automatic" else None
-    meta = await monetary_metadata(currency, base_currency, payload.next_run, manual_rate)
-    if payload.rate_source:
-        meta["rate_source"] = payload.rate_source
-    values = payload.model_dump(exclude={"currency", "exchange_rate", "rate_source"})
-    doc = {"id": new_id(), "user_id": user["id"], **values, **meta, "created_at": now_iso()}
-    await db.recurrences.insert_one(doc)
-    doc.pop("_id", None)
-    await materialize_recurrences(user["id"])
-    return doc
+async def create_recurrence(
+    payload: RecurrenceIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def create():
+        currencies = await account_currency_map(user)
+        base_currency = normalize_currency(user.get("currency"))
+        currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
+        manual_rate = payload.exchange_rate if payload.rate_source != "automatic" else None
+        meta = await monetary_metadata(currency, base_currency, payload.next_run, manual_rate)
+        if payload.rate_source:
+            meta["rate_source"] = payload.rate_source
+        values = payload.model_dump(exclude={"currency", "exchange_rate", "rate_source"})
+        doc = {"id": new_id(), "user_id": user["id"], **values, **meta, "created_at": now_iso()}
+        await db.recurrences.insert_one(doc)
+        doc.pop("_id", None)
+        await materialize_recurrences(user["id"])
+        return doc
+
+    return await run_idempotent_create(
+        "create_recurrence", user["id"], idempotency_key,
+        payload.model_dump(), create,
+    )
 
 
 @api.put("/recurrences/{rid}")
@@ -2666,42 +2791,57 @@ async def list_purchases(user=Depends(get_current_user)):
 
 
 @api.post("/installments/purchases")
-async def create_purchase(payload: InstallmentPurchaseIn, user=Depends(get_current_user)):
-    pid = new_id()
-    per = round(payload.total_amount / payload.installments, 2)
-    base_date = datetime.fromisoformat(payload.first_date)
-    currencies = await account_currency_map(user)
-    base_currency = normalize_currency(user.get("currency"))
-    currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
-    meta = await monetary_metadata(currency, base_currency, payload.first_date, payload.exchange_rate)
-    values = payload.model_dump(exclude={"currency", "exchange_rate"})
-    purchase = {
-        "id": pid, "user_id": user["id"], **values, **meta,
-        "created_at": now_iso(),
-    }
-    await db.installment_purchases.insert_one(purchase)
-    inst_docs = []
-    for i in range(payload.installments):
-        m = base_date.month - 1 + i
-        y = base_date.year + m // 12
-        mm = m % 12 + 1
+async def create_purchase(
+    payload: InstallmentPurchaseIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def create():
+        pid = new_id()
+        per = round(payload.total_amount / payload.installments, 2)
+        base_date = datetime.fromisoformat(payload.first_date)
+        currencies = await account_currency_map(user)
+        base_currency = normalize_currency(user.get("currency"))
+        currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
+        meta = await monetary_metadata(currency, base_currency, payload.first_date, payload.exchange_rate)
+        values = payload.model_dump(exclude={"currency", "exchange_rate"})
+        purchase = {
+            "id": pid, "user_id": user["id"], **values, **meta,
+            "created_at": now_iso(),
+        }
+        await db.installment_purchases.insert_one(purchase)
+        inst_docs = []
         try:
-            d = base_date.replace(year=y, month=mm)
-        except ValueError:
-            d = base_date.replace(year=y, month=mm, day=28)
-        inst_docs.append({
-            "id": new_id(), "purchase_id": pid, "user_id": user["id"],
-            "number": i + 1, "total": payload.installments,
-            "amount": per, "due_date": d.date().isoformat(),
-            "status": "pending", "paid_at": None,
-        })
-    if inst_docs:
-        await db.installments.insert_many(inst_docs)
-        for i in inst_docs:
-            i.pop("_id", None)
-    purchase["installments_list"] = inst_docs
-    purchase.pop("_id", None)
-    return purchase
+            for i in range(payload.installments):
+                m = base_date.month - 1 + i
+                y = base_date.year + m // 12
+                mm = m % 12 + 1
+                try:
+                    d = base_date.replace(year=y, month=mm)
+                except ValueError:
+                    d = base_date.replace(year=y, month=mm, day=28)
+                inst_docs.append({
+                    "id": new_id(), "purchase_id": pid, "user_id": user["id"],
+                    "number": i + 1, "total": payload.installments,
+                    "amount": per, "due_date": d.date().isoformat(),
+                    "status": "pending", "paid_at": None,
+                })
+            if inst_docs:
+                await db.installments.insert_many(inst_docs)
+                for item in inst_docs:
+                    item.pop("_id", None)
+        except Exception:
+            await db.installments.delete_many({"purchase_id": pid})
+            await db.installment_purchases.delete_one({"id": pid, "user_id": user["id"]})
+            raise
+        purchase["installments_list"] = inst_docs
+        purchase.pop("_id", None)
+        return purchase
+
+    return await run_idempotent_create(
+        "create_installment_purchase", user["id"], idempotency_key,
+        payload.model_dump(), create,
+    )
 
 
 class InstallmentPurchaseUpdateIn(BaseModel):
@@ -2752,17 +2892,27 @@ async def list_receivables(user=Depends(get_current_user)):
 
 
 @api.post("/receivables")
-async def create_receivable(payload: ReceivableIn, user=Depends(get_current_user)):
-    currencies = await account_currency_map(user)
-    base_currency = normalize_currency(user.get("currency"))
-    currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
-    meta = await monetary_metadata(currency, base_currency, payload.due_date, payload.exchange_rate)
-    values = payload.model_dump(exclude={"currency", "exchange_rate"})
-    doc = {"id": new_id(), "user_id": user["id"], **values, **meta,
-           "status": "pending", "received_at": None, "created_at": now_iso()}
-    await db.receivables.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+async def create_receivable(
+    payload: ReceivableIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def create():
+        currencies = await account_currency_map(user)
+        base_currency = normalize_currency(user.get("currency"))
+        currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
+        meta = await monetary_metadata(currency, base_currency, payload.due_date, payload.exchange_rate)
+        values = payload.model_dump(exclude={"currency", "exchange_rate"})
+        doc = {"id": new_id(), "user_id": user["id"], **values, **meta,
+               "status": "pending", "received_at": None, "created_at": now_iso()}
+        await db.receivables.insert_one(doc)
+        doc.pop("_id", None)
+        return doc
+
+    return await run_idempotent_create(
+        "create_receivable", user["id"], idempotency_key,
+        payload.model_dump(), create,
+    )
 
 
 @api.put("/receivables/{rid}")
@@ -2849,32 +2999,45 @@ async def list_groups(user=Depends(get_current_user)):
 
 
 @api.post("/groups")
-async def create_group(payload: GroupIn, user=Depends(get_current_user)):
-    member_ids = [user["id"]]
-    for em in payload.member_emails:
-        u = await db.users.find_one({
-            "email": em.lower(),
-            "$or": [
-                {"status": "active"},
-                {"status": {"$exists": False}},
-            ],
-        })
-        if u and u["id"] not in member_ids:
-            member_ids.append(u["id"])
-    doc = {
-        "id": new_id(), "name": payload.name, "description": payload.description,
-        "creator_id": user["id"], "member_ids": member_ids, "created_at": now_iso(),
-    }
-    await db.groups.insert_one(doc)
-    doc.pop("_id", None)
-    for mid in member_ids:
-        if mid != user["id"]:
-            await push_notification(
-                mid, "group_added", "Adicionado a um grupo",
-                f"{user['name']} adicionou você ao grupo '{payload.name}'.",
-                "/grupos", {"group_id": doc["id"]},
-            )
-    return doc
+async def create_group(
+    payload: GroupIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def create():
+        member_ids = [user["id"]]
+        for em in payload.member_emails:
+            u = await db.users.find_one({
+                "email": em.lower(),
+                "$or": [
+                    {"status": "active"},
+                    {"status": {"$exists": False}},
+                ],
+            })
+            if u and u["id"] not in member_ids:
+                member_ids.append(u["id"])
+        doc = {
+            "id": new_id(), "name": payload.name, "description": payload.description,
+            "creator_id": user["id"], "member_ids": member_ids, "created_at": now_iso(),
+        }
+        await db.groups.insert_one(doc)
+        doc.pop("_id", None)
+        for mid in member_ids:
+            if mid != user["id"]:
+                try:
+                    await push_notification(
+                        mid, "group_added", "Adicionado a um grupo",
+                        f"{user['name']} adicionou você ao grupo '{payload.name}'.",
+                        "/grupos", {"group_id": doc["id"]},
+                    )
+                except Exception as exc:
+                    logger.warning("Group notification failed for %s: %s", mid, exc)
+        return doc
+
+    return await run_idempotent_create(
+        "create_group", user["id"], idempotency_key,
+        payload.model_dump(), create,
+    )
 
 
 @api.post("/groups/{gid}/members")
@@ -3156,45 +3319,60 @@ async def push_notification(user_id: str, ntype: str, title: str, message: str,
 
 
 @api.post("/shared-expenses")
-async def create_shared(payload: SharedExpenseIn, user=Depends(get_current_user)):
-    participants_in = [p.model_dump() for p in payload.participants]
-    if not participants_in:
-        raise HTTPException(400, "Adicione ao menos um participante")
-    participant_ids = [p["user_id"] for p in participants_in]
-    if user["id"] not in participant_ids and payload.payer_id != user["id"]:
-        raise HTTPException(403, "Você precisa ser participante ou pagador")
-    splits = compute_splits(payload.amount, payload.split_type, participants_in)
-    currency = normalize_currency(payload.currency, user.get("currency", "EUR"))
-    meta = await monetary_metadata(currency, user.get("currency", "EUR"), payload.date, payload.exchange_rate)
-    doc = {
-        "id": new_id(), "creator_id": user["id"],
-        "title": payload.title, "amount": payload.amount, "date": payload.date,
-        "category": payload.category, "payer_id": payload.payer_id,
-        "split_type": payload.split_type, "group_id": payload.group_id,
-        "notes": payload.notes,
-        **meta,
-        "participants": splits, "participant_ids": participant_ids,
-        "status": "open", "created_at": now_iso(),
-    }
-    await db.shared_expenses.insert_one(doc)
-    doc.pop("_id", None)
+async def create_shared(
+    payload: SharedExpenseIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def create():
+        participants_in = [p.model_dump() for p in payload.participants]
+        if not participants_in:
+            raise HTTPException(400, "Adicione ao menos um participante")
+        participant_ids = [p["user_id"] for p in participants_in]
+        if user["id"] not in participant_ids and payload.payer_id != user["id"]:
+            raise HTTPException(403, "Você precisa ser participante ou pagador")
+        splits = compute_splits(payload.amount, payload.split_type, participants_in)
+        currency = normalize_currency(payload.currency, user.get("currency", "EUR"))
+        meta = await monetary_metadata(currency, user.get("currency", "EUR"), payload.date, payload.exchange_rate)
+        doc = {
+            "id": new_id(), "creator_id": user["id"],
+            "title": payload.title, "amount": payload.amount, "date": payload.date,
+            "category": payload.category, "payer_id": payload.payer_id,
+            "split_type": payload.split_type, "group_id": payload.group_id,
+            "notes": payload.notes,
+            **meta,
+            "participants": splits, "participant_ids": participant_ids,
+            "status": "open", "created_at": now_iso(),
+        }
+        await db.shared_expenses.insert_one(doc)
+        doc.pop("_id", None)
 
-    # Notify all participants except the creator
-    payer = await db.users.find_one({"id": payload.payer_id}, {"_id": 0})
-    payer_name = payer["name"] if payer else "alguém"
-    for p in splits:
-        if p["user_id"] == user["id"]:
-            continue
-        is_payer = p["user_id"] == payload.payer_id
-        msg = (f"{user['name']} adicionou você na despesa '{payload.title}' "
-               f"({fmt_eur(payload.amount, user.get('currency', 'EUR'))})"
-               + ("" if is_payer else f". Você deve {fmt_eur(p['owed'], user.get('currency', 'EUR'))} para {payer_name}."))
-        await push_notification(
-            p["user_id"], "shared_expense_added",
-            "Nova despesa compartilhada", msg,
-            "/despesas-compartilhadas", {"expense_id": doc["id"]},
-        )
-    return doc
+        payer = await db.users.find_one({"id": payload.payer_id}, {"_id": 0})
+        payer_name = payer["name"] if payer else "alguém"
+        for participant in splits:
+            if participant["user_id"] == user["id"]:
+                continue
+            is_payer = participant["user_id"] == payload.payer_id
+            msg = (f"{user['name']} adicionou você na despesa '{payload.title}' "
+                   f"({fmt_eur(payload.amount, user.get('currency', 'EUR'))})"
+                   + ("" if is_payer else f". Você deve {fmt_eur(participant['owed'], user.get('currency', 'EUR'))} para {payer_name}."))
+            try:
+                await push_notification(
+                    participant["user_id"], "shared_expense_added",
+                    "Nova despesa compartilhada", msg,
+                    "/despesas-compartilhadas", {"expense_id": doc["id"]},
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Shared-expense notification failed for %s: %s",
+                    participant["user_id"], exc,
+                )
+        return doc
+
+    return await run_idempotent_create(
+        "create_shared_expense", user["id"], idempotency_key,
+        payload.model_dump(), create,
+    )
 
 
 def fmt_eur(v: float, currency: str = "EUR") -> str:
@@ -4240,12 +4418,22 @@ async def list_goals(user=Depends(get_current_user)):
 
 
 @api.post("/goals")
-async def create_goal(payload: GoalIn, user=Depends(get_current_user)):
-    doc = {"id": new_id(), "user_id": user["id"], **payload.model_dump(),
-           "created_at": now_iso()}
-    await db.goals.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+async def create_goal(
+    payload: GoalIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def create():
+        doc = {"id": new_id(), "user_id": user["id"], **payload.model_dump(),
+               "created_at": now_iso()}
+        await db.goals.insert_one(doc)
+        doc.pop("_id", None)
+        return doc
+
+    return await run_idempotent_create(
+        "create_goal", user["id"], idempotency_key,
+        payload.model_dump(), create,
+    )
 
 
 @api.put("/goals/{gid}")
@@ -4357,6 +4545,22 @@ async def startup():
         logger.error(f"Storage init failed: {e}")
     await db.users.create_index("email", unique=True)
     await db.users.create_index([("status", 1), ("created_at", -1)])
+    # Keep legacy UUID-backed public IDs fast and fully compatible. MongoDB's
+    # native `_id` remains an ObjectId; no existing relationship is rewritten.
+    for collection_name in (
+        "users", "categories", "accounts", "transactions", "recurrences",
+        "installment_purchases", "installments", "receivables", "groups",
+        "shared_expenses", "notifications", "goals",
+    ):
+        await db[collection_name].create_index("id")
+    await db.idempotency_requests.create_index(
+        [("operation", 1), ("owner_id", 1), ("key", 1)],
+        unique=True,
+    )
+    await db.idempotency_requests.create_index(
+        "expires_at",
+        expireAfterSeconds=0,
+    )
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
     await db.shared_expenses.create_index("participant_ids")
     await db.shared_expenses.create_index([("participant_ids", 1), ("status", 1), ("date", -1)])

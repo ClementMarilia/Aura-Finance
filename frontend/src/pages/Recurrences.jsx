@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { fmtMoney, fmtDate, formatApiError } from "@/lib/api";
+import api, { fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,7 +68,7 @@ export default function Recurrences() {
     };
     try {
       if (editing) { await api.put(`/recurrences/${editing.id}`, payload); toast.success(tr("Recorrência atualizada")); }
-      else { await api.post("/recurrences", payload); toast.success(tr("Recorrência criada")); }
+      else { await postCreate("/recurrences", payload); toast.success(tr("Recorrência criada")); }
       setOpen(false);
       load();
     } catch (err) { toast.error(formatApiError(err)); }

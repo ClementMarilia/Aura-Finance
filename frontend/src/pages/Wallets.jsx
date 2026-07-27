@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,7 +139,7 @@ export default function Wallets() {
       toast.error(tr("Informe um valor recebido válido")); return;
     }
     try {
-      await api.post("/transactions", {
+      await postCreate("/transactions", {
         type: "transfer",
         date: transfer.date,
         amount,
@@ -170,7 +170,7 @@ export default function Wallets() {
     const payload = { name: form.name, type: form.type, initial_balance: parseFloat(form.initial_balance) || 0, currency: form.currency };
     try {
       if (editing) { await api.put(`/accounts/${editing.id}`, payload); toast.success(tr("Carteira atualizada")); }
-      else { await api.post("/accounts", payload); toast.success(tr("Carteira criada")); }
+      else { await postCreate("/accounts", payload); toast.success(tr("Carteira criada")); }
       setOpen(false); load();
     } catch (err) { toast.error(formatApiError(err)); }
   };

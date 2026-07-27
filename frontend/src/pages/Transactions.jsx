@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -239,7 +239,7 @@ export default function Transactions() {
     try {
       // Recurring payment created straight from Lançamentos
       if (!editing && form.repeat && form.repeat !== "none" && form.type !== "transfer") {
-        await api.post("/recurrences", {
+        await postCreate("/recurrences", {
           type: form.type,
           amount: parseFloat(form.amount) || 0,
           category_id: form.category_id || null,
@@ -273,7 +273,7 @@ export default function Transactions() {
         await api.put(`/transactions/${editing.id}`, body);
         toast.success(tr("Lançamento atualizado"));
       } else {
-        await api.post("/transactions", body);
+        await postCreate("/transactions", body);
         toast.success(tr("Lançamento criado"));
       }
       setOpen(false); setEditing(null); setForm(defaultForm()); load();
