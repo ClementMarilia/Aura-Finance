@@ -79,7 +79,7 @@ export default function UserMenu({ compact = false, pendingUserCount = 0 }) {
         </DropdownMenuItem>
         {user.is_admin && (
           <DropdownMenuItem onClick={() => navigate("/admin/usuarios")} data-testid="user-menu-admin-users">
-            <ShieldCheck size={16} className="mr-2" /> {tr("Aprovar usuários")}
+            <ShieldCheck size={16} className="mr-2" /> {tr("Usuários")}
             {pendingUserCount > 0 && (
               <span
                 data-testid="user-menu-admin-pending-count"

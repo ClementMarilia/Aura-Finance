@@ -8,13 +8,15 @@ import uuid
 import logging
 import asyncio
 import calendar
+import hashlib
+import secrets
 import requests
 import bcrypt
 import jwt
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Literal
 from fastapi import (
-    FastAPI, APIRouter, HTTPException, Depends, Request, WebSocket,
+    FastAPI, APIRouter, HTTPException, Depends, Request, WebSocket, BackgroundTasks,
     WebSocketDisconnect, UploadFile, File, Header, Query,
 )
 from fastapi.responses import Response
@@ -23,6 +25,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from collections import defaultdict
+from email_service import EmailService
 
 # ---------- Config ----------
 JWT_SECRET = os.environ["JWT_SECRET"]
@@ -30,6 +33,7 @@ JWT_ALGORITHM = "HS256"
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
+email_service = EmailService(db)
 
 DEFAULT_CORS_ORIGINS = (
     "https://www.crelithtech.com,"
@@ -37,6 +41,7 @@ DEFAULT_CORS_ORIGINS = (
     "https://aura-finance-inky.vercel.app,"
     "http://localhost:3000"
 )
+SUPER_ADMIN_EMAIL = "clementmarilia@gmail.com"
 
 
 def configured_cors_origins() -> List[str]:
@@ -58,6 +63,10 @@ def configured_admin_emails() -> set[str]:
         for email in raw_emails.split(",")
         if email.strip()
     }
+
+
+def configured_super_admin_email() -> str:
+    return SUPER_ADMIN_EMAIL
 
 
 app = FastAPI(title="Controle Financeiro")
@@ -295,6 +304,14 @@ class ConnectionManager:
             except Exception:
                 self.active[user_id].discard(ws)
 
+    async def disconnect_user(self, user_id: str, code: int = 1008):
+        sockets = list(self.active.pop(user_id, set()))
+        for ws in sockets:
+            try:
+                await ws.close(code=code)
+            except Exception:
+                pass
+
 
 ws_manager = ConnectionManager()
 
@@ -319,10 +336,11 @@ def verify_password(pw: str, hashed: str) -> bool:
         return False
 
 
-def create_token(user_id: str, email: str) -> str:
+def create_token(user_id: str, email: str, session_version: int = 0) -> str:
     payload = {
         "sub": user_id,
         "email": email,
+        "ver": session_version,
         "exp": datetime.now(timezone.utc) + timedelta(days=7),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -333,11 +351,30 @@ def account_status(user: dict) -> str:
     return user.get("status") or "active"
 
 
+def user_role(user: dict) -> str:
+    """Resolve persisted RBAC roles while keeping legacy administrators active."""
+    email = user.get("email", "").strip().lower()
+    if email == configured_super_admin_email():
+        return "SUPER_ADMIN"
+    stored_role = str(user.get("role") or "").upper()
+    if stored_role in {"USER", "ADMIN"}:
+        return stored_role
+    if email in configured_admin_emails():
+        return "ADMIN"
+    return "USER"
+
+
 def is_admin_user(user: dict) -> bool:
-    return user.get("email", "").lower() in configured_admin_emails()
+    return user_role(user) in {"ADMIN", "SUPER_ADMIN"}
+
+
+def is_super_admin_user(user: dict) -> bool:
+    return user_role(user) == "SUPER_ADMIN"
 
 
 def ensure_active_user(user: dict) -> dict:
+    if user.get("deletion_in_progress"):
+        raise HTTPException(status_code=403, detail="Conta em processo de exclusão")
     status = account_status(user)
     if status == "pending":
         raise HTTPException(
@@ -368,6 +405,8 @@ async def get_current_user(request: Request) -> dict:
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
+    if int(payload.get("ver", 0)) != int(user.get("session_version", 0)):
+        raise HTTPException(status_code=401, detail="Sessão invalidada")
     return ensure_active_user(user)
 
 
@@ -376,6 +415,15 @@ async def require_admin(user=Depends(get_current_user)) -> dict:
         raise HTTPException(
             status_code=403,
             detail="Acesso restrito à administradora",
+        )
+    return user
+
+
+async def require_super_admin(user=Depends(get_current_user)) -> dict:
+    if not is_super_admin_user(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente a super administradora pode alterar papéis administrativos",
         )
     return user
 
@@ -422,9 +470,31 @@ class AdminUserOut(BaseModel):
     id: str
     name: str
     email: str
-    status: Literal["pending", "active", "rejected"]
+    status: Literal["pending", "active", "inactive", "rejected"]
+    role: Literal["USER", "ADMIN", "SUPER_ADMIN"] = "USER"
+    is_super_admin: bool = False
     created_at: str
     reviewed_at: Optional[str] = None
+
+
+class AdminUserDeletionImpactOut(BaseModel):
+    user: AdminUserOut
+    can_delete: bool
+    blockers: List[str]
+    impact: dict[str, int]
+    sessions_will_be_terminated: bool = True
+
+
+class AdminRoleUpdateIn(BaseModel):
+    role: Literal["USER", "ADMIN"]
+
+
+class AdminStatusUpdateIn(BaseModel):
+    status: Literal["active", "inactive"]
+
+
+class AdminIdentityUpdateIn(BaseModel):
+    name: str
 
 
 class UpdateProfileIn(BaseModel):
@@ -436,6 +506,50 @@ class UpdateProfileIn(BaseModel):
 class ChangePasswordIn(BaseModel):
     current_password: str
     new_password: str
+
+
+class PasswordResetRequestIn(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetIn(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class PasswordResetTokenIn(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
+class TransactionalEmailSettingsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    welcome_enabled: bool = True
+    password_reset_enabled: bool = True
+    from_name: str = Field(min_length=1, max_length=80)
+    from_email: EmailStr
+    reply_to: Optional[EmailStr] = None
+    reset_url: str = Field(min_length=10, max_length=500)
+    reset_expires_minutes: int = Field(ge=10, le=120)
+
+
+class TransactionalEmailTestIn(BaseModel):
+    recipient: EmailStr
+    language: Literal["pt", "it", "en", "es"] = "pt"
+
+
+class AccountDeletionIn(BaseModel):
+    password: str
+    confirmation: str
+
+
+class AccountDeletionImpactOut(BaseModel):
+    can_delete: bool
+    blockers: List[str]
+    impact: dict[str, int]
+    shared_history_will_be_anonymized: bool = True
+    sessions_will_be_terminated: bool = True
 
 
 class CategoryIn(BaseModel):
@@ -570,26 +684,52 @@ def user_color(name: str) -> str:
 
 
 def public_user(u: dict) -> dict:
+    role = user_role(u)
     return {
         "id": u["id"], "name": u["name"], "email": u["email"],
         "currency": u.get("currency", "EUR"),
         "language": u.get("language", "pt"),
         "avatar_color": u.get("avatar_color", "#1E3F33"),
         "created_at": u.get("created_at", ""),
-        "security_question": u.get("security_question") or None,
-        "has_security_question": bool(u.get("security_answer_hash")),
         "status": account_status(u),
-        "is_admin": is_admin_user(u),
+        "role": role,
+        "is_admin": role in {"ADMIN", "SUPER_ADMIN"},
+        "is_super_admin": role == "SUPER_ADMIN",
+    }
+
+
+def deleted_user_summary(user_id: str, language: str = "pt") -> dict:
+    deleted_names = {
+        "pt": "Usuário excluído",
+        "it": "Utente eliminato",
+        "en": "Deleted user",
+        "es": "Usuario eliminado",
+    }
+    return {
+        "id": user_id,
+        "name": deleted_names.get(language, deleted_names["pt"]),
+        "email": "",
+        "currency": "EUR",
+        "language": "pt",
+        "avatar_color": "#6B7068",
+        "created_at": "",
+        "status": "inactive",
+        "role": "USER",
+        "is_admin": False,
+        "is_super_admin": False,
     }
 
 
 def admin_user_summary(u: dict) -> dict:
     """Return identity and approval metadata only, never financial data."""
+    role = user_role(u)
     return {
         "id": u["id"],
         "name": u["name"],
         "email": u["email"],
         "status": account_status(u),
+        "role": role,
+        "is_super_admin": role == "SUPER_ADMIN",
         "created_at": u.get("created_at", ""),
         "reviewed_at": u.get("reviewed_at"),
     }
@@ -597,7 +737,10 @@ def admin_user_summary(u: dict) -> dict:
 
 # ---------- Auth ----------
 @api.post("/auth/register")
-async def register(payload: RegisterIn):
+async def register(
+    payload: RegisterIn,
+    background_tasks: BackgroundTasks,
+):
     email = payload.email.lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
@@ -608,12 +751,14 @@ async def register(payload: RegisterIn):
         "password_hash": hash_password(payload.password),
         "currency": currency, "avatar_color": user_color(payload.name),
         "language": payload.language,
+        "role": "USER",
         "status": "pending",
         "privacy_acknowledged_at": now_iso(),
         "privacy_notice_version": PRIVACY_NOTICE_VERSION,
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
+    background_tasks.add_task(email_service.send_welcome_email, user)
     return {
         "status": "pending",
         "email": email,
@@ -628,7 +773,7 @@ async def login(payload: LoginIn):
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
     ensure_active_user(user)
-    token = create_token(user["id"], email)
+    token = create_token(user["id"], email, int(user.get("session_version", 0)))
     return {"token": token, "user": public_user(user)}
 
 
@@ -700,57 +845,227 @@ async def change_password(payload: ChangePasswordIn, user=Depends(get_current_us
         raise HTTPException(status_code=400, detail="Senha atual incorreta")
     await db.users.update_one(
         {"id": user["id"]},
-        {"$set": {"password_hash": hash_password(payload.new_password)}},
+        {
+            "$set": {"password_hash": hash_password(payload.new_password)},
+            "$inc": {"session_version": 1},
+        },
     )
+    await db.password_reset_tokens.update_many(
+        {"user_id": user["id"], "used_at": None},
+        {"$set": {"used_at": now_iso(), "invalidated_reason": "password_changed"}},
+    )
+    await ws_manager.disconnect_user(user["id"], code=4003)
     return {"ok": True}
 
 
-# ---------- Password recovery via security question (no external integration) ----------
-class SecurityQuestionIn(BaseModel):
-    question: str
-    answer: str
+# ---------- Password recovery via transactional email ----------
+PASSWORD_RESET_GENERIC_MESSAGE = (
+    "Se o e-mail estiver cadastrado, enviaremos um link para redefinir a senha."
+)
+PASSWORD_RESET_RATE_LIMIT = 3
+PASSWORD_RESET_RATE_WINDOW_MINUTES = 60
+PASSWORD_RESET_MIN_RESPONSE_SECONDS = 0.25
 
 
-class ResetPasswordSecurityIn(BaseModel):
-    email: EmailStr
-    answer: str
-    new_password: str
+def hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
-@api.post("/auth/security-question")
-async def set_security_question(payload: SecurityQuestionIn, user=Depends(get_current_user)):
-    q = payload.question.strip()
-    a = payload.answer.strip().lower()
-    if not q or not a:
-        raise HTTPException(400, "Pergunta e resposta são obrigatórias")
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$set": {"security_question": q, "security_answer_hash": hash_password(a)}},
+def request_fingerprint(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    host = forwarded.split(",")[0].strip() if forwarded else ""
+    if not host and request.client:
+        host = request.client.host
+    return hashlib.sha256(f"{JWT_SECRET}:{host or 'unknown'}".encode()).hexdigest()
+
+
+async def password_reset_rate_limited(email: str, fingerprint: str) -> bool:
+    cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(minutes=PASSWORD_RESET_RATE_WINDOW_MINUTES)
     )
+    query = {
+        "created_at": {"$gte": cutoff},
+        "$or": [
+            {"email_hash": hashlib.sha256(email.encode()).hexdigest()},
+            {"request_fingerprint": fingerprint},
+        ],
+    }
+    return (
+        await db.password_reset_requests.count_documents(query)
+        >= PASSWORD_RESET_RATE_LIMIT
+    )
+
+
+@api.post("/auth/password-reset/request")
+async def request_password_reset(
+    payload: PasswordResetRequestIn,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    started_at = asyncio.get_running_loop().time()
+    email = payload.email.lower()
+    fingerprint = request_fingerprint(request)
+    email_hash = hashlib.sha256(email.encode()).hexdigest()
+    if await password_reset_rate_limited(email, fingerprint):
+        logger.warning("Password reset rate limit reached: email_hash=%s", email_hash)
+        await asyncio.sleep(max(
+            0,
+            PASSWORD_RESET_MIN_RESPONSE_SECONDS
+            - (asyncio.get_running_loop().time() - started_at),
+        ))
+        return {"ok": True, "message": PASSWORD_RESET_GENERIC_MESSAGE}
+
+    user = await db.users.find_one({"email": email})
+    await db.password_reset_requests.insert_one({
+        "id": new_id(),
+        "user_id": user.get("id") if user else None,
+        "email_hash": email_hash,
+        "request_fingerprint": fingerprint,
+        "created_at": datetime.now(timezone.utc),
+    })
+    if user:
+        issued_at = datetime.now(timezone.utc)
+        settings = await email_service.public_settings()
+        expires_at = issued_at + timedelta(
+            minutes=settings["reset_expires_minutes"]
+        )
+        raw_token = secrets.token_urlsafe(48)
+        await db.password_reset_tokens.update_many(
+            {"user_id": user["id"], "used_at": None},
+            {
+                "$set": {
+                    "used_at": issued_at.isoformat(),
+                    "invalidated_reason": "superseded",
+                }
+            },
+        )
+        await db.password_reset_tokens.insert_one({
+            "id": new_id(),
+            "user_id": user["id"],
+            "token_hash": hash_reset_token(raw_token),
+            "expires_at": expires_at,
+            "used_at": None,
+            "created_at": issued_at.isoformat(),
+        })
+        background_tasks.add_task(
+            email_service.send_password_reset_email,
+            user,
+            raw_token,
+        )
+    await asyncio.sleep(max(
+        0,
+        PASSWORD_RESET_MIN_RESPONSE_SECONDS
+        - (asyncio.get_running_loop().time() - started_at),
+    ))
+    return {"ok": True, "message": PASSWORD_RESET_GENERIC_MESSAGE}
+
+
+async def valid_password_reset_token(token: str) -> Optional[dict]:
+    token_doc = await db.password_reset_tokens.find_one({
+        "token_hash": hash_reset_token(token),
+        "used_at": None,
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+    })
+    if not token_doc:
+        return None
+    user = await db.users.find_one({"id": token_doc["user_id"]})
+    if not user:
+        return None
+    return token_doc
+
+
+@api.post("/auth/password-reset/validate")
+async def validate_password_reset_token(payload: PasswordResetTokenIn):
+    if not await valid_password_reset_token(payload.token):
+        raise HTTPException(400, "Link inválido ou expirado")
+    return {"valid": True}
+
+
+@api.post("/auth/password-reset/confirm")
+async def confirm_password_reset(payload: PasswordResetIn):
+    token_hash = hash_reset_token(payload.token)
+    token_doc = await valid_password_reset_token(payload.token)
+    if not token_doc:
+        raise HTTPException(400, "Link inválido ou expirado")
+
+    used_at = now_iso()
+    claimed = await db.password_reset_tokens.update_one(
+        {
+            "id": token_doc["id"],
+            "token_hash": token_hash,
+            "used_at": None,
+            "expires_at": {"$gt": datetime.now(timezone.utc)},
+        },
+        {"$set": {"used_at": used_at, "invalidated_reason": "used"}},
+    )
+    if claimed.modified_count != 1:
+        raise HTTPException(400, "Link inválido ou expirado")
+
+    await db.users.update_one(
+        {"id": token_doc["user_id"]},
+        {
+            "$set": {
+                "password_hash": hash_password(payload.new_password),
+                "password_updated_at": used_at,
+            },
+            "$inc": {"session_version": 1},
+        },
+    )
+    await db.password_reset_tokens.update_many(
+        {"user_id": token_doc["user_id"], "used_at": None},
+        {"$set": {"used_at": used_at, "invalidated_reason": "password_reset"}},
+    )
+    await ws_manager.disconnect_user(token_doc["user_id"], code=4003)
     return {"ok": True}
 
 
-@api.get("/auth/security-question")
-async def get_security_question(email: str):
-    u = await db.users.find_one({"email": email.lower()}, {"_id": 0})
-    if not u or not u.get("security_answer_hash"):
-        return {"question": None}
-    return {"question": u.get("security_question")}
+# ---------- Transactional email administration (non-secret settings only) ----------
+@api.get("/admin/email-settings")
+async def get_transactional_email_settings(
+    _super_admin=Depends(require_super_admin),
+):
+    return await email_service.public_settings()
 
 
-@api.post("/auth/reset-password-security")
-async def reset_password_security(payload: ResetPasswordSecurityIn):
-    u = await db.users.find_one({"email": payload.email.lower()})
-    if not u or not u.get("security_answer_hash"):
-        raise HTTPException(400, "Recuperação por pergunta não disponível para esta conta")
-    if not verify_password(payload.answer.strip().lower(), u["security_answer_hash"]):
-        raise HTTPException(400, "Resposta de segurança incorreta")
-    if len(payload.new_password) < 4:
-        raise HTTPException(400, "A senha deve ter ao menos 4 caracteres")
-    await db.users.update_one(
-        {"id": u["id"]},
-        {"$set": {"password_hash": hash_password(payload.new_password)}},
+@api.put("/admin/email-settings")
+async def update_transactional_email_settings(
+    payload: TransactionalEmailSettingsIn,
+    super_admin=Depends(require_super_admin),
+):
+    if not payload.reset_url.lower().startswith("https://"):
+        raise HTTPException(400, "O link de recuperação deve usar HTTPS")
+    if "\r" in payload.from_name or "\n" in payload.from_name:
+        raise HTTPException(400, "Nome do remetente inválido")
+    settings = payload.model_dump(mode="json")
+    if not settings.get("reply_to"):
+        settings["reply_to"] = ""
+    settings.update({
+        "id": "transactional_email",
+        "updated_at": now_iso(),
+        "updated_by": super_admin["id"],
+    })
+    await db.app_settings.update_one(
+        {"id": "transactional_email"},
+        {"$set": settings},
+        upsert=True,
     )
+    return await email_service.public_settings()
+
+
+@api.post("/admin/email-settings/test")
+async def send_transactional_email_test(
+    payload: TransactionalEmailTestIn,
+    _super_admin=Depends(require_super_admin),
+):
+    if not email_service.is_configured():
+        raise HTTPException(503, "A credencial do Resend não está configurada no servidor")
+    sent = await email_service.send_test_email(
+        str(payload.recipient).lower(),
+        payload.language,
+    )
+    if not sent:
+        raise HTTPException(502, "O provedor não aceitou o e-mail de teste")
     return {"ok": True}
 
 
@@ -759,6 +1074,7 @@ async def search_users(email: str, user=Depends(get_current_user)):
     u = await db.users.find_one(
         {
             "email": email.lower(),
+            "deletion_in_progress": {"$ne": True},
             "$or": [
                 {"status": "active"},
                 {"status": {"$exists": False}},
@@ -772,9 +1088,143 @@ async def search_users(email: str, user=Depends(get_current_user)):
 
 
 # ---------- User approval administration ----------
+FINANCIAL_DELETION_BLOCKERS = (
+    "income",
+    "expenses",
+    "transfers",
+    "wallets",
+    "goals",
+    "shared_expenses",
+    "pending_settlements",
+    "recurrences",
+    "installment_purchases",
+    "receivables",
+    "groups_created",
+)
+
+
+async def user_financial_impact(user_id: str) -> dict[str, int]:
+    shared_query = {
+        "$or": [
+            {"participant_ids": user_id},
+            {"creator_id": user_id},
+            {"payer_id": user_id},
+        ],
+    }
+    (
+        income,
+        expenses,
+        transfers,
+        wallets,
+        goals,
+        shared_expenses,
+        recurrences,
+        installment_purchases,
+        receivables,
+        groups_created,
+        shared_items,
+    ) = await asyncio.gather(
+        db.transactions.count_documents({"user_id": user_id, "type": "income"}),
+        db.transactions.count_documents({"user_id": user_id, "type": "expense"}),
+        db.transactions.count_documents({"user_id": user_id, "type": "transfer"}),
+        db.accounts.count_documents({
+            "user_id": user_id,
+            "$or": [
+                {"initial_balance": {"$gt": 0}},
+                {"initial_balance": {"$lt": 0}},
+            ],
+        }),
+        db.goals.count_documents({"user_id": user_id}),
+        db.shared_expenses.count_documents(shared_query),
+        db.recurrences.count_documents({"user_id": user_id}),
+        db.installment_purchases.count_documents({"user_id": user_id}),
+        db.receivables.count_documents({"user_id": user_id}),
+        db.groups.count_documents({"creator_id": user_id}),
+        db.shared_expenses.find(shared_query, {"_id": 0}).to_list(5000),
+    )
+
+    pending_settlements = 0
+    for expense in shared_items:
+        payer_id = expense.get("payer_id")
+        has_pending_for_user = any(
+            not participant.get("paid_back")
+            and participant.get("user_id") != payer_id
+            and user_id in (participant.get("user_id"), payer_id)
+            for participant in expense.get("participants", [])
+        )
+        if has_pending_for_user:
+            pending_settlements += 1
+
+    return {
+        "income": income,
+        "expenses": expenses,
+        "transfers": transfers,
+        "wallets": wallets,
+        "goals": goals,
+        "shared_expenses": shared_expenses,
+        "pending_settlements": pending_settlements,
+        "recurrences": recurrences,
+        "installment_purchases": installment_purchases,
+        "receivables": receivables,
+        "groups_created": groups_created,
+    }
+
+
+async def build_user_deletion_impact(
+    candidate: dict,
+    admin: dict,
+) -> dict:
+    blockers = []
+    if candidate["id"] == admin["id"]:
+        blockers.append("self_delete")
+    if is_super_admin_user(candidate):
+        blockers.append("super_admin_protected")
+    if not can_manage_candidate(admin, candidate):
+        blockers.append("admin_management_forbidden")
+
+    if is_admin_user(candidate) and account_status(candidate) == "active":
+        active_admins = await db.users.count_documents({
+            "$and": [
+                {
+                    "$or": [
+                        {"role": {"$in": ["ADMIN", "SUPER_ADMIN"]}},
+                        {
+                            "email": {
+                                "$in": list(
+                                    configured_admin_emails()
+                                    | {configured_super_admin_email()}
+                                ),
+                            },
+                        },
+                    ],
+                },
+                {
+                    "$or": [
+                        {"status": "active"},
+                        {"status": {"$exists": False}},
+                    ],
+                },
+            ],
+        })
+        if active_admins <= 1:
+            blockers.append("last_active_admin")
+
+    impact = await user_financial_impact(candidate["id"])
+    blockers.extend(
+        key for key in FINANCIAL_DELETION_BLOCKERS if impact.get(key, 0) > 0
+    )
+    return {
+        "user": admin_user_summary(candidate),
+        "can_delete": not blockers,
+        "blockers": blockers,
+        "impact": impact,
+        "sessions_will_be_terminated": True,
+    }
+
+
 @api.get("/admin/users", response_model=List[AdminUserOut])
 async def list_admin_users(
-    status: Literal["pending", "active", "rejected", "all"] = "pending",
+    status: Literal["pending", "active", "inactive", "rejected", "all"] = "pending",
     admin=Depends(require_admin),
 ):
     if status == "active":
@@ -794,6 +1244,7 @@ async def list_admin_users(
         "id": 1,
         "name": 1,
         "email": 1,
+        "role": 1,
         "status": 1,
         "created_at": 1,
         "reviewed_at": 1,
@@ -805,6 +1256,505 @@ async def list_admin_users(
 @api.get("/admin/users/pending-count")
 async def pending_admin_users_count(admin=Depends(require_admin)):
     return {"count": await db.users.count_documents({"status": "pending"})}
+
+
+def can_manage_candidate(actor: dict, candidate: dict) -> bool:
+    if is_super_admin_user(candidate):
+        return False
+    if is_super_admin_user(actor):
+        return True
+    return user_role(candidate) == "USER"
+
+
+async def active_admin_count() -> int:
+    return await db.users.count_documents({
+        "$and": [
+            {
+                "$or": [
+                    {"role": {"$in": ["ADMIN", "SUPER_ADMIN"]}},
+                    {
+                        "email": {
+                            "$in": list(
+                                configured_admin_emails()
+                                | {configured_super_admin_email()}
+                            ),
+                        },
+                    },
+                ],
+            },
+            {
+                "$or": [
+                    {"status": "active"},
+                    {"status": {"$exists": False}},
+                ],
+            },
+            {"deletion_in_progress": {"$ne": True}},
+        ],
+    })
+
+
+async def build_account_deletion_impact(user: dict) -> dict:
+    impact = await user_financial_impact(user["id"])
+    blockers = []
+    if impact.get("pending_settlements", 0) > 0:
+        blockers.append("pending_settlements")
+    if is_admin_user(user):
+        active_admins = await active_admin_count()
+        minimum_remaining = 0 if user.get("deletion_in_progress") else 1
+        if active_admins <= minimum_remaining:
+            blockers.append("last_active_admin")
+    return {
+        "can_delete": not blockers,
+        "blockers": blockers,
+        "impact": impact,
+        "shared_history_will_be_anonymized": True,
+        "sessions_will_be_terminated": True,
+    }
+
+
+async def anonymize_user_in_shared_history(
+    user_id: str,
+    anonymous_user_id: str,
+) -> None:
+    shared_query = {
+        "$or": [
+            {"participant_ids": user_id},
+            {"creator_id": user_id},
+            {"payer_id": user_id},
+        ],
+    }
+    shared_items = await db.shared_expenses.find(
+        shared_query,
+        {"_id": 0},
+    ).to_list(5000)
+    for expense in shared_items:
+        participants = [
+            {
+                **participant,
+                "user_id": (
+                    anonymous_user_id
+                    if participant.get("user_id") == user_id
+                    else participant.get("user_id")
+                ),
+            }
+            for participant in expense.get("participants", [])
+        ]
+        participant_ids = [
+            anonymous_user_id if participant_id == user_id else participant_id
+            for participant_id in expense.get("participant_ids", [])
+        ]
+        updates = {
+            "participants": participants,
+            "participant_ids": participant_ids,
+            "anonymized_at": now_iso(),
+        }
+        if expense.get("creator_id") == user_id:
+            updates["creator_id"] = anonymous_user_id
+        if expense.get("payer_id") == user_id:
+            updates["payer_id"] = anonymous_user_id
+        await db.shared_expenses.update_one(
+            {"id": expense["id"]},
+            {"$set": updates},
+        )
+
+    await db.settlement_history.update_many(
+        {"debtor_id": user_id},
+        {"$set": {"debtor_id": anonymous_user_id}},
+    )
+    await db.settlement_history.update_many(
+        {"creditor_id": user_id},
+        {"$set": {"creditor_id": anonymous_user_id}},
+    )
+
+
+async def delete_user_owned_data(user_id: str) -> None:
+    await db.categories.delete_many({"user_id": user_id})
+    await db.accounts.delete_many({"user_id": user_id})
+    await db.transactions.delete_many({"user_id": user_id})
+    await db.goals.delete_many({"user_id": user_id})
+    await db.recurrences.delete_many({"user_id": user_id})
+    await db.installments.delete_many({"user_id": user_id})
+    await db.installment_purchases.delete_many({"user_id": user_id})
+    await db.receivables.delete_many({"user_id": user_id})
+    await db.notifications.delete_many({"user_id": user_id})
+    await db.files.delete_many({"user_id": user_id})
+    await db.password_reset_tokens.delete_many({"user_id": user_id})
+    await db.password_reset_requests.delete_many({"user_id": user_id})
+    await db.email_delivery_logs.delete_many({"user_id": user_id})
+    await db.groups.delete_many({"creator_id": user_id})
+    await db.groups.update_many(
+        {"member_ids": user_id},
+        {"$pull": {"member_ids": user_id}},
+    )
+
+
+@api.get(
+    "/auth/account/deletion-impact",
+    response_model=AccountDeletionImpactOut,
+)
+async def account_deletion_impact(user=Depends(get_current_user)):
+    return await build_account_deletion_impact(user)
+
+
+@api.delete("/auth/account")
+async def delete_own_account(
+    payload: AccountDeletionIn,
+    user=Depends(get_current_user),
+):
+    candidate = await db.users.find_one({"id": user["id"]})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if not verify_password(payload.password, candidate.get("password_hash", "")):
+        raise HTTPException(status_code=400, detail="Senha atual incorreta")
+    if payload.confirmation.strip().lower() != candidate["email"].strip().lower():
+        raise HTTPException(
+            status_code=400,
+            detail="Digite o e-mail da conta exatamente como informado",
+        )
+
+    preview = await build_account_deletion_impact(candidate)
+    if not preview["can_delete"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "A exclusão está bloqueada. Resolva os itens informados antes de continuar.",
+                "blockers": preview["blockers"],
+                "impact": preview["impact"],
+            },
+        )
+
+    lock = await db.users.update_one(
+        {
+            "id": user["id"],
+            "deletion_in_progress": {"$ne": True},
+        },
+        {"$set": {"deletion_in_progress": True}},
+    )
+    if not lock.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="A exclusão desta conta já está sendo processada",
+        )
+
+    try:
+        locked_candidate = {**candidate, "deletion_in_progress": True}
+        recheck = await build_account_deletion_impact(locked_candidate)
+        if not recheck["can_delete"]:
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$unset": {"deletion_in_progress": ""}},
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Novas pendências foram encontradas. Revise sua conta e tente novamente.",
+                    "blockers": recheck["blockers"],
+                    "impact": recheck["impact"],
+                },
+            )
+
+        await ws_manager.disconnect_user(user["id"], code=4001)
+        anonymous_user_id = f"deleted:{new_id()}"
+        await anonymize_user_in_shared_history(user["id"], anonymous_user_id)
+        await delete_user_owned_data(user["id"])
+        deleted = await db.users.delete_one({
+            "id": user["id"],
+            "deletion_in_progress": True,
+        })
+        if not deleted.deleted_count:
+            raise RuntimeError("User deletion lock was lost")
+    except HTTPException:
+        raise
+    except Exception:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$unset": {"deletion_in_progress": ""}},
+        )
+        logger.exception("Self-service account deletion failed: user=%s", user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível concluir a exclusão com segurança",
+        )
+
+    logger.info("Self-service account deletion completed: user=%s", user["id"])
+    return {"ok": True}
+
+
+@api.patch("/admin/users/{user_id}/role", response_model=AdminUserOut)
+async def update_admin_user_role(
+    user_id: str,
+    payload: AdminRoleUpdateIn,
+    super_admin=Depends(require_super_admin),
+):
+    candidate = await db.users.find_one({"id": user_id})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if is_super_admin_user(candidate):
+        raise HTTPException(
+            status_code=409,
+            detail="O papel da super administradora é protegido",
+        )
+    if account_status(candidate) != "active":
+        raise HTTPException(
+            status_code=409,
+            detail="Somente usuários ativos podem receber papel administrativo",
+        )
+
+    current_role = user_role(candidate)
+    if current_role == payload.role:
+        return admin_user_summary(candidate)
+    if current_role == "ADMIN" and payload.role == "USER":
+        if await active_admin_count() <= 1:
+            raise HTTPException(
+                status_code=409,
+                detail="O sistema deve possuir ao menos um administrador ativo",
+            )
+
+    changed_at = now_iso()
+    result = await db.users.update_one(
+        {
+            "id": user_id,
+            "$or": [
+                {"status": "active"},
+                {"status": {"$exists": False}},
+            ],
+        },
+        {
+            "$set": {
+                "role": payload.role,
+                "role_updated_at": changed_at,
+                "role_updated_by": super_admin["id"],
+            },
+        },
+    )
+    if not result.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="O usuário mudou de status. Atualize a lista e tente novamente",
+        )
+    candidate["role"] = payload.role
+    return admin_user_summary(candidate)
+
+
+@api.patch("/admin/users/{user_id}/status", response_model=AdminUserOut)
+async def update_admin_user_status(
+    user_id: str,
+    payload: AdminStatusUpdateIn,
+    admin=Depends(require_admin),
+):
+    candidate = await db.users.find_one({"id": user_id})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if candidate["id"] == admin["id"]:
+        raise HTTPException(
+            status_code=409,
+            detail="Você não pode desativar a própria conta",
+        )
+    if not can_manage_candidate(admin, candidate):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente a super administradora pode gerenciar administradores",
+        )
+
+    current_status = account_status(candidate)
+    if current_status == payload.status:
+        return admin_user_summary(candidate)
+    if current_status not in {"active", "inactive"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Use o fluxo de aprovação para cadastros pendentes ou rejeitados",
+        )
+    if (
+        payload.status == "inactive"
+        and is_admin_user(candidate)
+        and await active_admin_count() <= 1
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="O sistema deve possuir ao menos um administrador ativo",
+        )
+
+    changed_at = now_iso()
+    status_filter = (
+        {
+            "$or": [
+                {"status": "active"},
+                {"status": {"$exists": False}},
+            ],
+        }
+        if current_status == "active"
+        else {"status": current_status}
+    )
+    result = await db.users.update_one(
+        {"id": user_id, **status_filter},
+        {
+            "$set": {
+                "status": payload.status,
+                "status_updated_at": changed_at,
+                "status_updated_by": admin["id"],
+            },
+        },
+    )
+    if not result.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="O usuário mudou de status. Atualize a lista e tente novamente",
+        )
+    candidate["status"] = payload.status
+    if payload.status == "inactive":
+        await ws_manager.disconnect_user(user_id, code=4003)
+    return admin_user_summary(candidate)
+
+
+@api.patch("/admin/users/{user_id}", response_model=AdminUserOut)
+async def update_admin_user_identity(
+    user_id: str,
+    payload: AdminIdentityUpdateIn,
+    admin=Depends(require_admin),
+):
+    candidate = await db.users.find_one({"id": user_id})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if candidate["id"] == admin["id"] or not can_manage_candidate(admin, candidate):
+        raise HTTPException(
+            status_code=403,
+            detail="Você não pode editar este usuário pelo painel administrativo",
+        )
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nome é obrigatório")
+    await db.users.update_one(
+        {"id": user_id},
+        {
+            "$set": {
+                "name": name,
+                "identity_updated_at": now_iso(),
+                "identity_updated_by": admin["id"],
+            },
+        },
+    )
+    candidate["name"] = name
+    return admin_user_summary(candidate)
+
+
+@api.get(
+    "/admin/users/{user_id}/deletion-impact",
+    response_model=AdminUserDeletionImpactOut,
+)
+async def admin_user_deletion_impact(
+    user_id: str,
+    admin=Depends(require_admin),
+):
+    candidate = await db.users.find_one({"id": user_id})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    return await build_user_deletion_impact(candidate, admin)
+
+
+@api.delete("/admin/users/{user_id}")
+async def delete_admin_user(
+    user_id: str,
+    admin=Depends(require_admin),
+):
+    candidate = await db.users.find_one({"id": user_id})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    preview = await build_user_deletion_impact(candidate, admin)
+    if not preview["can_delete"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "A exclusão está bloqueada. Resolva os itens informados antes de continuar.",
+                "blockers": preview["blockers"],
+                "impact": preview["impact"],
+            },
+        )
+
+    lock = await db.users.update_one(
+        {
+            "id": user_id,
+            "deletion_in_progress": {"$ne": True},
+        },
+        {"$set": {"deletion_in_progress": True}},
+    )
+    if not lock.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="A exclusão deste usuário já está sendo processada",
+        )
+
+    try:
+        # Recheck after locking the account so a concurrent financial write
+        # cannot silently bypass the deletion guard.
+        impact = await user_financial_impact(user_id)
+        financial_blockers = [
+            key for key in FINANCIAL_DELETION_BLOCKERS if impact.get(key, 0) > 0
+        ]
+        if financial_blockers:
+            await db.users.update_one(
+                {"id": user_id},
+                {"$unset": {"deletion_in_progress": ""}},
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Novas pendências foram encontradas. Revise o impacto e tente novamente.",
+                    "blockers": financial_blockers,
+                    "impact": impact,
+                },
+            )
+
+        await ws_manager.disconnect_user(user_id, code=4001)
+
+        # Only housekeeping and empty wallets remain here. Financial activity
+        # and history are never cascade-deleted by this administrative action.
+        await db.categories.delete_many({"user_id": user_id})
+        await db.accounts.delete_many({"user_id": user_id})
+        await db.notifications.delete_many({"user_id": user_id})
+        await db.files.delete_many({"user_id": user_id})
+        await db.password_reset_tokens.delete_many({"user_id": user_id})
+        await db.password_reset_requests.delete_many({"user_id": user_id})
+        await db.email_delivery_logs.delete_many({"user_id": user_id})
+        await db.settlement_history.delete_many({
+            "$or": [
+                {"debtor_id": user_id},
+                {"creditor_id": user_id},
+            ],
+        })
+        await db.groups.update_many(
+            {"member_ids": user_id},
+            {"$pull": {"member_ids": user_id}},
+        )
+        deleted = await db.users.delete_one({
+            "id": user_id,
+            "deletion_in_progress": True,
+        })
+        if not deleted.deleted_count:
+            raise RuntimeError("User deletion lock was lost")
+    except HTTPException:
+        raise
+    except Exception:
+        await db.users.update_one(
+            {"id": user_id},
+            {"$unset": {"deletion_in_progress": ""}},
+        )
+        logger.exception(
+            "Administrative user deletion failed: target=%s admin=%s",
+            user_id,
+            admin["id"],
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível concluir a exclusão com segurança",
+        )
+
+    logger.info(
+        "Administrative user deletion completed: target=%s admin=%s",
+        user_id,
+        admin["id"],
+    )
+    return {"ok": True, "deleted_user_id": user_id}
 
 
 @api.post("/admin/users/{user_id}/approve", response_model=AdminUserOut)
@@ -1855,9 +2805,13 @@ async def list_shared(user=Depends(get_current_user), group_id: Optional[str] = 
     users = await db.users.find({"id": {"$in": list(user_ids)}}, {"_id": 0, "password_hash": 0}).to_list(200)
     umap = {u["id"]: public_user(u) for u in users}
     for it in items:
-        it["payer"] = umap.get(it["payer_id"])
+        it["payer"] = umap.get(it["payer_id"]) or deleted_user_summary(
+            it["payer_id"], user.get("language", "pt")
+        )
         for p in it["participants"]:
-            p["user"] = umap.get(p["user_id"])
+            p["user"] = umap.get(p["user_id"]) or deleted_user_summary(
+                p["user_id"], user.get("language", "pt")
+            )
     return items
 
 
@@ -2026,6 +2980,15 @@ async def ws_notifications(websocket: WebSocket):
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             user_id = payload.get("sub")
+            user = await db.users.find_one(
+                {"id": user_id},
+                {"_id": 0, "password_hash": 0},
+            )
+            if not user:
+                raise ValueError("User not found")
+            if int(payload.get("ver", 0)) != int(user.get("session_version", 0)):
+                raise ValueError("Session invalidated")
+            ensure_active_user(user)
         except Exception:
             user_id = None
     if not user_id:
@@ -2161,8 +3124,12 @@ async def settlement_history(user=Depends(get_current_user), limit: int = 100):
     users = await db.users.find({"id": {"$in": list(uids)}}, {"_id": 0, "password_hash": 0}).to_list(200)
     umap = {u["id"]: public_user(u) for u in users}
     for it in items:
-        it["debtor"] = umap.get(it["debtor_id"])
-        it["creditor"] = umap.get(it["creditor_id"])
+        it["debtor"] = umap.get(it["debtor_id"]) or deleted_user_summary(
+            it["debtor_id"], user.get("language", "pt")
+        )
+        it["creditor"] = umap.get(it["creditor_id"]) or deleted_user_summary(
+            it["creditor_id"], user.get("language", "pt")
+        )
     return items
 
 
@@ -2942,6 +3909,15 @@ async def startup():
     await db.shared_expenses.create_index("participant_ids")
     await db.groups.create_index("member_ids")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.password_reset_tokens.create_index("token_hash", unique=True)
+    await db.password_reset_tokens.create_index(
+        "expires_at",
+        expireAfterSeconds=0,
+    )
+    await db.password_reset_requests.create_index(
+        "created_at",
+        expireAfterSeconds=86400,
+    )
 
     # Backfill: garantir categorias padrão de receita para usuários existentes
     income_defaults = [c for c in DEFAULT_CATEGORIES if c[3] == "income"]

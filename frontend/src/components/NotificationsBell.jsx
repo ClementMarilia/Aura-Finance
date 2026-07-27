@@ -57,8 +57,13 @@ export default function NotificationsBell() {
           }
         } catch { /* ignore */ }
       };
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (closed) return;
+        if (event.code === 4001) {
+          localStorage.removeItem("token");
+          window.location.assign("/login");
+          return;
+        }
         reconnectRef.current = setTimeout(connect, 5000);
       };
       ws.onerror = () => { try { ws.close(); } catch { /* ignore */ } };

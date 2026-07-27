@@ -71,43 +71,22 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   const [fpOpen, setFpOpen] = useState(false);
-  const [fpStep, setFpStep] = useState(1);
   const [fpEmail, setFpEmail] = useState("");
-  const [fpQuestion, setFpQuestion] = useState("");
-  const [fpAnswer, setFpAnswer] = useState("");
-  const [fpNewPassword, setFpNewPassword] = useState("");
   const [fpLoading, setFpLoading] = useState(false);
+  const [fpSent, setFpSent] = useState(false);
 
   const openForgot = () => {
-    setFpStep(1); setFpEmail(email); setFpQuestion(""); setFpAnswer(""); setFpNewPassword("");
+    setFpEmail(email);
+    setFpSent(false);
     setFpOpen(true);
   };
 
-  const fpFindQuestion = async (e) => {
+  const fpRequest = async (e) => {
     e.preventDefault();
     setFpLoading(true);
     try {
-      const r = await api.get("/auth/security-question", { params: { email: fpEmail } });
-      if (!r.data?.question) {
-        toast.error(tr("Esta conta não tem pergunta de segurança configurada. Configure no Perfil após entrar."));
-        return;
-      }
-      setFpQuestion(r.data.question);
-      setFpStep(2);
-    } catch (err) { toast.error(formatApiError(err)); }
-    finally { setFpLoading(false); }
-  };
-
-  const fpReset = async (e) => {
-    e.preventDefault();
-    setFpLoading(true);
-    try {
-      await api.post("/auth/reset-password-security", {
-        email: fpEmail, answer: fpAnswer, new_password: fpNewPassword,
-      });
-      toast.success(tr("Senha redefinida! Faça login com a nova senha."));
-      setEmail(fpEmail); setPassword("");
-      setFpOpen(false);
+      await api.post("/auth/password-reset/request", { email: fpEmail });
+      setFpSent(true);
     } catch (err) { toast.error(formatApiError(err)); }
     finally { setFpLoading(false); }
   };
@@ -192,40 +171,34 @@ export default function Login() {
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "Outfit" }}>{tr("Recuperar senha")}</DialogTitle>
           </DialogHeader>
-          {fpStep === 1 ? (
-            <form onSubmit={fpFindQuestion} className="space-y-3" data-testid="forgot-step-email">
-              <p className="text-sm text-[#6B7068]">{tr("Informe seu e-mail para buscar sua pergunta de segurança.")}</p>
+          {!fpSent ? (
+            <form onSubmit={fpRequest} className="space-y-3" data-testid="forgot-step-email">
+              <p className="text-sm text-[#6B7068]">
+                {tr("Informe seu e-mail para receber o link de recuperação.")}
+              </p>
               <div>
                 <Label>{tr("E-mail")}</Label>
                 <Input type="email" value={fpEmail} required data-testid="forgot-email-input"
                   onChange={e => setFpEmail(e.target.value)} placeholder="voce@exemplo.com" />
               </div>
-              <Button type="submit" disabled={fpLoading} data-testid="forgot-continue-button"
+              <Button type="submit" disabled={fpLoading} data-testid="forgot-send-button"
                 className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-                {fpLoading ? tr("Buscando...") : tr("Continuar")}
+                {fpLoading ? tr("Enviando...") : tr("Enviar link")}
               </Button>
             </form>
           ) : (
-            <form onSubmit={fpReset} className="space-y-3" data-testid="forgot-step-reset">
-              <div className="text-sm">
-                <span className="text-[#6B7068]">{tr("Pergunta de segurança:")}</span>
-                <div className="font-medium mt-1" data-testid="forgot-question-text">{tr(fpQuestion)}</div>
+            <div className="space-y-4 py-2" data-testid="forgot-request-sent">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                {tr("Se o e-mail estiver cadastrado, enviaremos um link para redefinir a senha.")}
               </div>
-              <div>
-                <Label>{tr("Sua resposta")}</Label>
-                <Input value={fpAnswer} required data-testid="forgot-answer-input"
-                  onChange={e => setFpAnswer(e.target.value)} />
-              </div>
-              <div>
-                <Label>{tr("Nova senha")}</Label>
-                <Input type="password" value={fpNewPassword} required minLength={4} data-testid="forgot-new-password-input"
-                  onChange={e => setFpNewPassword(e.target.value)} placeholder="••••••••" />
-              </div>
-              <Button type="submit" disabled={fpLoading} data-testid="forgot-reset-button"
-                className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-                {fpLoading ? tr("Redefinindo...") : tr("Redefinir senha")}
+              <p className="text-sm text-[#6B7068]">
+                {tr("Confira também a caixa de spam. O link expira e funciona apenas uma vez.")}
+              </p>
+              <Button type="button" variant="outline" onClick={() => setFpOpen(false)}
+                data-testid="forgot-close-button" className="w-full rounded-xl">
+                {tr("Voltar para o login")}
               </Button>
-            </form>
+            </div>
           )}
         </DialogContent>
       </Dialog>

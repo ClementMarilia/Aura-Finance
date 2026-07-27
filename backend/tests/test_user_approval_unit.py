@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
+from fastapi import BackgroundTasks
 
 os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault(
@@ -45,7 +46,7 @@ def test_registration_creates_pending_identity_without_token_or_financial_defaul
         password="secret123",
         currency="EUR",
         privacy_acknowledged=True,
-    )))
+    ), BackgroundTasks()))
 
     assert result == {
         "status": "pending",
@@ -108,7 +109,7 @@ def test_pending_and_rejected_users_cannot_login(monkeypatch, status, message):
     assert message in exc.value.detail
 
 
-def test_existing_user_remains_active_and_admin_is_resolved_by_email(monkeypatch):
+def test_existing_user_remains_active_and_super_admin_is_resolved_by_email(monkeypatch):
     monkeypatch.setenv("ADMIN_EMAILS", "clementmarilia@gmail.com")
     legacy_user = {
         "id": "marilia-1",
@@ -132,6 +133,8 @@ def test_existing_user_remains_active_and_admin_is_resolved_by_email(monkeypatch
     assert result["token"]
     assert result["user"]["status"] == "active"
     assert result["user"]["is_admin"] is True
+    assert result["user"]["is_super_admin"] is True
+    assert result["user"]["role"] == "SUPER_ADMIN"
     assert result["user"]["language"] == "pt"
 
 
@@ -149,7 +152,7 @@ def test_registration_preserves_supported_language(monkeypatch):
         currency="EUR",
         language="it",
         privacy_acknowledged=True,
-    )))
+    ), BackgroundTasks()))
 
     inserted = users.insert_one.await_args.args[0]
     assert inserted["language"] == "it"
@@ -214,7 +217,8 @@ def test_approval_creates_defaults_then_activates_user(monkeypatch):
 
     assert result["status"] == "active"
     assert set(result) == {
-        "id", "name", "email", "status", "created_at", "reviewed_at",
+        "id", "name", "email", "status", "role", "is_super_admin",
+        "created_at", "reviewed_at",
     }
     assert categories.insert_one.await_count == len(server.DEFAULT_CATEGORIES)
     accounts.insert_one.assert_awaited_once()
@@ -237,7 +241,8 @@ def test_admin_summary_never_exposes_password_or_financial_fields():
     })
 
     assert set(result) == {
-        "id", "name", "email", "status", "created_at", "reviewed_at",
+        "id", "name", "email", "status", "role", "is_super_admin",
+        "created_at", "reviewed_at",
     }
     assert "password_hash" not in result
     assert "balance" not in result
