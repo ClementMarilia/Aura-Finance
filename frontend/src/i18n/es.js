@@ -480,6 +480,7 @@ export default {
   "Use o fluxo de aprovação para cadastros pendentes ou rejeitados": "Usa el flujo de aprobación para registros pendientes o rechazados",
   "Você não pode editar este usuário pelo painel administrativo": "No puedes editar este usuario desde el panel administrativo",
   "Nome é obrigatório": "El nombre es obligatorio",
+  "Já existe uma categoria com esse nome": "Ya existe una categoría con este nombre",
   "Exclua sua conta e remova definitivamente seus dados pessoais e financeiros.": "Elimina tu cuenta y borra definitivamente tus datos personales y financieros.",
   "Excluir minha conta": "Eliminar mi cuenta",
   "Verificando sua conta...": "Comprobando tu cuenta...",

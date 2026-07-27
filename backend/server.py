@@ -381,6 +381,42 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
+def category_display_name(value: object) -> str:
+    return " ".join(str(value or "").split())
+
+
+def category_name_key(value: object) -> str:
+    normalized = unicodedata.normalize(
+        "NFKD",
+        category_display_name(value).casefold(),
+    )
+    return "".join(
+        char for char in normalized
+        if not unicodedata.combining(char)
+    )
+
+
+async def category_name_exists(
+    user_id: str,
+    name_key: str,
+    exclude_id: Optional[str] = None,
+) -> bool:
+    query = {"user_id": user_id}
+    if exclude_id:
+        query["id"] = {"$ne": exclude_id}
+    async for category in db.categories.find(
+        query,
+        {"name": 1, "name_key": 1},
+    ):
+        existing_key = (
+            category.get("name_key")
+            or category_name_key(category.get("name"))
+        )
+        if existing_key == name_key:
+            return True
+    return False
+
+
 def idempotency_fingerprint(payload: dict) -> str:
     serialized = json.dumps(
         payload,
@@ -811,21 +847,27 @@ DEFAULT_CATEGORIES = [
 
 
 async def seed_user_defaults(user_id: str, currency: str = "EUR"):
-    existing_names = set()
+    existing_name_keys = set()
     async for category in db.categories.find(
         {"user_id": user_id},
-        {"name": 1},
+        {"name": 1, "name_key": 1},
     ):
-        existing_names.add(category.get("name"))
+        existing_name_keys.add(
+            category.get("name_key")
+            or category_name_key(category.get("name"))
+        )
 
     for name, icon, color, kind in DEFAULT_CATEGORIES:
-        if name in existing_names:
+        name_key = category_name_key(name)
+        if name_key in existing_name_keys:
             continue
         await db.categories.insert_one({
             "id": new_id(), "user_id": user_id, "name": name,
+            "name_key": name_key,
             "icon": icon, "color": color, "kind": kind,
             "is_default": True, "created_at": now_iso(),
         })
+        existing_name_keys.add(name_key)
     if not await db.accounts.find_one({"user_id": user_id}):
         await db.accounts.insert_one({
             "id": new_id(), "user_id": user_id, "name": "Conta Principal",
@@ -2102,7 +2144,10 @@ async def reject_user(user_id: str, admin=Depends(require_admin)):
 # ---------- Categories ----------
 @api.get("/categories")
 async def list_categories(user=Depends(get_current_user)):
-    return await db.categories.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    return await db.categories.find(
+        {"user_id": user["id"]},
+        {"_id": 0, "name_key": 0},
+    ).to_list(500)
 
 
 @api.post("/categories")
@@ -2111,27 +2156,71 @@ async def create_category(
     user=Depends(get_current_user),
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
+    name = category_display_name(payload.name)
+    if not name:
+        raise HTTPException(400, "Nome é obrigatório")
+    name_key = category_name_key(name)
+
     async def create():
-        doc = {"id": new_id(), "user_id": user["id"], **payload.model_dump(),
-               "is_default": False, "created_at": now_iso()}
-        await db.categories.insert_one(doc)
+        if await category_name_exists(user["id"], name_key):
+            raise HTTPException(409, "Já existe uma categoria com esse nome")
+        doc = {
+            "id": new_id(),
+            "user_id": user["id"],
+            **payload.model_dump(),
+            "name": name,
+            "name_key": name_key,
+            "is_default": False,
+            "created_at": now_iso(),
+        }
+        try:
+            await db.categories.insert_one(doc)
+        except DuplicateKeyError:
+            raise HTTPException(409, "Já existe uma categoria com esse nome")
         doc.pop("_id", None)
+        doc.pop("name_key", None)
         return doc
 
     return await run_idempotent_create(
         "create_category", user["id"], idempotency_key,
-        payload.model_dump(), create,
+        {**payload.model_dump(), "name": name}, create,
     )
 
 
 @api.put("/categories/{cid}")
 async def update_category(cid: str, payload: CategoryIn, user=Depends(get_current_user)):
-    res = await db.categories.update_one(
+    current = await db.categories.find_one(
         {"id": cid, "user_id": user["id"]},
-        {"$set": payload.model_dump()},
+        {"name": 1, "name_key": 1},
     )
-    if not res.matched_count:
+    if not current:
         raise HTTPException(404, "Não encontrada")
+
+    name = category_display_name(payload.name)
+    if not name:
+        raise HTTPException(400, "Nome é obrigatório")
+    name_key = category_name_key(name)
+    conflict = await category_name_exists(user["id"], name_key, cid)
+    current_name_key = (
+        current.get("name_key")
+        or category_name_key(current.get("name"))
+    )
+    if conflict and current_name_key != name_key:
+        raise HTTPException(409, "Já existe uma categoria com esse nome")
+
+    updates = {**payload.model_dump(), "name": name}
+    # Preserve editable legacy duplicates without deleting or merging user data.
+    # Once a name is unique, persist its canonical key and let the index enforce
+    # race-safe uniqueness from that point forward.
+    if not conflict:
+        updates["name_key"] = name_key
+    try:
+        await db.categories.update_one(
+            {"id": cid, "user_id": user["id"]},
+            {"$set": updates},
+        )
+    except DuplicateKeyError:
+        raise HTTPException(409, "Já existe uma categoria com esse nome")
     return {"ok": True}
 
 
@@ -4553,6 +4642,14 @@ async def startup():
         "shared_expenses", "notifications", "goals",
     ):
         await db[collection_name].create_index("id")
+    # Existing categories are intentionally left untouched. The partial index
+    # applies to new/updated records, while endpoint validation also checks
+    # legacy records that do not have name_key yet.
+    await db.categories.create_index(
+        [("user_id", 1), ("name_key", 1)],
+        unique=True,
+        partialFilterExpression={"name_key": {"$type": "string"}},
+    )
     await db.idempotency_requests.create_index(
         [("operation", 1), ("owner_id", 1), ("key", 1)],
         unique=True,
@@ -4609,17 +4706,26 @@ async def startup():
         {"id": 1},
     ):
         uid = u["id"]
-        existing_names = set()
-        async for c in db.categories.find({"user_id": uid, "kind": "income"}, {"name": 1}):
-            existing_names.add(c["name"])
+        existing_name_keys = set()
+        async for c in db.categories.find(
+            {"user_id": uid},
+            {"name": 1, "name_key": 1},
+        ):
+            existing_name_keys.add(
+                c.get("name_key")
+                or category_name_key(c.get("name"))
+            )
         for name, icon, color, kind in income_defaults:
-            if name in existing_names:
+            name_key = category_name_key(name)
+            if name_key in existing_name_keys:
                 continue
             await db.categories.insert_one({
                 "id": new_id(), "user_id": uid, "name": name,
+                "name_key": name_key,
                 "icon": icon, "color": color, "kind": kind,
                 "is_default": True, "created_at": now_iso(),
             })
+            existing_name_keys.add(name_key)
 
     if os.environ.get("SEED_DEMO", "false").lower() != "true":
         return
