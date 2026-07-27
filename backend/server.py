@@ -13,6 +13,7 @@ import secrets
 import requests
 import bcrypt
 import jwt
+import unicodedata
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Literal
 from fastapi import (
@@ -2959,12 +2960,165 @@ def compute_splits(amount: float, split_type: str, participants: List[dict]) -> 
     return out
 
 
+def shared_expense_status(expense: dict) -> str:
+    participants = expense.get("participants") or []
+    payer_id = expense.get("payer_id")
+    debts = [
+        participant
+        for participant in participants
+        if participant.get("user_id") != payer_id
+        and float(participant.get("owed") or 0) > 0.005
+    ]
+    if debts and all(participant.get("paid_back") is True for participant in debts):
+        return "finalized"
+    if any(participant.get("paid_back") is True for participant in debts):
+        return "partial"
+    return "open"
+
+
+def normalized_search_text(value: object) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "").casefold())
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+async def record_settlement(expense: dict, debtor_id: str, paid_at: str) -> None:
+    participant = next(
+        (item for item in expense.get("participants", []) if item.get("user_id") == debtor_id),
+        None,
+    )
+    if not participant or debtor_id == expense.get("payer_id"):
+        return
+    await db.settlement_history.update_one(
+        {"expense_id": expense["id"], "debtor_id": debtor_id},
+        {"$setOnInsert": {
+            "id": new_id(),
+            "expense_id": expense["id"],
+            "expense_title": expense.get("title", ""),
+            "expense_date": expense.get("date"),
+            "category": expense.get("category") or "",
+            "notes": expense.get("notes") or "",
+            "debtor_id": debtor_id,
+            "creditor_id": expense["payer_id"],
+            "amount": float(participant.get("owed") or 0),
+            "currency": expense.get("currency", "EUR"),
+            "paid_at": paid_at,
+        }},
+        upsert=True,
+    )
+
+
+async def confirm_shared_participant(expense: dict, debtor_id: str) -> tuple[dict, bool]:
+    participant = next(
+        (item for item in expense.get("participants", []) if item.get("user_id") == debtor_id),
+        None,
+    )
+    if not participant:
+        raise HTTPException(404, "Participante não encontrado")
+    if debtor_id == expense.get("payer_id"):
+        return expense, False
+
+    result = await db.shared_expenses.update_one(
+        {
+            "id": expense["id"],
+            "status": {"$ne": "finalized"},
+            "participants": {
+                "$elemMatch": {
+                    "user_id": debtor_id,
+                    "paid_back": {"$ne": True},
+                }
+            },
+        },
+        {"$set": {"participants.$[participant].paid_back": True}},
+        array_filters=[{"participant.user_id": debtor_id}],
+    )
+    changed = bool(result.matched_count)
+    updated = await db.shared_expenses.find_one({"id": expense["id"]})
+    if not updated:
+        raise HTTPException(404, "Despesa não encontrada")
+    if not changed:
+        return updated, False
+
+    paid_at = now_iso()
+    status = shared_expense_status(updated)
+    status_values = {"status": status, "updated_at": paid_at}
+    if status == "finalized":
+        status_values["completed_at"] = paid_at
+    await db.shared_expenses.update_one(
+        {"id": expense["id"]},
+        {"$set": status_values},
+    )
+    updated.update(status_values)
+    await record_settlement(updated, debtor_id, paid_at)
+    if status == "finalized":
+        await db.settlement_history.update_many(
+            {"expense_id": expense["id"]},
+            {"$set": {"expense_status": "finalized", "expense_completed_at": paid_at}},
+        )
+    return updated, True
+
+
+async def backfill_shared_settlement_history() -> int:
+    repaired = 0
+    async for expense in db.shared_expenses.find(
+        {
+            "$or": [
+                {"status": "finalized"},
+                {"participants": {"$elemMatch": {"paid_back": True}}},
+            ]
+        },
+        {"_id": 0},
+    ):
+        status = shared_expense_status(expense)
+        completed_at = (
+            expense.get("completed_at")
+            or expense.get("updated_at")
+            or expense.get("created_at")
+            or (
+                f"{expense['date']}T12:00:00+00:00"
+                if expense.get("date")
+                else now_iso()
+            )
+        )
+        if status == "finalized" and expense.get("status") != "finalized":
+            await db.shared_expenses.update_one(
+                {"id": expense["id"]},
+                {"$set": {"status": "finalized", "completed_at": completed_at}},
+            )
+            expense["status"] = "finalized"
+            expense["completed_at"] = completed_at
+        for participant in expense.get("participants", []):
+            if (
+                participant.get("user_id") != expense.get("payer_id")
+                and participant.get("paid_back") is True
+            ):
+                await record_settlement(
+                    expense,
+                    participant["user_id"],
+                    completed_at,
+                )
+                repaired += 1
+        if status == "finalized":
+            await db.settlement_history.update_many(
+                {"expense_id": expense["id"]},
+                {
+                    "$set": {
+                        "expense_status": "finalized",
+                        "expense_completed_at": completed_at,
+                    }
+                },
+            )
+    return repaired
+
+
 @api.get("/shared-expenses")
 async def list_shared(user=Depends(get_current_user), group_id: Optional[str] = None):
-    q = {"participant_ids": user["id"]}
+    q = {"participant_ids": user["id"], "status": {"$ne": "finalized"}}
     if group_id:
         q["group_id"] = group_id
     items = await db.shared_expenses.find(q, {"_id": 0}).sort("date", -1).to_list(500)
+    # Also hide legacy rows whose participants are all paid but whose stored status
+    # was never updated by older versions of the application.
+    items = [item for item in items if shared_expense_status(item) != "finalized"]
     user_ids = set()
     for it in items:
         user_ids.add(it["payer_id"])
@@ -3053,35 +3207,24 @@ async def settle_participant(sid: str, user_id: str, user=Depends(get_current_us
     se = await db.shared_expenses.find_one({"id": sid, "participant_ids": user["id"]})
     if not se:
         raise HTTPException(404, "Despesa não encontrada")
-    parts = se["participants"]
-    new_paid = False
-    amount_paid = 0
-    for p in parts:
-        if p["user_id"] == user_id:
-            new_paid = not p.get("paid_back", False)
-            p["paid_back"] = new_paid
-            amount_paid = p["owed"]
-    if new_paid and user_id != se["payer_id"]:
-        await db.settlement_history.insert_one({
-            "id": new_id(), "expense_id": sid, "expense_title": se["title"],
-            "debtor_id": user_id, "creditor_id": se["payer_id"],
-            "amount": amount_paid, "paid_at": now_iso(),
-        })
-    all_paid = all(p.get("paid_back") or p["user_id"] == se["payer_id"] for p in parts)
-    any_paid = any(p.get("paid_back") for p in parts)
-    status = "finalized" if all_paid else ("partial" if any_paid else "open")
-    await db.shared_expenses.update_one({"id": sid}, {"$set": {"participants": parts, "status": status}})
+    updated, changed = await confirm_shared_participant(se, user_id)
+    status = shared_expense_status(updated)
     # Notify the payer when someone marks as paid
-    if new_paid and user_id != se["payer_id"]:
+    if changed and user_id != se["payer_id"]:
         debtor = await db.users.find_one({"id": user_id}, {"_id": 0})
-        amount = next((p["owed"] for p in parts if p["user_id"] == user_id), 0)
+        amount = next((p["owed"] for p in updated["participants"] if p["user_id"] == user_id), 0)
         await push_notification(
             se["payer_id"], "settlement_paid",
             "Acerto recebido",
             f"{debtor['name'] if debtor else 'Alguém'} marcou {fmt_eur(amount)} como pago em '{se['title']}'.",
             "/acertos", {"expense_id": sid},
         )
-    return {"ok": True, "status": status, "paid_back": new_paid}
+    return {
+        "ok": True,
+        "status": status,
+        "paid_back": True,
+        "already_confirmed": not changed,
+    }
 
 
 # ---------- Notifications ----------
@@ -3263,30 +3406,25 @@ async def delete_shared(sid: str, user=Depends(get_current_user)):
 async def settle_between(other_id: str, user=Depends(get_current_user)):
     """Mark as paid_back all open shared-expense debts between current user and other_id."""
     exps = await db.shared_expenses.find(
-        {"participant_ids": {"$all": [user["id"], other_id]}}, {"_id": 0}
+        {
+            "participant_ids": {"$all": [user["id"], other_id]},
+            "status": {"$ne": "finalized"},
+        },
+        {"_id": 0},
     ).to_list(1000)
     touched = 0
     for e in exps:
-        changed = False
-        for p in e["participants"]:
-            if p.get("paid_back"):
-                continue
-            payer = e["payer_id"]
-            # case A: other_id is payer, user is debtor
-            if payer == other_id and p["user_id"] == user["id"]:
-                p["paid_back"] = True
-                changed = True
-            # case B: user is payer, other_id is debtor
-            elif payer == user["id"] and p["user_id"] == other_id:
-                p["paid_back"] = True
-                changed = True
+        payer = e["payer_id"]
+        debtor_id = None
+        if payer == other_id:
+            debtor_id = user["id"]
+        elif payer == user["id"]:
+            debtor_id = other_id
+        if debtor_id:
+            _, changed = await confirm_shared_participant(e, debtor_id)
+        else:
+            changed = False
         if changed:
-            all_paid = all(p.get("paid_back") or p["user_id"] == e["payer_id"] for p in e["participants"])
-            any_paid = any(p.get("paid_back") for p in e["participants"])
-            status = "finalized" if all_paid else ("partial" if any_paid else "open")
-            await db.shared_expenses.update_one(
-                {"id": e["id"]}, {"$set": {"participants": e["participants"], "status": status}}
-            )
             touched += 1
     other = await db.users.find_one({"id": other_id}, {"_id": 0})
     if other and touched:
@@ -3302,7 +3440,11 @@ async def settle_between(other_id: str, user=Depends(get_current_user)):
 async def nudge_debtor(debtor_id: str, user=Depends(get_current_user)):
     """Send a reminder notification to a debtor."""
     exps = await db.shared_expenses.find(
-        {"participant_ids": {"$all": [user["id"], debtor_id]}, "payer_id": user["id"]},
+        {
+            "participant_ids": {"$all": [user["id"], debtor_id]},
+            "payer_id": user["id"],
+            "status": {"$ne": "finalized"},
+        },
         {"_id": 0},
     ).to_list(500)
     total = 0.0
@@ -3322,23 +3464,125 @@ async def nudge_debtor(debtor_id: str, user=Depends(get_current_user)):
 
 
 @api.get("/settlements/history")
-async def settlement_history(user=Depends(get_current_user), limit: int = 100):
+async def settlement_history(
+    user=Depends(get_current_user),
+    search: Optional[str] = Query(None, max_length=120),
+    specific_date: Optional[str] = None,
+    month: Optional[str] = None,
+    year: Optional[int] = Query(None, ge=1900, le=2200),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    sort: Literal["recent", "oldest", "amount_desc", "amount_asc"] = "recent",
+    limit: int = Query(1000, ge=1, le=5000),
+):
+    def validate_date(value: Optional[str], label: str) -> Optional[str]:
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            raise HTTPException(400, f"{label} inválida")
+
+    specific = validate_date(specific_date, "Data")
+    start = validate_date(start_date, "Data inicial")
+    end = validate_date(end_date, "Data final")
+    if month:
+        try:
+            datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            raise HTTPException(400, "Mês inválido")
+    if start and end and start > end:
+        raise HTTPException(400, "A data inicial não pode ser posterior à data final")
+
     items = await db.settlement_history.find(
         {"$or": [{"debtor_id": user["id"]}, {"creditor_id": user["id"]}]}, {"_id": 0},
-    ).sort("paid_at", -1).limit(limit).to_list(limit)
+    ).to_list(5000)
+    # Older versions allowed reopening a confirmation, which could create duplicate
+    # history rows for the same debt. Keep the most recent record per participant.
+    unique_items = {}
+    for item in items:
+        key = (item.get("expense_id"), item.get("debtor_id"))
+        previous = unique_items.get(key)
+        if not previous or (item.get("paid_at") or "") > (previous.get("paid_at") or ""):
+            unique_items[key] = item
+    items = list(unique_items.values())
     uids = set()
     for it in items:
         uids.update([it["debtor_id"], it["creditor_id"]])
     users = await db.users.find({"id": {"$in": list(uids)}}, {"_id": 0, "password_hash": 0}).to_list(200)
     umap = {u["id"]: public_user(u) for u in users}
+
+    expense_ids = list({item.get("expense_id") for item in items if item.get("expense_id")})
+    expenses = await db.shared_expenses.find(
+        {"id": {"$in": expense_ids}},
+        {
+            "_id": 0,
+            "id": 1,
+            "title": 1,
+            "date": 1,
+            "category": 1,
+            "notes": 1,
+            "currency": 1,
+            "status": 1,
+            "completed_at": 1,
+        },
+    ).to_list(5000)
+    expense_map = {expense["id"]: expense for expense in expenses}
+
     for it in items:
+        expense = expense_map.get(it.get("expense_id"), {})
+        it.setdefault("expense_title", expense.get("title", ""))
+        it.setdefault("expense_date", expense.get("date"))
+        it.setdefault("category", expense.get("category") or "")
+        it.setdefault("notes", expense.get("notes") or "")
+        it.setdefault("currency", expense.get("currency", "EUR"))
+        it.setdefault("expense_status", expense.get("status"))
+        it.setdefault("expense_completed_at", expense.get("completed_at"))
         it["debtor"] = umap.get(it["debtor_id"]) or deleted_user_summary(
             it["debtor_id"], user.get("language", "pt")
         )
         it["creditor"] = umap.get(it["creditor_id"]) or deleted_user_summary(
             it["creditor_id"], user.get("language", "pt")
         )
-    return items
+
+    def matches(item: dict) -> bool:
+        paid_date = str(item.get("paid_at") or "")[:10]
+        if specific and paid_date != specific:
+            return False
+        if month and not paid_date.startswith(f"{month}-"):
+            return False
+        if year and not paid_date.startswith(f"{year:04d}-"):
+            return False
+        if start and paid_date < start:
+            return False
+        if end and paid_date > end:
+            return False
+        if search:
+            needle = normalized_search_text(search)
+            haystack = " ".join(
+                normalized_search_text(value)
+                for value in (
+                    item.get("debtor", {}).get("name"),
+                    item.get("creditor", {}).get("name"),
+                    item.get("expense_title"),
+                    item.get("category"),
+                    item.get("notes"),
+                )
+            )
+            if needle not in haystack:
+                return False
+        return True
+
+    filtered = [item for item in items if matches(item)]
+    if sort == "oldest":
+        filtered.sort(key=lambda item: item.get("paid_at") or "")
+    elif sort == "amount_desc":
+        filtered.sort(key=lambda item: float(item.get("amount") or 0), reverse=True)
+    elif sort == "amount_asc":
+        filtered.sort(key=lambda item: float(item.get("amount") or 0))
+    else:
+        filtered.sort(key=lambda item: item.get("paid_at") or "", reverse=True)
+    return filtered[:limit]
 
 
 @api.get("/settlements")
@@ -3347,7 +3591,7 @@ async def list_settlements(user=Depends(get_current_user)):
     Uses a greedy min-cash-flow algorithm: nets each user's balance then matches
     biggest creditor to biggest debtor iteratively."""
     exps = await db.shared_expenses.find(
-        {"participant_ids": user["id"]}, {"_id": 0}
+        {"participant_ids": user["id"], "status": {"$ne": "finalized"}}, {"_id": 0}
     ).to_list(1000)
     user_ids = set()
     raw_rows = []
@@ -4115,6 +4359,22 @@ async def startup():
     await db.users.create_index([("status", 1), ("created_at", -1)])
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
     await db.shared_expenses.create_index("participant_ids")
+    await db.shared_expenses.create_index([("participant_ids", 1), ("status", 1), ("date", -1)])
+    await db.settlement_history.create_index(
+        [("debtor_id", 1), ("paid_at", -1)]
+    )
+    await db.settlement_history.create_index(
+        [("creditor_id", 1), ("paid_at", -1)]
+    )
+    await db.settlement_history.create_index(
+        [("expense_id", 1), ("debtor_id", 1)]
+    )
+    repaired_settlements = await backfill_shared_settlement_history()
+    if repaired_settlements:
+        logger.info(
+            "Settlement history backfill checked %s paid participant(s)",
+            repaired_settlements,
+        )
     await db.groups.create_index("member_ids")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.websocket_tickets.create_index("ticket_hash", unique=True)
