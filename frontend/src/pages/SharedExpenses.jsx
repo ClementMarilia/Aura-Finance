@@ -153,9 +153,8 @@ export default function SharedExpenses() {
 
   const togglePaid = async (sid, uid) => {
     try {
-      const r = await api.post(`/shared-expenses/${sid}/settle/${uid}`);
-      const isPaid = r.data?.paid_back;
-      toast.success(isPaid ? "Acerto confirmado" : "Acerto reaberto");
+      await api.post(`/shared-expenses/${sid}/settle/${uid}`);
+      toast.success(tr("Acerto confirmado"));
       load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
@@ -425,10 +424,11 @@ export default function SharedExpenses() {
                       </div>
                       {!isPayer && (
                         <button onClick={() => togglePaid(e.id, p.user_id)} data-testid={`settle-${e.id}-${p.user_id}`}
+                          disabled={p.paid_back}
                           title={actionTitle}
                           className={`px-3 py-1.5 rounded-lg text-xs whitespace-nowrap ${
                             p.paid_back
-                              ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              ? "bg-emerald-50 text-emerald-700 cursor-default"
                               : "bg-[#061B4A] text-white hover:bg-[#1268F4]"
                           }`}>
                           {p.paid_back ? <><Check size={12} className="inline mr-1" />{actionLabel}</> : actionLabel}
