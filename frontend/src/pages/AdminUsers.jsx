@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, Check, Clock3, Edit3, Loader2, Shield, ShieldCheck,
-  ShieldOff, Trash2, UserCheck, UserX, Users,
+  ShieldOff, Trash2, UserCheck, UserX, Users, Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import api, { fmtDate, formatApiError } from "@/lib/api";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { translate as tr } from "@/i18n";
 import { useAuth } from "@/context/AuthContext";
+import { Link } from "react-router-dom";
 
 const FILTERS = [
   { value: "pending", label: tr("Pendentes") },
@@ -273,13 +274,23 @@ export default function AdminUsers() {
 
   return (
     <div className="space-y-6 max-w-5xl" data-testid="admin-users-page">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>
-          {tr("Gerenciamento de usuários")}
-        </h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-          {tr("Controle quem pode acessar a Crelith Finance.")}
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>
+            {tr("Gerenciamento de usuários")}
+          </h1>
+          <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+            {tr("Controle quem pode acessar a Crelith Finance.")}
+          </p>
+        </div>
+        {user?.is_super_admin && (
+          <Button asChild variant="outline" className="rounded-xl">
+            <Link to="/configuracoes#transactional-email" data-testid="admin-email-settings-link">
+              <Mail size={16} className="mr-2" />
+              {tr("Configurar e-mails")}
+            </Link>
+          </Button>
+        )}
       </div>
 
       <div className="card-soft flex items-start gap-3 border border-blue-100 bg-blue-50/60">

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
+from fastapi import BackgroundTasks
 
 os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault(
@@ -45,7 +46,7 @@ def test_registration_creates_pending_identity_without_token_or_financial_defaul
         password="secret123",
         currency="EUR",
         privacy_acknowledged=True,
-    )))
+    ), BackgroundTasks()))
 
     assert result == {
         "status": "pending",
@@ -151,7 +152,7 @@ def test_registration_preserves_supported_language(monkeypatch):
         currency="EUR",
         language="it",
         privacy_acknowledged=True,
-    )))
+    ), BackgroundTasks()))
 
     inserted = users.insert_one.await_args.args[0]
     assert inserted["language"] == "it"

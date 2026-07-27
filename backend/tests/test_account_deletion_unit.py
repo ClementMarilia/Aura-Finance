@@ -53,6 +53,9 @@ def account_deletion_db(shared_items=None, shared_count=0):
         notifications=collection(),
         files=collection(),
         settlement_history=collection(),
+        password_reset_tokens=collection(),
+        password_reset_requests=collection(),
+        email_delivery_logs=collection(),
     )
 
 

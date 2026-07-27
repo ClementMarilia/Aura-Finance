@@ -21,3 +21,15 @@ services:
         value: https://www.crelithtech.com,https://crelithtech.com,https://aura-finance-inky.vercel.app
       - key: EMERGENT_LLM_KEY
         sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: Crelith Finance
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+      - key: EMAIL_REPLY_TO
+        sync: false
+      - key: PASSWORD_RESET_URL
+        value: https://www.crelithtech.com/redefinir-senha
+      - key: PASSWORD_RESET_EXPIRES_MINUTES
+        value: "30"

@@ -8,13 +8,15 @@ import uuid
 import logging
 import asyncio
 import calendar
+import hashlib
+import secrets
 import requests
 import bcrypt
 import jwt
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Literal
 from fastapi import (
-    FastAPI, APIRouter, HTTPException, Depends, Request, WebSocket,
+    FastAPI, APIRouter, HTTPException, Depends, Request, WebSocket, BackgroundTasks,
     WebSocketDisconnect, UploadFile, File, Header, Query,
 )
 from fastapi.responses import Response
@@ -23,6 +25,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from collections import defaultdict
+from email_service import EmailService
 
 # ---------- Config ----------
 JWT_SECRET = os.environ["JWT_SECRET"]
@@ -30,6 +33,7 @@ JWT_ALGORITHM = "HS256"
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
+email_service = EmailService(db)
 
 DEFAULT_CORS_ORIGINS = (
     "https://www.crelithtech.com,"
@@ -332,10 +336,11 @@ def verify_password(pw: str, hashed: str) -> bool:
         return False
 
 
-def create_token(user_id: str, email: str) -> str:
+def create_token(user_id: str, email: str, session_version: int = 0) -> str:
     payload = {
         "sub": user_id,
         "email": email,
+        "ver": session_version,
         "exp": datetime.now(timezone.utc) + timedelta(days=7),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -400,6 +405,8 @@ async def get_current_user(request: Request) -> dict:
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
+    if int(payload.get("ver", 0)) != int(user.get("session_version", 0)):
+        raise HTTPException(status_code=401, detail="Sessão invalidada")
     return ensure_active_user(user)
 
 
@@ -499,6 +506,37 @@ class UpdateProfileIn(BaseModel):
 class ChangePasswordIn(BaseModel):
     current_password: str
     new_password: str
+
+
+class PasswordResetRequestIn(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetIn(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class PasswordResetTokenIn(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
+class TransactionalEmailSettingsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    welcome_enabled: bool = True
+    password_reset_enabled: bool = True
+    from_name: str = Field(min_length=1, max_length=80)
+    from_email: EmailStr
+    reply_to: Optional[EmailStr] = None
+    reset_url: str = Field(min_length=10, max_length=500)
+    reset_expires_minutes: int = Field(ge=10, le=120)
+
+
+class TransactionalEmailTestIn(BaseModel):
+    recipient: EmailStr
+    language: Literal["pt", "it", "en", "es"] = "pt"
 
 
 class AccountDeletionIn(BaseModel):
@@ -653,8 +691,6 @@ def public_user(u: dict) -> dict:
         "language": u.get("language", "pt"),
         "avatar_color": u.get("avatar_color", "#1E3F33"),
         "created_at": u.get("created_at", ""),
-        "security_question": u.get("security_question") or None,
-        "has_security_question": bool(u.get("security_answer_hash")),
         "status": account_status(u),
         "role": role,
         "is_admin": role in {"ADMIN", "SUPER_ADMIN"},
@@ -677,8 +713,6 @@ def deleted_user_summary(user_id: str, language: str = "pt") -> dict:
         "language": "pt",
         "avatar_color": "#6B7068",
         "created_at": "",
-        "security_question": None,
-        "has_security_question": False,
         "status": "inactive",
         "role": "USER",
         "is_admin": False,
@@ -703,7 +737,10 @@ def admin_user_summary(u: dict) -> dict:
 
 # ---------- Auth ----------
 @api.post("/auth/register")
-async def register(payload: RegisterIn):
+async def register(
+    payload: RegisterIn,
+    background_tasks: BackgroundTasks,
+):
     email = payload.email.lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
@@ -721,6 +758,7 @@ async def register(payload: RegisterIn):
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
+    background_tasks.add_task(email_service.send_welcome_email, user)
     return {
         "status": "pending",
         "email": email,
@@ -735,7 +773,7 @@ async def login(payload: LoginIn):
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
     ensure_active_user(user)
-    token = create_token(user["id"], email)
+    token = create_token(user["id"], email, int(user.get("session_version", 0)))
     return {"token": token, "user": public_user(user)}
 
 
@@ -807,57 +845,227 @@ async def change_password(payload: ChangePasswordIn, user=Depends(get_current_us
         raise HTTPException(status_code=400, detail="Senha atual incorreta")
     await db.users.update_one(
         {"id": user["id"]},
-        {"$set": {"password_hash": hash_password(payload.new_password)}},
+        {
+            "$set": {"password_hash": hash_password(payload.new_password)},
+            "$inc": {"session_version": 1},
+        },
     )
+    await db.password_reset_tokens.update_many(
+        {"user_id": user["id"], "used_at": None},
+        {"$set": {"used_at": now_iso(), "invalidated_reason": "password_changed"}},
+    )
+    await ws_manager.disconnect_user(user["id"], code=4003)
     return {"ok": True}
 
 
-# ---------- Password recovery via security question (no external integration) ----------
-class SecurityQuestionIn(BaseModel):
-    question: str
-    answer: str
+# ---------- Password recovery via transactional email ----------
+PASSWORD_RESET_GENERIC_MESSAGE = (
+    "Se o e-mail estiver cadastrado, enviaremos um link para redefinir a senha."
+)
+PASSWORD_RESET_RATE_LIMIT = 3
+PASSWORD_RESET_RATE_WINDOW_MINUTES = 60
+PASSWORD_RESET_MIN_RESPONSE_SECONDS = 0.25
 
 
-class ResetPasswordSecurityIn(BaseModel):
-    email: EmailStr
-    answer: str
-    new_password: str
+def hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
-@api.post("/auth/security-question")
-async def set_security_question(payload: SecurityQuestionIn, user=Depends(get_current_user)):
-    q = payload.question.strip()
-    a = payload.answer.strip().lower()
-    if not q or not a:
-        raise HTTPException(400, "Pergunta e resposta são obrigatórias")
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$set": {"security_question": q, "security_answer_hash": hash_password(a)}},
+def request_fingerprint(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    host = forwarded.split(",")[0].strip() if forwarded else ""
+    if not host and request.client:
+        host = request.client.host
+    return hashlib.sha256(f"{JWT_SECRET}:{host or 'unknown'}".encode()).hexdigest()
+
+
+async def password_reset_rate_limited(email: str, fingerprint: str) -> bool:
+    cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(minutes=PASSWORD_RESET_RATE_WINDOW_MINUTES)
     )
+    query = {
+        "created_at": {"$gte": cutoff},
+        "$or": [
+            {"email_hash": hashlib.sha256(email.encode()).hexdigest()},
+            {"request_fingerprint": fingerprint},
+        ],
+    }
+    return (
+        await db.password_reset_requests.count_documents(query)
+        >= PASSWORD_RESET_RATE_LIMIT
+    )
+
+
+@api.post("/auth/password-reset/request")
+async def request_password_reset(
+    payload: PasswordResetRequestIn,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    started_at = asyncio.get_running_loop().time()
+    email = payload.email.lower()
+    fingerprint = request_fingerprint(request)
+    email_hash = hashlib.sha256(email.encode()).hexdigest()
+    if await password_reset_rate_limited(email, fingerprint):
+        logger.warning("Password reset rate limit reached: email_hash=%s", email_hash)
+        await asyncio.sleep(max(
+            0,
+            PASSWORD_RESET_MIN_RESPONSE_SECONDS
+            - (asyncio.get_running_loop().time() - started_at),
+        ))
+        return {"ok": True, "message": PASSWORD_RESET_GENERIC_MESSAGE}
+
+    user = await db.users.find_one({"email": email})
+    await db.password_reset_requests.insert_one({
+        "id": new_id(),
+        "user_id": user.get("id") if user else None,
+        "email_hash": email_hash,
+        "request_fingerprint": fingerprint,
+        "created_at": datetime.now(timezone.utc),
+    })
+    if user:
+        issued_at = datetime.now(timezone.utc)
+        settings = await email_service.public_settings()
+        expires_at = issued_at + timedelta(
+            minutes=settings["reset_expires_minutes"]
+        )
+        raw_token = secrets.token_urlsafe(48)
+        await db.password_reset_tokens.update_many(
+            {"user_id": user["id"], "used_at": None},
+            {
+                "$set": {
+                    "used_at": issued_at.isoformat(),
+                    "invalidated_reason": "superseded",
+                }
+            },
+        )
+        await db.password_reset_tokens.insert_one({
+            "id": new_id(),
+            "user_id": user["id"],
+            "token_hash": hash_reset_token(raw_token),
+            "expires_at": expires_at,
+            "used_at": None,
+            "created_at": issued_at.isoformat(),
+        })
+        background_tasks.add_task(
+            email_service.send_password_reset_email,
+            user,
+            raw_token,
+        )
+    await asyncio.sleep(max(
+        0,
+        PASSWORD_RESET_MIN_RESPONSE_SECONDS
+        - (asyncio.get_running_loop().time() - started_at),
+    ))
+    return {"ok": True, "message": PASSWORD_RESET_GENERIC_MESSAGE}
+
+
+async def valid_password_reset_token(token: str) -> Optional[dict]:
+    token_doc = await db.password_reset_tokens.find_one({
+        "token_hash": hash_reset_token(token),
+        "used_at": None,
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+    })
+    if not token_doc:
+        return None
+    user = await db.users.find_one({"id": token_doc["user_id"]})
+    if not user:
+        return None
+    return token_doc
+
+
+@api.post("/auth/password-reset/validate")
+async def validate_password_reset_token(payload: PasswordResetTokenIn):
+    if not await valid_password_reset_token(payload.token):
+        raise HTTPException(400, "Link inválido ou expirado")
+    return {"valid": True}
+
+
+@api.post("/auth/password-reset/confirm")
+async def confirm_password_reset(payload: PasswordResetIn):
+    token_hash = hash_reset_token(payload.token)
+    token_doc = await valid_password_reset_token(payload.token)
+    if not token_doc:
+        raise HTTPException(400, "Link inválido ou expirado")
+
+    used_at = now_iso()
+    claimed = await db.password_reset_tokens.update_one(
+        {
+            "id": token_doc["id"],
+            "token_hash": token_hash,
+            "used_at": None,
+            "expires_at": {"$gt": datetime.now(timezone.utc)},
+        },
+        {"$set": {"used_at": used_at, "invalidated_reason": "used"}},
+    )
+    if claimed.modified_count != 1:
+        raise HTTPException(400, "Link inválido ou expirado")
+
+    await db.users.update_one(
+        {"id": token_doc["user_id"]},
+        {
+            "$set": {
+                "password_hash": hash_password(payload.new_password),
+                "password_updated_at": used_at,
+            },
+            "$inc": {"session_version": 1},
+        },
+    )
+    await db.password_reset_tokens.update_many(
+        {"user_id": token_doc["user_id"], "used_at": None},
+        {"$set": {"used_at": used_at, "invalidated_reason": "password_reset"}},
+    )
+    await ws_manager.disconnect_user(token_doc["user_id"], code=4003)
     return {"ok": True}
 
 
-@api.get("/auth/security-question")
-async def get_security_question(email: str):
-    u = await db.users.find_one({"email": email.lower()}, {"_id": 0})
-    if not u or not u.get("security_answer_hash"):
-        return {"question": None}
-    return {"question": u.get("security_question")}
+# ---------- Transactional email administration (non-secret settings only) ----------
+@api.get("/admin/email-settings")
+async def get_transactional_email_settings(
+    _super_admin=Depends(require_super_admin),
+):
+    return await email_service.public_settings()
 
 
-@api.post("/auth/reset-password-security")
-async def reset_password_security(payload: ResetPasswordSecurityIn):
-    u = await db.users.find_one({"email": payload.email.lower()})
-    if not u or not u.get("security_answer_hash"):
-        raise HTTPException(400, "Recuperação por pergunta não disponível para esta conta")
-    if not verify_password(payload.answer.strip().lower(), u["security_answer_hash"]):
-        raise HTTPException(400, "Resposta de segurança incorreta")
-    if len(payload.new_password) < 4:
-        raise HTTPException(400, "A senha deve ter ao menos 4 caracteres")
-    await db.users.update_one(
-        {"id": u["id"]},
-        {"$set": {"password_hash": hash_password(payload.new_password)}},
+@api.put("/admin/email-settings")
+async def update_transactional_email_settings(
+    payload: TransactionalEmailSettingsIn,
+    super_admin=Depends(require_super_admin),
+):
+    if not payload.reset_url.lower().startswith("https://"):
+        raise HTTPException(400, "O link de recuperação deve usar HTTPS")
+    if "\r" in payload.from_name or "\n" in payload.from_name:
+        raise HTTPException(400, "Nome do remetente inválido")
+    settings = payload.model_dump(mode="json")
+    if not settings.get("reply_to"):
+        settings["reply_to"] = ""
+    settings.update({
+        "id": "transactional_email",
+        "updated_at": now_iso(),
+        "updated_by": super_admin["id"],
+    })
+    await db.app_settings.update_one(
+        {"id": "transactional_email"},
+        {"$set": settings},
+        upsert=True,
     )
+    return await email_service.public_settings()
+
+
+@api.post("/admin/email-settings/test")
+async def send_transactional_email_test(
+    payload: TransactionalEmailTestIn,
+    _super_admin=Depends(require_super_admin),
+):
+    if not email_service.is_configured():
+        raise HTTPException(503, "A credencial do Resend não está configurada no servidor")
+    sent = await email_service.send_test_email(
+        str(payload.recipient).lower(),
+        payload.language,
+    )
+    if not sent:
+        raise HTTPException(502, "O provedor não aceitou o e-mail de teste")
     return {"ok": True}
 
 
@@ -1170,6 +1378,9 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.receivables.delete_many({"user_id": user_id})
     await db.notifications.delete_many({"user_id": user_id})
     await db.files.delete_many({"user_id": user_id})
+    await db.password_reset_tokens.delete_many({"user_id": user_id})
+    await db.password_reset_requests.delete_many({"user_id": user_id})
+    await db.email_delivery_logs.delete_many({"user_id": user_id})
     await db.groups.delete_many({"creator_id": user_id})
     await db.groups.update_many(
         {"member_ids": user_id},
@@ -1502,6 +1713,9 @@ async def delete_admin_user(
         await db.accounts.delete_many({"user_id": user_id})
         await db.notifications.delete_many({"user_id": user_id})
         await db.files.delete_many({"user_id": user_id})
+        await db.password_reset_tokens.delete_many({"user_id": user_id})
+        await db.password_reset_requests.delete_many({"user_id": user_id})
+        await db.email_delivery_logs.delete_many({"user_id": user_id})
         await db.settlement_history.delete_many({
             "$or": [
                 {"debtor_id": user_id},
@@ -2772,6 +2986,8 @@ async def ws_notifications(websocket: WebSocket):
             )
             if not user:
                 raise ValueError("User not found")
+            if int(payload.get("ver", 0)) != int(user.get("session_version", 0)):
+                raise ValueError("Session invalidated")
             ensure_active_user(user)
         except Exception:
             user_id = None
@@ -3693,6 +3909,15 @@ async def startup():
     await db.shared_expenses.create_index("participant_ids")
     await db.groups.create_index("member_ids")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.password_reset_tokens.create_index("token_hash", unique=True)
+    await db.password_reset_tokens.create_index(
+        "expires_at",
+        expireAfterSeconds=0,
+    )
+    await db.password_reset_requests.create_index(
+        "created_at",
+        expireAfterSeconds=86400,
+    )
 
     # Backfill: garantir categorias padrão de receita para usuários existentes
     income_defaults = [c for c in DEFAULT_CATEGORIES if c[3] == "income"]

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Trash2, Plus, Pencil, X, RefreshCw, CheckCircle2, DownloadCloud, AlertTriangle, UserX } from "lucide-react";
+import { Trash2, Plus, Pencil, X, RefreshCw, CheckCircle2, DownloadCloud, AlertTriangle, UserX, Mail, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -55,10 +55,23 @@ export default function Settings() {
   const [deleteForm, setDeleteForm] = useState({ password: "", confirmation: "" });
   const [loadingDeleteImpact, setLoadingDeleteImpact] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [emailSettings, setEmailSettings] = useState(null);
+  const [emailSettingsLoading, setEmailSettingsLoading] = useState(false);
+  const [emailSettingsSaving, setEmailSettingsSaving] = useState(false);
+  const [testEmail, setTestEmail] = useState(user?.email || "");
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
 
   const load = () => api.get("/categories").then(r => setCats(r.data));
   const loadPrefs = () => api.get("/notifications/preferences").then(r => setPrefs(r.data));
   useEffect(() => { load(); loadPrefs(); }, []);
+  useEffect(() => {
+    if (!user?.is_super_admin) return;
+    setEmailSettingsLoading(true);
+    api.get("/admin/email-settings")
+      .then(({ data }) => setEmailSettings(data))
+      .catch((err) => toast.error(formatApiError(err)))
+      .finally(() => setEmailSettingsLoading(false));
+  }, [user?.is_super_admin]);
 
   const togglePref = async (key, value) => {
     const next = { ...prefs, [key]: value };
@@ -177,6 +190,40 @@ export default function Settings() {
     pending_settlements: tr("Existem despesas compartilhadas ou acertos pendentes."),
     last_active_admin: tr("Você é a única pessoa administradora ativa. Defina outra antes de excluir sua conta."),
   }[blocker] || blocker);
+
+  const saveEmailSettings = async () => {
+    if (!emailSettings || emailSettingsSaving) return;
+    setEmailSettingsSaving(true);
+    try {
+      const { credential_configured, provider, ...payload } = emailSettings;
+      const { data } = await api.put("/admin/email-settings", {
+        ...payload,
+        reply_to: payload.reply_to || null,
+      });
+      setEmailSettings(data);
+      toast.success(tr("Configuração de e-mail salva."));
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setEmailSettingsSaving(false);
+    }
+  };
+
+  const sendTestEmail = async () => {
+    if (!testEmail || sendingTestEmail) return;
+    setSendingTestEmail(true);
+    try {
+      await api.post("/admin/email-settings/test", {
+        recipient: testEmail,
+        language: user?.language || "pt",
+      });
+      toast.success(tr("E-mail de teste enviado."));
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setSendingTestEmail(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-2xl" data-testid="settings-page">
@@ -403,6 +450,134 @@ export default function Settings() {
           </div>
         )}
       </div>
+
+      {user?.is_super_admin && (
+        <div id="transactional-email" className="card-soft scroll-mt-24" data-testid="transactional-email-section">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>
+                {tr("E-mails transacionais")}
+              </h3>
+              <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+                {tr("Configure boas-vindas e recuperação de senha. A chave secreta permanece somente no servidor.")}
+              </p>
+            </div>
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+              <Mail size={20} />
+            </div>
+          </div>
+
+          {emailSettingsLoading ? (
+            <p className="mt-4 text-sm text-[#6B7068]">{tr("Carregando...")}</p>
+          ) : emailSettings && (
+            <div className="mt-5 space-y-5">
+              <div className={`flex items-center gap-3 rounded-xl border p-3 ${
+                emailSettings.credential_configured
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-amber-200 bg-amber-50 text-amber-800"
+              }`}>
+                <ShieldCheck size={18} />
+                <div className="text-sm">
+                  <div className="font-semibold">
+                    {emailSettings.credential_configured
+                      ? tr("Resend configurado no servidor")
+                      : tr("Resend ainda não configurado no servidor")}
+                  </div>
+                  <div className="mt-0.5 text-xs opacity-80">
+                    {tr("A credencial nunca é exibida ou armazenada neste painel.")}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  ["enabled", tr("Ativar serviço de e-mail")],
+                  ["welcome_enabled", tr("Enviar e-mail de boas-vindas")],
+                  ["password_reset_enabled", tr("Permitir recuperação de senha")],
+                ].map(([key, label]) => (
+                  <div key={key} className="flex items-center justify-between gap-4">
+                    <Label htmlFor={`email-${key}`}>{label}</Label>
+                    <Switch id={`email-${key}`} checked={!!emailSettings[key]}
+                      onCheckedChange={(checked) => setEmailSettings((current) => ({
+                        ...current,
+                        [key]: checked,
+                      }))}
+                      data-testid={`email-setting-${key}`} />
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="email-from-name">{tr("Nome do remetente")}</Label>
+                  <Input id="email-from-name" value={emailSettings.from_name}
+                    onChange={(event) => setEmailSettings((current) => ({
+                      ...current,
+                      from_name: event.target.value,
+                    }))}
+                    data-testid="email-from-name" />
+                </div>
+                <div>
+                  <Label htmlFor="email-from-address">{tr("E-mail do remetente")}</Label>
+                  <Input id="email-from-address" type="email" value={emailSettings.from_email}
+                    onChange={(event) => setEmailSettings((current) => ({
+                      ...current,
+                      from_email: event.target.value,
+                    }))}
+                    data-testid="email-from-address" />
+                </div>
+                <div>
+                  <Label htmlFor="email-reply-to">{tr("Responder para (opcional)")}</Label>
+                  <Input id="email-reply-to" type="email" value={emailSettings.reply_to || ""}
+                    onChange={(event) => setEmailSettings((current) => ({
+                      ...current,
+                      reply_to: event.target.value,
+                    }))}
+                    data-testid="email-reply-to" />
+                </div>
+                <div>
+                  <Label htmlFor="email-expiration">{tr("Validade do link (minutos)")}</Label>
+                  <Input id="email-expiration" type="number" min="10" max="120"
+                    value={emailSettings.reset_expires_minutes}
+                    onChange={(event) => setEmailSettings((current) => ({
+                      ...current,
+                      reset_expires_minutes: Number(event.target.value),
+                    }))}
+                    data-testid="email-reset-expiration" />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="email-reset-url">{tr("URL da tela de redefinição")}</Label>
+                <Input id="email-reset-url" type="url" value={emailSettings.reset_url}
+                  onChange={(event) => setEmailSettings((current) => ({
+                    ...current,
+                    reset_url: event.target.value,
+                  }))}
+                  data-testid="email-reset-url" />
+              </div>
+              <Button type="button" onClick={saveEmailSettings}
+                disabled={emailSettingsSaving} className="rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
+                data-testid="save-email-settings">
+                {emailSettingsSaving ? tr("Salvando...") : tr("Salvar configuração")}
+              </Button>
+
+              <div className="border-t border-[#E5E4E0] pt-5">
+                <Label htmlFor="email-test-recipient">{tr("Enviar teste para")}</Label>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <Input id="email-test-recipient" type="email" value={testEmail}
+                    onChange={(event) => setTestEmail(event.target.value)}
+                    data-testid="email-test-recipient" />
+                  <Button type="button" variant="outline" onClick={sendTestEmail}
+                    disabled={!emailSettings.credential_configured || sendingTestEmail}
+                    className="rounded-xl" data-testid="send-test-email">
+                    {sendingTestEmail ? tr("Enviando...") : tr("Enviar teste")}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card-soft border border-rose-200" data-testid="account-section">
         <div className="flex items-start justify-between gap-4">
