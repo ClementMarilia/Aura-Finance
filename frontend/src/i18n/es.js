@@ -1,4 +1,5 @@
 export default {
+  "Salvando...": "Guardando...",
   "Insights": "Análisis",
   "Pendentes": "Pendientes",
   "Relatório Financeiro": "Informe financiero",
