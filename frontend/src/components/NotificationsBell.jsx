@@ -25,6 +25,7 @@ export default function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
 
   const loadCount = () => {
     api.get("/notifications/unread-count")
@@ -40,16 +41,48 @@ export default function NotificationsBell() {
     const token = localStorage.getItem("token");
     if (!token) return;
     const base = process.env.REACT_APP_BACKEND_URL || "";
-    const wsUrl = `${base.replace(/^http/, "ws")}/api/ws/notifications?token=${token}`;
+    const wsUrl = `${base.replace(/^http/, "ws")}/api/ws/notifications`;
+    const maxReconnectAttempts = 5;
 
     let closed = false;
-    const connect = () => {
+    const scheduleReconnect = () => {
       if (closed) return;
+      if (reconnectAttemptsRef.current >= maxReconnectAttempts) return;
+      const delay = Math.min(
+        30000,
+        2000 * (2 ** reconnectAttemptsRef.current),
+      );
+      reconnectAttemptsRef.current += 1;
+      reconnectRef.current = setTimeout(connect, delay);
+    };
+    const connect = async () => {
+      if (closed || document.visibilityState === "hidden") return;
+      let ticket;
+      try {
+        const response = await api.post("/notifications/ws-ticket");
+        ticket = response.data.ticket;
+      } catch (error) {
+        if (error?.response?.status === 401) {
+          localStorage.removeItem("token");
+          window.location.assign("/login");
+          return;
+        }
+        scheduleReconnect();
+        return;
+      }
+      if (closed) return;
+
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: "authenticate", ticket }));
+      };
       ws.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data);
+          if (data.event === "authenticated") {
+            reconnectAttemptsRef.current = 0;
+          }
           if (typeof data.unread === "number") setCount(data.unread);
           if (data.event === "notification" && data.notification) {
             toast(data.notification.title, { description: data.notification.message });
@@ -64,7 +97,7 @@ export default function NotificationsBell() {
           window.location.assign("/login");
           return;
         }
-        reconnectRef.current = setTimeout(connect, 5000);
+        scheduleReconnect();
       };
       ws.onerror = () => { try { ws.close(); } catch { /* ignore */ } };
     };
@@ -72,9 +105,21 @@ export default function NotificationsBell() {
 
     // lightweight fallback poll in case WS drops
     const poll = setInterval(loadCount, 60000);
+    const reconnectWhenVisible = () => {
+      if (
+        document.visibilityState === "visible"
+        && !closed
+        && (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED)
+      ) {
+        reconnectAttemptsRef.current = 0;
+        connect();
+      }
+    };
+    document.addEventListener("visibilitychange", reconnectWhenVisible);
     return () => {
       closed = true;
       clearInterval(poll);
+      document.removeEventListener("visibilitychange", reconnectWhenVisible);
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
       if (wsRef.current) try { wsRef.current.close(); } catch { /* ignore */ }
     };
