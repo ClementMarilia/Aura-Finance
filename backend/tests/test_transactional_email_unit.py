@@ -32,17 +32,17 @@ def request_from(ip="203.0.113.8"):
     })
 
 
-def test_registration_schedules_welcome_without_exposing_delivery_failure(monkeypatch):
+def test_registration_schedules_confirmation_without_exposing_delivery_failure(monkeypatch):
     users = SimpleNamespace(
         find_one=AsyncMock(return_value=None),
         insert_one=AsyncMock(),
     )
-    send_welcome = AsyncMock(return_value=False)
+    send_confirmation = AsyncMock(return_value=False)
     monkeypatch.setattr(server, "db", SimpleNamespace(users=users))
     monkeypatch.setattr(
         server,
         "email_service",
-        SimpleNamespace(send_welcome_email=send_welcome),
+        SimpleNamespace(send_registration_received_email=send_confirmation),
     )
     tasks = BackgroundTasks()
 
@@ -58,7 +58,7 @@ def test_registration_schedules_welcome_without_exposing_delivery_failure(monkey
 
     assert result["status"] == "pending"
     assert len(tasks.tasks) == 1
-    assert tasks.tasks[0].func is send_welcome
+    assert tasks.tasks[0].func is send_confirmation
 
 
 def test_password_reset_request_stores_only_hash_and_invalidates_previous(monkeypatch):
@@ -251,6 +251,7 @@ def test_admin_settings_reject_provider_credentials_in_payload():
     with pytest.raises(ValidationError):
         server.TransactionalEmailSettingsIn(
             enabled=True,
+            registration_enabled=True,
             welcome_enabled=True,
             password_reset_enabled=True,
             from_name="Crelith Finance",
@@ -304,3 +305,33 @@ def test_delivery_and_audit_failures_do_not_raise(monkeypatch):
     }))
 
     assert sent is False
+
+
+def test_registration_and_approval_templates_are_distinct():
+    from email_templates import registration_received_template, welcome_template
+
+    logo_url = "https://www.crelithtech.com/logo-full-dark.png"
+    registration_subject, registration_html = registration_received_template(
+        "Pessoa", "pt", logo_url
+    )
+    welcome_subject, welcome_html = welcome_template("Pessoa", "pt", logo_url)
+
+    assert "Cadastro recebido" in registration_subject
+    assert "aguardando aprovação" in registration_html
+    assert f'src="{logo_url}"' in registration_html
+    assert 'alt="Crelith Finance"' in registration_html
+    assert "Bem-vindo" in welcome_subject
+    assert "acesso foi aprovado" in welcome_html
+    assert f'src="{logo_url}"' in welcome_html
+    assert "aguardando aprovação" not in welcome_html
+
+
+@pytest.mark.parametrize("language", ["pt", "it", "en", "es"])
+def test_both_account_lifecycle_emails_render_in_supported_languages(language):
+    from email_templates import registration_received_template, welcome_template
+
+    for template in (registration_received_template, welcome_template):
+        subject, html = template("Pessoa", language)
+        assert subject
+        assert f'<html lang="{language}">' in html
+        assert "Pessoa" in html

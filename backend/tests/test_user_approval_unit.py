@@ -209,9 +209,17 @@ def test_approval_creates_defaults_then_activates_user(monkeypatch):
         "db",
         SimpleNamespace(users=users, categories=categories, accounts=accounts),
     )
+    send_welcome = AsyncMock()
+    monkeypatch.setattr(
+        server,
+        "email_service",
+        SimpleNamespace(send_welcome_email=send_welcome),
+    )
+    tasks = BackgroundTasks()
 
     result = asyncio.run(server.approve_user(
         candidate["id"],
+        tasks,
         admin={"id": "admin-1", "email": "clementmarilia@gmail.com"},
     ))
 
@@ -226,6 +234,9 @@ def test_approval_creates_defaults_then_activates_user(monkeypatch):
     update = users.update_one.await_args_list[1].args[1]
     assert update["$set"]["status"] == "active"
     assert update["$set"]["approved_by"] == "admin-1"
+    assert len(tasks.tasks) == 1
+    assert tasks.tasks[0].func is send_welcome
+    assert tasks.tasks[0].args[0]["status"] == "active"
 
 
 def test_admin_summary_never_exposes_password_or_financial_fields():

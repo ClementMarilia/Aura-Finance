@@ -7,7 +7,11 @@ from typing import Optional
 
 import requests
 
-from email_templates import password_reset_template, welcome_template
+from email_templates import (
+    password_reset_template,
+    registration_received_template,
+    welcome_template,
+)
 
 
 logger = logging.getLogger("finance.email")
@@ -35,6 +39,7 @@ class EmailService:
             stored = {}
         return {
             "enabled": stored.get("enabled", True),
+            "registration_enabled": stored.get("registration_enabled", True),
             "welcome_enabled": stored.get("welcome_enabled", True),
             "password_reset_enabled": stored.get("password_reset_enabled", True),
             "from_name": stored.get("from_name") or os.environ.get(
@@ -44,6 +49,10 @@ class EmailService:
                 "EMAIL_FROM_ADDRESS", "onboarding@resend.dev"
             ),
             "reply_to": stored.get("reply_to") or os.environ.get("EMAIL_REPLY_TO", ""),
+            "logo_url": stored.get("logo_url") or os.environ.get(
+                "EMAIL_LOGO_URL",
+                "https://www.crelithtech.com/logo-full-dark.png",
+            ),
             "reset_url": stored.get("reset_url") or os.environ.get(
                 "PASSWORD_RESET_URL",
                 "https://www.crelithtech.com/redefinir-senha",
@@ -161,6 +170,23 @@ class EmailService:
             )
             return False
 
+    async def send_registration_received_email(self, user: dict) -> bool:
+        settings = await self._settings()
+        if not settings["registration_enabled"]:
+            return False
+        subject, html = registration_received_template(
+            user.get("name", ""),
+            user.get("language", "pt"),
+            settings.get("logo_url", ""),
+        )
+        return await self._send(
+            "registration_received",
+            user["email"],
+            subject,
+            html,
+            user.get("id"),
+        )
+
     async def send_welcome_email(self, user: dict) -> bool:
         settings = await self._settings()
         if not settings["welcome_enabled"]:
@@ -168,6 +194,7 @@ class EmailService:
         subject, html = welcome_template(
             user.get("name", ""),
             user.get("language", "pt"),
+            settings.get("logo_url", ""),
         )
         return await self._send(
             "welcome",
@@ -186,6 +213,7 @@ class EmailService:
             reset_url,
             user.get("language", "pt"),
             settings["reset_expires_minutes"],
+            settings.get("logo_url", ""),
         )
         return await self._send(
             "password_reset",
@@ -196,5 +224,10 @@ class EmailService:
         )
 
     async def send_test_email(self, recipient: str, language: str = "pt") -> bool:
-        subject, html = welcome_template("Teste", language)
+        settings = await self._settings()
+        subject, html = welcome_template(
+            "Teste",
+            language,
+            settings.get("logo_url", ""),
+        )
         return await self._send("test", recipient, f"[TESTE] {subject}", html)

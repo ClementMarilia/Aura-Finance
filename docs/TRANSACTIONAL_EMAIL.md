@@ -2,7 +2,8 @@
 
 O MVP usa a API HTTPS do Resend para enviar:
 
-- boas-vindas após o cadastro;
+- confirmação de cadastro enquanto a conta aguarda aprovação;
+- boas-vindas quando a administradora aprova e ativa a conta;
 - recuperação de senha por link temporário.
 
 ## Segredos
@@ -13,6 +14,10 @@ colada em tickets e logs.
 
 O painel de administração permite editar somente configurações não secretas e
 informa se a credencial está configurada. A API nunca retorna o valor da chave.
+Também é possível definir a URL HTTPS da logo exibida no cabeçalho dos e-mails.
+
+Os textos e a estrutura dos modelos ficam atualmente em
+`backend/email_templates.py`. Não há editor de HTML no painel administrativo.
 
 ## Variáveis
 

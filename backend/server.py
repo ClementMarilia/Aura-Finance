@@ -577,11 +577,17 @@ class TransactionalEmailSettingsIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
+    registration_enabled: bool = True
     welcome_enabled: bool = True
     password_reset_enabled: bool = True
     from_name: str = Field(min_length=1, max_length=80)
     from_email: EmailStr
     reply_to: Optional[EmailStr] = None
+    logo_url: str = Field(
+        default="https://www.crelithtech.com/logo-full-dark.png",
+        min_length=10,
+        max_length=500,
+    )
     reset_url: str = Field(min_length=10, max_length=500)
     reset_expires_minutes: int = Field(ge=10, le=120)
 
@@ -810,7 +816,7 @@ async def register(
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
-    background_tasks.add_task(email_service.send_welcome_email, user)
+    background_tasks.add_task(email_service.send_registration_received_email, user)
     return {
         "status": "pending",
         "email": email,
@@ -1087,6 +1093,12 @@ async def update_transactional_email_settings(
 ):
     if not payload.reset_url.lower().startswith("https://"):
         raise HTTPException(400, "O link de recuperação deve usar HTTPS")
+    if (
+        not payload.logo_url.lower().startswith("https://")
+        or "\r" in payload.logo_url
+        or "\n" in payload.logo_url
+    ):
+        raise HTTPException(400, "A imagem da logo deve usar HTTPS")
     if "\r" in payload.from_name or "\n" in payload.from_name:
         raise HTTPException(400, "Nome do remetente inválido")
     settings = payload.model_dump(mode="json")
@@ -1812,7 +1824,11 @@ async def delete_admin_user(
 
 
 @api.post("/admin/users/{user_id}/approve", response_model=AdminUserOut)
-async def approve_user(user_id: str, admin=Depends(require_admin)):
+async def approve_user(
+    user_id: str,
+    background_tasks: BackgroundTasks,
+    admin=Depends(require_admin),
+):
     user = await db.users.find_one({"id": user_id})
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -1843,7 +1859,7 @@ async def approve_user(user_id: str, admin=Depends(require_admin)):
         raise
 
     reviewed_at = now_iso()
-    await db.users.update_one(
+    activation = await db.users.update_one(
         {"id": user_id, "approval_in_progress": True},
         {
             "$set": {
@@ -1857,7 +1873,13 @@ async def approve_user(user_id: str, admin=Depends(require_admin)):
             },
         },
     )
+    if not activation.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="O status deste cadastro mudou durante a aprovação",
+        )
     user.update({"status": "active", "reviewed_at": reviewed_at})
+    background_tasks.add_task(email_service.send_welcome_email, user)
     return admin_user_summary(user)
 
 

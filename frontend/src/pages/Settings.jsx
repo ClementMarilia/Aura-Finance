@@ -492,7 +492,8 @@ export default function Settings() {
               <div className="space-y-3">
                 {[
                   ["enabled", tr("Ativar serviço de e-mail")],
-                  ["welcome_enabled", tr("Enviar e-mail de boas-vindas")],
+                  ["registration_enabled", tr("Enviar confirmação de cadastro")],
+                  ["welcome_enabled", tr("Enviar boas-vindas após aprovação")],
                   ["password_reset_enabled", tr("Permitir recuperação de senha")],
                 ].map(([key, label]) => (
                   <div key={key} className="flex items-center justify-between gap-4">
@@ -545,6 +546,15 @@ export default function Settings() {
                     }))}
                     data-testid="email-reset-expiration" />
                 </div>
+              </div>
+              <div>
+                <Label htmlFor="email-logo-url">{tr("URL da logo nos e-mails")}</Label>
+                <Input id="email-logo-url" type="url" value={emailSettings.logo_url}
+                  onChange={(event) => setEmailSettings((current) => ({
+                    ...current,
+                    logo_url: event.target.value,
+                  }))}
+                  data-testid="email-logo-url" />
               </div>
               <div>
                 <Label htmlFor="email-reset-url">{tr("URL da tela de redefinição")}</Label>
