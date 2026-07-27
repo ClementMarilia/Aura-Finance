@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { formatApiError } from "@/lib/api";
+import api, { formatApiError, postCreate } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,7 +38,7 @@ export default function Groups() {
   const submit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/groups", {
+      await postCreate("/groups", {
         name: form.name,
         description: form.description,
         member_emails: form.member_emails.split(",").map(s => s.trim()).filter(Boolean),

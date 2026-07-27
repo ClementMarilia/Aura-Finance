@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { formatApiError } from "@/lib/api";
+import api, { formatApiError, postCreate } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
@@ -116,7 +116,7 @@ export default function Settings() {
           await api.put(`/categories/${editing.id}`, payload);
           toast.success(tr("Categoria atualizada"));
         } else {
-          await api.post("/categories", payload);
+          await postCreate("/categories", payload);
           toast.success(tr("Categoria criada"));
         }
         cancelEdit();

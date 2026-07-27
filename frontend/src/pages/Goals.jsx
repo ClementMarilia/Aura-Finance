@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { fmtMoney, fmtDate, formatApiError } from "@/lib/api";
+import api, { fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,7 +56,7 @@ export default function Goals() {
     };
     try {
       if (editing) { await api.put(`/goals/${editing.id}`, payload); toast.success(tr("Meta atualizada")); }
-      else { await api.post("/goals", payload); toast.success(tr("Meta criada")); }
+      else { await postCreate("/goals", payload); toast.success(tr("Meta criada")); }
       setOpen(false);
       load();
     } catch (err) { toast.error(formatApiError(err)); }
