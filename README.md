@@ -79,7 +79,9 @@ Cada card no Dashboard navega direto para a tela com filtro aplicado, mostrando 
 - O cadastro exige a confirmação do aviso de privacidade. O backend registra a data e a versão aceita, e rejeita solicitações que tentem contornar o checkbox.
 - Login e cadastro permitem mostrar ou ocultar a senha sem alterar o valor digitado.
 - Usuários existentes sem o campo `status` continuam ativos para garantir compatibilidade.
-- **Recuperação de senha** por pergunta de segurança (fluxo público de 2 passos no Login + configuração em Perfil).
+- **Recuperação de senha por e-mail** com Resend, token de uso único armazenado somente como hash, expiração configurável e encerramento das sessões antigas.
+- **E-mails de ciclo da conta** separados para cadastro recebido e acesso aprovado.
+- A `SUPER_ADMIN` pode editar assunto, título, conteúdo, botão e rodapé dos três modelos em Português, Italiano, Inglês e Espanhol, visualizar uma prévia isolada e restaurar o padrão. O painel aceita texto e variáveis permitidas, nunca HTML livre ou credenciais do provedor.
 - **Notificações in-app** + push em **WebSocket** (`/api/ws/notifications`) com fallback de polling; preferências por tipo (mute).
 
 ---
@@ -272,13 +274,18 @@ POST   /auth/login
 GET    /auth/me
 PUT    /auth/profile
 POST   /auth/change-password
-POST   /auth/security-question                   # define (auth)
-GET    /auth/security-question?email=...         # público (retorna pergunta ou null)
-POST   /auth/reset-password-security             # público (email, answer, new_password)
+POST   /auth/password-reset/request              # resposta pública genérica
+POST   /auth/password-reset/validate
+POST   /auth/password-reset/confirm
 GET    /users/search
 GET    /admin/users?status=pending|active|rejected|all
 POST   /admin/users/{user_id}/approve
 POST   /admin/users/{user_id}/reject
+GET|PUT /admin/email-settings                    # SUPER_ADMIN; sem credenciais
+POST   /admin/email-settings/test                # SUPER_ADMIN
+GET    /admin/email-templates                    # SUPER_ADMIN
+PUT|DELETE /admin/email-templates/{type}/{lang}  # salvar/restaurar
+POST   /admin/email-templates/{type}/{lang}/preview
 ```
 
 ### Categorias / Carteiras

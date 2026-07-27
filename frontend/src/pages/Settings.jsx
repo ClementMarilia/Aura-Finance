@@ -13,6 +13,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import { usePWAUpdate } from "@/context/PWAUpdateContext";
 import { useAuth } from "@/context/AuthContext";
 import LanguageSelector from "@/components/LanguageSelector";
+import EmailTemplateEditor from "@/components/EmailTemplateEditor";
 import { translate as tr } from "@/i18n";
 import { useNavigate } from "react-router-dom";
 
@@ -583,6 +584,16 @@ export default function Settings() {
                     {sendingTestEmail ? tr("Enviando...") : tr("Enviar teste")}
                   </Button>
                 </div>
+              </div>
+
+              <div className="border-t border-[#E5E4E0] pt-5">
+                <h4 className="text-base font-semibold" style={{ fontFamily: "Outfit" }}>
+                  {tr("Modelos de e-mail")}
+                </h4>
+                <p className="mb-5 mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+                  {tr("Edite assunto, conteúdo, botão e rodapé para cada tipo de e-mail e idioma.")}
+                </p>
+                <EmailTemplateEditor />
               </div>
             </div>
           )}

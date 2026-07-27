@@ -335,3 +335,129 @@ def test_both_account_lifecycle_emails_render_in_supported_languages(language):
         assert subject
         assert f'<html lang="{language}">' in html
         assert "Pessoa" in html
+
+
+def test_public_templates_exposes_all_types_and_languages_without_secrets():
+    from email_service import EmailService
+
+    database = SimpleNamespace(
+        email_templates=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        app_settings=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+    )
+
+    templates = asyncio.run(EmailService(database).public_templates())
+
+    assert len(templates) == 12
+    assert {
+        (item["template_type"], item["language"])
+        for item in templates
+    } == {
+        (template_type, language)
+        for template_type in ("registration_received", "welcome", "password_reset")
+        for language in ("pt", "it", "en", "es")
+    }
+    assert "api_key" not in str(templates)
+
+
+def test_customized_template_is_used_for_delivery(monkeypatch):
+    from email_service import EmailService
+
+    custom = {
+        "id": "welcome:pt",
+        "subject": "Conta liberada para {name}",
+        "title": "Tudo pronto, {name}",
+        "body": "Seu acesso está ativo.",
+        "button_text": "Entrar agora",
+        "button_url": "https://www.crelithtech.com/login",
+        "footer": "Mensagem personalizada.",
+    }
+    database = SimpleNamespace(
+        email_templates=SimpleNamespace(find_one=AsyncMock(return_value=custom)),
+        app_settings=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+    )
+    service = EmailService(database)
+    send = AsyncMock(return_value=True)
+    monkeypatch.setattr(service, "_send", send)
+
+    asyncio.run(service.send_welcome_email({
+        "id": "user-1",
+        "name": "Marilia",
+        "email": "user@example.com",
+        "language": "pt",
+    }))
+
+    assert send.await_args.args[2] == "Conta liberada para Marilia"
+    html = send.await_args.args[3]
+    assert "Tudo pronto, Marilia" in html
+    assert "Entrar agora" in html
+    assert "Mensagem personalizada." in html
+
+
+def test_template_render_escapes_markup_and_user_values():
+    from email_templates import welcome_template
+
+    subject, html = welcome_template(
+        '<img src=x onerror="alert(1)">',
+        "pt",
+        fields={
+            "subject": "Olá, {name}",
+            "title": "<script>alert(1)</script>",
+            "body": "Linha 1\nLinha 2 para {name}",
+            "button_text": "<b>Entrar</b>",
+            "button_url": "https://www.crelithtech.com/login",
+            "footer": "",
+        },
+    )
+
+    assert "<script>" not in html
+    assert "<img src=x" not in html
+    assert "&lt;script&gt;" in html
+    assert "&lt;img src=x" in html
+    assert "&lt;b&gt;Entrar&lt;/b&gt;" in html
+    assert "<br>" in html
+    assert "\r" not in subject
+    assert "\n" not in subject
+
+
+def test_template_rejects_unknown_placeholder():
+    payload = server.EmailTemplateIn(
+        subject="Olá {password}",
+        title="Título",
+        body="Conteúdo",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        server.validate_email_template_payload("welcome", payload)
+
+    assert exc.value.status_code == 400
+    assert "{password}" in exc.value.detail
+
+
+def test_template_rejects_non_https_button_url():
+    payload = server.EmailTemplateIn(
+        subject="Assunto",
+        title="Título",
+        body="Conteúdo",
+        button_text="Abrir",
+        button_url="javascript:alert(1)",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        server.validate_email_template_payload("welcome", payload)
+
+    assert exc.value.status_code == 400
+    assert "HTTPS" in exc.value.detail
+
+
+def test_password_reset_button_url_is_always_managed_by_system():
+    payload = server.EmailTemplateIn(
+        subject="Redefina sua senha",
+        title="Redefinição",
+        body="Use em {minutes} minutos.",
+        button_text="Redefinir",
+        button_url="https://attacker.example/collect",
+    )
+
+    fields = server.validate_email_template_payload("password_reset", payload)
+
+    assert fields["button_url"] == ""

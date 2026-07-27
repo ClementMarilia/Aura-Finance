@@ -8,8 +8,12 @@ from typing import Optional
 import requests
 
 from email_templates import (
+    SUPPORTED_LANGUAGES,
+    SUPPORTED_TEMPLATE_TYPES,
+    default_template_fields,
     password_reset_template,
     registration_received_template,
+    template_placeholders,
     welcome_template,
 )
 
@@ -70,6 +74,70 @@ class EmailService:
             "provider": "Resend",
             "credential_configured": self.is_configured(),
         }
+
+    async def template_fields(self, template_type: str, language: str) -> dict:
+        defaults = default_template_fields(template_type, language)
+        try:
+            stored = await self.db.email_templates.find_one(
+                {"id": f"{template_type}:{language}"},
+                {"_id": 0},
+            ) or {}
+        except Exception:
+            logger.exception(
+                "Email template lookup failed: type=%s language=%s",
+                template_type,
+                language,
+            )
+            stored = {}
+        fields = {
+            key: stored.get(key, value)
+            for key, value in defaults.items()
+        }
+        return {
+            "template_type": template_type,
+            "language": language,
+            **fields,
+            "is_customized": bool(stored),
+            "placeholders": template_placeholders(template_type),
+            "button_url_managed": template_type == "password_reset",
+        }
+
+    async def public_templates(self) -> list[dict]:
+        return [
+            await self.template_fields(template_type, language)
+            for template_type in SUPPORTED_TEMPLATE_TYPES
+            for language in SUPPORTED_LANGUAGES
+        ]
+
+    async def render_template(
+        self,
+        template_type: str,
+        language: str,
+        fields: Optional[dict] = None,
+    ) -> tuple[str, str]:
+        settings = await self._settings()
+        selected = fields or await self.template_fields(template_type, language)
+        if template_type == "registration_received":
+            return registration_received_template(
+                "Marilia",
+                language,
+                settings.get("logo_url", ""),
+                selected,
+            )
+        if template_type == "welcome":
+            return welcome_template(
+                "Marilia",
+                language,
+                settings.get("logo_url", ""),
+                selected,
+            )
+        return password_reset_template(
+            f'{settings["reset_url"].split("#", 1)[0]}#token=preview',
+            language,
+            settings["reset_expires_minutes"],
+            settings.get("logo_url", ""),
+            selected,
+        )
 
     async def _record_failure(
         self,
@@ -174,10 +242,13 @@ class EmailService:
         settings = await self._settings()
         if not settings["registration_enabled"]:
             return False
+        language = user.get("language", "pt")
+        fields = await self.template_fields("registration_received", language)
         subject, html = registration_received_template(
             user.get("name", ""),
-            user.get("language", "pt"),
+            language,
             settings.get("logo_url", ""),
+            fields,
         )
         return await self._send(
             "registration_received",
@@ -191,10 +262,13 @@ class EmailService:
         settings = await self._settings()
         if not settings["welcome_enabled"]:
             return False
+        language = user.get("language", "pt")
+        fields = await self.template_fields("welcome", language)
         subject, html = welcome_template(
             user.get("name", ""),
-            user.get("language", "pt"),
+            language,
             settings.get("logo_url", ""),
+            fields,
         )
         return await self._send(
             "welcome",
@@ -209,11 +283,14 @@ class EmailService:
         if not settings["password_reset_enabled"]:
             return False
         reset_url = f'{settings["reset_url"].split("#", 1)[0]}#token={token}'
+        language = user.get("language", "pt")
+        fields = await self.template_fields("password_reset", language)
         subject, html = password_reset_template(
             reset_url,
-            user.get("language", "pt"),
+            language,
             settings["reset_expires_minutes"],
             settings.get("logo_url", ""),
+            fields,
         )
         return await self._send(
             "password_reset",
@@ -225,9 +302,11 @@ class EmailService:
 
     async def send_test_email(self, recipient: str, language: str = "pt") -> bool:
         settings = await self._settings()
+        fields = await self.template_fields("welcome", language)
         subject, html = welcome_template(
             "Teste",
             language,
             settings.get("logo_url", ""),
+            fields,
         )
         return await self._send("test", recipient, f"[TESTE] {subject}", html)
