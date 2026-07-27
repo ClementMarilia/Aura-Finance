@@ -13,6 +13,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import { usePWAUpdate } from "@/context/PWAUpdateContext";
 import { useAuth } from "@/context/AuthContext";
 import LanguageSelector from "@/components/LanguageSelector";
+import EmailTemplateEditor from "@/components/EmailTemplateEditor";
 import { translate as tr } from "@/i18n";
 import { useNavigate } from "react-router-dom";
 
@@ -492,7 +493,8 @@ export default function Settings() {
               <div className="space-y-3">
                 {[
                   ["enabled", tr("Ativar serviço de e-mail")],
-                  ["welcome_enabled", tr("Enviar e-mail de boas-vindas")],
+                  ["registration_enabled", tr("Enviar confirmação de cadastro")],
+                  ["welcome_enabled", tr("Enviar boas-vindas após aprovação")],
                   ["password_reset_enabled", tr("Permitir recuperação de senha")],
                 ].map(([key, label]) => (
                   <div key={key} className="flex items-center justify-between gap-4">
@@ -547,6 +549,15 @@ export default function Settings() {
                 </div>
               </div>
               <div>
+                <Label htmlFor="email-logo-url">{tr("URL da logo nos e-mails")}</Label>
+                <Input id="email-logo-url" type="url" value={emailSettings.logo_url}
+                  onChange={(event) => setEmailSettings((current) => ({
+                    ...current,
+                    logo_url: event.target.value,
+                  }))}
+                  data-testid="email-logo-url" />
+              </div>
+              <div>
                 <Label htmlFor="email-reset-url">{tr("URL da tela de redefinição")}</Label>
                 <Input id="email-reset-url" type="url" value={emailSettings.reset_url}
                   onChange={(event) => setEmailSettings((current) => ({
@@ -573,6 +584,16 @@ export default function Settings() {
                     {sendingTestEmail ? tr("Enviando...") : tr("Enviar teste")}
                   </Button>
                 </div>
+              </div>
+
+              <div className="border-t border-[#E5E4E0] pt-5">
+                <h4 className="text-base font-semibold" style={{ fontFamily: "Outfit" }}>
+                  {tr("Modelos de e-mail")}
+                </h4>
+                <p className="mb-5 mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+                  {tr("Edite assunto, conteúdo, botão e rodapé para cada tipo de e-mail e idioma.")}
+                </p>
+                <EmailTemplateEditor />
               </div>
             </div>
           )}

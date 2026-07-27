@@ -26,6 +26,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from collections import defaultdict
 from email_service import EmailService
+from email_templates import validate_template_placeholders
 
 # ---------- Config ----------
 JWT_SECRET = os.environ["JWT_SECRET"]
@@ -577,11 +578,17 @@ class TransactionalEmailSettingsIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
+    registration_enabled: bool = True
     welcome_enabled: bool = True
     password_reset_enabled: bool = True
     from_name: str = Field(min_length=1, max_length=80)
     from_email: EmailStr
     reply_to: Optional[EmailStr] = None
+    logo_url: str = Field(
+        default="https://www.crelithtech.com/logo-full-dark.png",
+        min_length=10,
+        max_length=500,
+    )
     reset_url: str = Field(min_length=10, max_length=500)
     reset_expires_minutes: int = Field(ge=10, le=120)
 
@@ -589,6 +596,17 @@ class TransactionalEmailSettingsIn(BaseModel):
 class TransactionalEmailTestIn(BaseModel):
     recipient: EmailStr
     language: Literal["pt", "it", "en", "es"] = "pt"
+
+
+class EmailTemplateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject: str = Field(min_length=1, max_length=180)
+    title: str = Field(min_length=1, max_length=180)
+    body: str = Field(min_length=1, max_length=5000)
+    button_text: str = Field(default="", max_length=120)
+    button_url: str = Field(default="", max_length=500)
+    footer: str = Field(default="", max_length=1500)
 
 
 class AccountDeletionIn(BaseModel):
@@ -810,7 +828,7 @@ async def register(
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
-    background_tasks.add_task(email_service.send_welcome_email, user)
+    background_tasks.add_task(email_service.send_registration_received_email, user)
     return {
         "status": "pending",
         "email": email,
@@ -1087,6 +1105,12 @@ async def update_transactional_email_settings(
 ):
     if not payload.reset_url.lower().startswith("https://"):
         raise HTTPException(400, "O link de recuperação deve usar HTTPS")
+    if (
+        not payload.logo_url.lower().startswith("https://")
+        or "\r" in payload.logo_url
+        or "\n" in payload.logo_url
+    ):
+        raise HTTPException(400, "A imagem da logo deve usar HTTPS")
     if "\r" in payload.from_name or "\n" in payload.from_name:
         raise HTTPException(400, "Nome do remetente inválido")
     settings = payload.model_dump(mode="json")
@@ -1119,6 +1143,85 @@ async def send_transactional_email_test(
     if not sent:
         raise HTTPException(502, "O provedor não aceitou o e-mail de teste")
     return {"ok": True}
+
+
+def validate_email_template_payload(
+    template_type: str,
+    payload: EmailTemplateIn,
+) -> dict:
+    fields = payload.model_dump()
+    for key, value in fields.items():
+        if "\x00" in value:
+            raise HTTPException(400, f"Campo inválido: {key}")
+    if "\r" in fields["subject"] or "\n" in fields["subject"]:
+        raise HTTPException(400, "O assunto deve ter apenas uma linha")
+    button_url = fields["button_url"].strip()
+    if template_type == "password_reset":
+        fields["button_url"] = ""
+    elif button_url and not button_url.lower().startswith("https://"):
+        raise HTTPException(400, "O link do botão deve usar HTTPS")
+    try:
+        validate_template_placeholders(template_type, fields)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(400, str(exc))
+    return fields
+
+
+@api.get("/admin/email-templates")
+async def get_email_templates(
+    _super_admin=Depends(require_super_admin),
+):
+    return {"templates": await email_service.public_templates()}
+
+
+@api.put("/admin/email-templates/{template_type}/{language}")
+async def update_email_template(
+    template_type: Literal["registration_received", "welcome", "password_reset"],
+    language: Literal["pt", "it", "en", "es"],
+    payload: EmailTemplateIn,
+    super_admin=Depends(require_super_admin),
+):
+    fields = validate_email_template_payload(template_type, payload)
+    document = {
+        "id": f"{template_type}:{language}",
+        "template_type": template_type,
+        "language": language,
+        **fields,
+        "updated_at": now_iso(),
+        "updated_by": super_admin["id"],
+    }
+    await db.email_templates.update_one(
+        {"id": document["id"]},
+        {"$set": document},
+        upsert=True,
+    )
+    return await email_service.template_fields(template_type, language)
+
+
+@api.delete("/admin/email-templates/{template_type}/{language}")
+async def restore_default_email_template(
+    template_type: Literal["registration_received", "welcome", "password_reset"],
+    language: Literal["pt", "it", "en", "es"],
+    _super_admin=Depends(require_super_admin),
+):
+    await db.email_templates.delete_one({"id": f"{template_type}:{language}"})
+    return await email_service.template_fields(template_type, language)
+
+
+@api.post("/admin/email-templates/{template_type}/{language}/preview")
+async def preview_email_template(
+    template_type: Literal["registration_received", "welcome", "password_reset"],
+    language: Literal["pt", "it", "en", "es"],
+    payload: EmailTemplateIn,
+    _super_admin=Depends(require_super_admin),
+):
+    fields = validate_email_template_payload(template_type, payload)
+    subject, html = await email_service.render_template(
+        template_type,
+        language,
+        fields,
+    )
+    return {"subject": subject, "html": html}
 
 
 @api.get("/users/search")
@@ -1812,7 +1915,11 @@ async def delete_admin_user(
 
 
 @api.post("/admin/users/{user_id}/approve", response_model=AdminUserOut)
-async def approve_user(user_id: str, admin=Depends(require_admin)):
+async def approve_user(
+    user_id: str,
+    background_tasks: BackgroundTasks,
+    admin=Depends(require_admin),
+):
     user = await db.users.find_one({"id": user_id})
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -1843,7 +1950,7 @@ async def approve_user(user_id: str, admin=Depends(require_admin)):
         raise
 
     reviewed_at = now_iso()
-    await db.users.update_one(
+    activation = await db.users.update_one(
         {"id": user_id, "approval_in_progress": True},
         {
             "$set": {
@@ -1857,7 +1964,13 @@ async def approve_user(user_id: str, admin=Depends(require_admin)):
             },
         },
     )
+    if not activation.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="O status deste cadastro mudou durante a aprovação",
+        )
     user.update({"status": "active", "reviewed_at": reviewed_at})
+    background_tasks.add_task(email_service.send_welcome_email, user)
     return admin_user_summary(user)
 
 
@@ -4018,6 +4131,7 @@ async def startup():
         "created_at",
         expireAfterSeconds=86400,
     )
+    await db.email_templates.create_index("id", unique=True)
 
     # Backfill: garantir categorias padrão de receita para usuários existentes
     income_defaults = [c for c in DEFAULT_CATEGORIES if c[3] == "income"]
