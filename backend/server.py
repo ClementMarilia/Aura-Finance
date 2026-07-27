@@ -37,6 +37,7 @@ DEFAULT_CORS_ORIGINS = (
     "https://aura-finance-inky.vercel.app,"
     "http://localhost:3000"
 )
+SUPER_ADMIN_EMAIL = "clementmarilia@gmail.com"
 
 
 def configured_cors_origins() -> List[str]:
@@ -58,6 +59,10 @@ def configured_admin_emails() -> set[str]:
         for email in raw_emails.split(",")
         if email.strip()
     }
+
+
+def configured_super_admin_email() -> str:
+    return SUPER_ADMIN_EMAIL
 
 
 app = FastAPI(title="Controle Financeiro")
@@ -341,8 +346,25 @@ def account_status(user: dict) -> str:
     return user.get("status") or "active"
 
 
+def user_role(user: dict) -> str:
+    """Resolve persisted RBAC roles while keeping legacy administrators active."""
+    email = user.get("email", "").strip().lower()
+    if email == configured_super_admin_email():
+        return "SUPER_ADMIN"
+    stored_role = str(user.get("role") or "").upper()
+    if stored_role in {"USER", "ADMIN"}:
+        return stored_role
+    if email in configured_admin_emails():
+        return "ADMIN"
+    return "USER"
+
+
 def is_admin_user(user: dict) -> bool:
-    return user.get("email", "").lower() in configured_admin_emails()
+    return user_role(user) in {"ADMIN", "SUPER_ADMIN"}
+
+
+def is_super_admin_user(user: dict) -> bool:
+    return user_role(user) == "SUPER_ADMIN"
 
 
 def ensure_active_user(user: dict) -> dict:
@@ -390,6 +412,15 @@ async def require_admin(user=Depends(get_current_user)) -> dict:
     return user
 
 
+async def require_super_admin(user=Depends(get_current_user)) -> dict:
+    if not is_super_admin_user(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente a super administradora pode alterar papéis administrativos",
+        )
+    return user
+
+
 def month_range(year: int, month: int):
     start = datetime(year, month, 1, tzinfo=timezone.utc)
     if month == 12:
@@ -432,7 +463,9 @@ class AdminUserOut(BaseModel):
     id: str
     name: str
     email: str
-    status: Literal["pending", "active", "rejected"]
+    status: Literal["pending", "active", "inactive", "rejected"]
+    role: Literal["USER", "ADMIN", "SUPER_ADMIN"] = "USER"
+    is_super_admin: bool = False
     created_at: str
     reviewed_at: Optional[str] = None
 
@@ -443,6 +476,18 @@ class AdminUserDeletionImpactOut(BaseModel):
     blockers: List[str]
     impact: dict[str, int]
     sessions_will_be_terminated: bool = True
+
+
+class AdminRoleUpdateIn(BaseModel):
+    role: Literal["USER", "ADMIN"]
+
+
+class AdminStatusUpdateIn(BaseModel):
+    status: Literal["active", "inactive"]
+
+
+class AdminIdentityUpdateIn(BaseModel):
+    name: str
 
 
 class UpdateProfileIn(BaseModel):
@@ -588,6 +633,7 @@ def user_color(name: str) -> str:
 
 
 def public_user(u: dict) -> dict:
+    role = user_role(u)
     return {
         "id": u["id"], "name": u["name"], "email": u["email"],
         "currency": u.get("currency", "EUR"),
@@ -597,17 +643,22 @@ def public_user(u: dict) -> dict:
         "security_question": u.get("security_question") or None,
         "has_security_question": bool(u.get("security_answer_hash")),
         "status": account_status(u),
-        "is_admin": is_admin_user(u),
+        "role": role,
+        "is_admin": role in {"ADMIN", "SUPER_ADMIN"},
+        "is_super_admin": role == "SUPER_ADMIN",
     }
 
 
 def admin_user_summary(u: dict) -> dict:
     """Return identity and approval metadata only, never financial data."""
+    role = user_role(u)
     return {
         "id": u["id"],
         "name": u["name"],
         "email": u["email"],
         "status": account_status(u),
+        "role": role,
+        "is_super_admin": role == "SUPER_ADMIN",
         "created_at": u.get("created_at", ""),
         "reviewed_at": u.get("reviewed_at"),
     }
@@ -626,6 +677,7 @@ async def register(payload: RegisterIn):
         "password_hash": hash_password(payload.password),
         "currency": currency, "avatar_color": user_color(payload.name),
         "language": payload.language,
+        "role": "USER",
         "status": "pending",
         "privacy_acknowledged_at": now_iso(),
         "privacy_notice_version": PRIVACY_NOTICE_VERSION,
@@ -879,13 +931,33 @@ async def build_user_deletion_impact(
     blockers = []
     if candidate["id"] == admin["id"]:
         blockers.append("self_delete")
+    if is_super_admin_user(candidate):
+        blockers.append("super_admin_protected")
+    if not can_manage_candidate(admin, candidate):
+        blockers.append("admin_management_forbidden")
 
     if is_admin_user(candidate) and account_status(candidate) == "active":
         active_admins = await db.users.count_documents({
-            "email": {"$in": list(configured_admin_emails())},
-            "$or": [
-                {"status": "active"},
-                {"status": {"$exists": False}},
+            "$and": [
+                {
+                    "$or": [
+                        {"role": {"$in": ["ADMIN", "SUPER_ADMIN"]}},
+                        {
+                            "email": {
+                                "$in": list(
+                                    configured_admin_emails()
+                                    | {configured_super_admin_email()}
+                                ),
+                            },
+                        },
+                    ],
+                },
+                {
+                    "$or": [
+                        {"status": "active"},
+                        {"status": {"$exists": False}},
+                    ],
+                },
             ],
         })
         if active_admins <= 1:
@@ -906,7 +978,7 @@ async def build_user_deletion_impact(
 
 @api.get("/admin/users", response_model=List[AdminUserOut])
 async def list_admin_users(
-    status: Literal["pending", "active", "rejected", "all"] = "pending",
+    status: Literal["pending", "active", "inactive", "rejected", "all"] = "pending",
     admin=Depends(require_admin),
 ):
     if status == "active":
@@ -926,6 +998,7 @@ async def list_admin_users(
         "id": 1,
         "name": 1,
         "email": 1,
+        "role": 1,
         "status": 1,
         "created_at": 1,
         "reviewed_at": 1,
@@ -937,6 +1010,197 @@ async def list_admin_users(
 @api.get("/admin/users/pending-count")
 async def pending_admin_users_count(admin=Depends(require_admin)):
     return {"count": await db.users.count_documents({"status": "pending"})}
+
+
+def can_manage_candidate(actor: dict, candidate: dict) -> bool:
+    if is_super_admin_user(candidate):
+        return False
+    if is_super_admin_user(actor):
+        return True
+    return user_role(candidate) == "USER"
+
+
+async def active_admin_count() -> int:
+    return await db.users.count_documents({
+        "$and": [
+            {
+                "$or": [
+                    {"role": {"$in": ["ADMIN", "SUPER_ADMIN"]}},
+                    {
+                        "email": {
+                            "$in": list(
+                                configured_admin_emails()
+                                | {configured_super_admin_email()}
+                            ),
+                        },
+                    },
+                ],
+            },
+            {
+                "$or": [
+                    {"status": "active"},
+                    {"status": {"$exists": False}},
+                ],
+            },
+        ],
+    })
+
+
+@api.patch("/admin/users/{user_id}/role", response_model=AdminUserOut)
+async def update_admin_user_role(
+    user_id: str,
+    payload: AdminRoleUpdateIn,
+    super_admin=Depends(require_super_admin),
+):
+    candidate = await db.users.find_one({"id": user_id})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if is_super_admin_user(candidate):
+        raise HTTPException(
+            status_code=409,
+            detail="O papel da super administradora é protegido",
+        )
+    if account_status(candidate) != "active":
+        raise HTTPException(
+            status_code=409,
+            detail="Somente usuários ativos podem receber papel administrativo",
+        )
+
+    current_role = user_role(candidate)
+    if current_role == payload.role:
+        return admin_user_summary(candidate)
+    if current_role == "ADMIN" and payload.role == "USER":
+        if await active_admin_count() <= 1:
+            raise HTTPException(
+                status_code=409,
+                detail="O sistema deve possuir ao menos um administrador ativo",
+            )
+
+    changed_at = now_iso()
+    result = await db.users.update_one(
+        {
+            "id": user_id,
+            "$or": [
+                {"status": "active"},
+                {"status": {"$exists": False}},
+            ],
+        },
+        {
+            "$set": {
+                "role": payload.role,
+                "role_updated_at": changed_at,
+                "role_updated_by": super_admin["id"],
+            },
+        },
+    )
+    if not result.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="O usuário mudou de status. Atualize a lista e tente novamente",
+        )
+    candidate["role"] = payload.role
+    return admin_user_summary(candidate)
+
+
+@api.patch("/admin/users/{user_id}/status", response_model=AdminUserOut)
+async def update_admin_user_status(
+    user_id: str,
+    payload: AdminStatusUpdateIn,
+    admin=Depends(require_admin),
+):
+    candidate = await db.users.find_one({"id": user_id})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if candidate["id"] == admin["id"]:
+        raise HTTPException(
+            status_code=409,
+            detail="Você não pode desativar a própria conta",
+        )
+    if not can_manage_candidate(admin, candidate):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente a super administradora pode gerenciar administradores",
+        )
+
+    current_status = account_status(candidate)
+    if current_status == payload.status:
+        return admin_user_summary(candidate)
+    if current_status not in {"active", "inactive"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Use o fluxo de aprovação para cadastros pendentes ou rejeitados",
+        )
+    if (
+        payload.status == "inactive"
+        and is_admin_user(candidate)
+        and await active_admin_count() <= 1
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="O sistema deve possuir ao menos um administrador ativo",
+        )
+
+    changed_at = now_iso()
+    status_filter = (
+        {
+            "$or": [
+                {"status": "active"},
+                {"status": {"$exists": False}},
+            ],
+        }
+        if current_status == "active"
+        else {"status": current_status}
+    )
+    result = await db.users.update_one(
+        {"id": user_id, **status_filter},
+        {
+            "$set": {
+                "status": payload.status,
+                "status_updated_at": changed_at,
+                "status_updated_by": admin["id"],
+            },
+        },
+    )
+    if not result.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="O usuário mudou de status. Atualize a lista e tente novamente",
+        )
+    candidate["status"] = payload.status
+    if payload.status == "inactive":
+        await ws_manager.disconnect_user(user_id, code=4003)
+    return admin_user_summary(candidate)
+
+
+@api.patch("/admin/users/{user_id}", response_model=AdminUserOut)
+async def update_admin_user_identity(
+    user_id: str,
+    payload: AdminIdentityUpdateIn,
+    admin=Depends(require_admin),
+):
+    candidate = await db.users.find_one({"id": user_id})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if candidate["id"] == admin["id"] or not can_manage_candidate(admin, candidate):
+        raise HTTPException(
+            status_code=403,
+            detail="Você não pode editar este usuário pelo painel administrativo",
+        )
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nome é obrigatório")
+    await db.users.update_one(
+        {"id": user_id},
+        {
+            "$set": {
+                "name": name,
+                "identity_updated_at": now_iso(),
+                "identity_updated_by": admin["id"],
+            },
+        },
+    )
+    candidate["name"] = name
+    return admin_user_summary(candidate)
 
 
 @api.get(

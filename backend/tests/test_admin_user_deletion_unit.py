@@ -94,7 +94,11 @@ def test_deletion_preview_blocks_self_and_financial_data(monkeypatch):
 
     result = asyncio.run(server.build_user_deletion_impact(
         candidate,
-        admin={"id": "admin-1", "email": "admin@example.com"},
+        admin={
+            "id": "admin-1",
+            "email": "admin@example.com",
+            "role": "ADMIN",
+        },
     ))
 
     assert result["can_delete"] is False
@@ -118,7 +122,10 @@ def test_deletion_preview_blocks_last_active_admin(monkeypatch):
 
     result = asyncio.run(server.build_user_deletion_impact(
         candidate,
-        admin={"id": "admin-1", "email": "owner@example.com"},
+        admin={
+            "id": "admin-1",
+            "email": "clementmarilia@gmail.com",
+        },
     ))
 
     assert result["can_delete"] is False
