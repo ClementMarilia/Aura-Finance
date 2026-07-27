@@ -125,7 +125,7 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - ✅ /acertos: botão "Cutucar" (nudge) nos cards + botão "Quitar tudo" + aba "Histórico" (GET /settlements/history)
 - ✅ Página dedicada /notificacoes (filtro todas/não lidas, marcar lida, excluir, marcar todas)
 - ✅ Preferências de notificação por tipo em /configuracoes (mute) — GET/PUT /notifications/preferences
-- ✅ WebSocket /api/ws/notifications (auth via token query) — push em tempo real, substitui polling 30s (fallback 60s); ConnectionManager broadcast em push_notification, respeita mute
+- ✅ WebSocket /api/ws/notifications autenticado por ticket efêmero de uso único no primeiro frame — push em tempo real, com fallback de polling 60s; ConnectionManager broadcast em push_notification, respeita mute
 - ✅ DELETE /notifications/{nid}
 - ⏭️ E-mail (Resend/SendGrid) ADIADO por escolha do usuário ("Decidir depois")
 

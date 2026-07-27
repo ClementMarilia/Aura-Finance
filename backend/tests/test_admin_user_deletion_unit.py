@@ -175,6 +175,7 @@ def test_admin_deletion_removes_only_housekeeping_and_identity(monkeypatch):
     fake_db.categories = collection()
     fake_db.notifications = collection()
     fake_db.files = collection()
+    fake_db.websocket_tickets = collection()
     fake_db.settlement_history = collection()
     fake_db.password_reset_tokens = collection()
     fake_db.password_reset_requests = collection()
@@ -193,6 +194,9 @@ def test_admin_deletion_removes_only_housekeeping_and_identity(monkeypatch):
     fake_db.categories.delete_many.assert_awaited_once_with({"user_id": "user-1"})
     fake_db.accounts.delete_many.assert_awaited_once_with({"user_id": "user-1"})
     fake_db.notifications.delete_many.assert_awaited_once_with({"user_id": "user-1"})
+    fake_db.websocket_tickets.delete_many.assert_awaited_once_with(
+        {"user_id": "user-1"}
+    )
     fake_db.groups.update_many.assert_awaited_once()
     fake_db.users.delete_one.assert_awaited_once()
 

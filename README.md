@@ -145,7 +145,7 @@ No mobile, o avatar aparece compacto (só a inicial), mas o dropdown é o mesmo.
 - **PWA**: `manifest.json` + `service-worker.js` + `InstallPrompt` (auto-detecta Chrome/iOS).
 - **Tema**: `ThemeContext` (Provider acima do `AuthProvider`) + variáveis CSS + classe `.dark`.
 - **Persistência**: MongoDB com UUIDs (nunca ObjectId).
-- **Tempo real**: `app.websocket("/api/ws/notifications")` autenticado via `?token=`.
+- **Tempo real**: `app.websocket("/api/ws/notifications")` autenticado com ticket efêmero, de uso único, enviado no primeiro frame privado.
 
 ---
 
@@ -336,7 +336,8 @@ GET    /notifications, /unread-count
 POST   /notifications/{nid}/read, /read-all
 DELETE /notifications/{nid}
 GET|PUT /notifications/preferences
-WS     /api/ws/notifications?token=...
+POST   /notifications/ws-ticket
+WS     /api/ws/notifications
 ```
 
 ---

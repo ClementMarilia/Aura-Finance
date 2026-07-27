@@ -283,6 +283,8 @@ def _get_object(path: str):
 
 # ---------- Realtime (WebSocket) ----------
 NOTIF_TYPES = ["shared_expense_added", "settlement_paid", "nudge", "group_added"]
+WS_TICKET_TTL_SECONDS = 30
+WS_AUTH_TIMEOUT_SECONDS = 10
 
 
 class ConnectionManager:
@@ -314,6 +316,56 @@ class ConnectionManager:
 
 
 ws_manager = ConnectionManager()
+
+
+def hash_ws_ticket(ticket: str) -> str:
+    return hashlib.sha256(ticket.encode()).hexdigest()
+
+
+def websocket_origin_allowed(origin: Optional[str]) -> bool:
+    normalized = (origin or "").rstrip("/")
+    return bool(normalized) and normalized in configured_cors_origins()
+
+
+async def consume_ws_ticket(ticket: str) -> tuple[Optional[dict], str]:
+    if not isinstance(ticket, str) or not 32 <= len(ticket) <= 256:
+        return None, "invalid_ticket"
+
+    now = datetime.now(timezone.utc)
+    ticket_doc = await db.websocket_tickets.find_one({
+        "ticket_hash": hash_ws_ticket(ticket),
+        "used_at": None,
+        "expires_at": {"$gt": now},
+    })
+    if not ticket_doc:
+        return None, "invalid_ticket"
+
+    claimed = await db.websocket_tickets.update_one(
+        {
+            "id": ticket_doc["id"],
+            "used_at": None,
+            "expires_at": {"$gt": now},
+        },
+        {"$set": {"used_at": now}},
+    )
+    if not claimed.modified_count:
+        return None, "invalid_ticket"
+
+    user = await db.users.find_one(
+        {"id": ticket_doc["user_id"]},
+        {"_id": 0, "password_hash": 0},
+    )
+    if not user:
+        return None, "invalid_session"
+    if int(ticket_doc.get("session_version", 0)) != int(
+        user.get("session_version", 0)
+    ):
+        return None, "invalid_session"
+    try:
+        ensure_active_user(user)
+    except HTTPException:
+        return None, "invalid_session"
+    return user, "ok"
 
 
 # ---------- Helpers ----------
@@ -1378,6 +1430,7 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.receivables.delete_many({"user_id": user_id})
     await db.notifications.delete_many({"user_id": user_id})
     await db.files.delete_many({"user_id": user_id})
+    await db.websocket_tickets.delete_many({"user_id": user_id})
     await db.password_reset_tokens.delete_many({"user_id": user_id})
     await db.password_reset_requests.delete_many({"user_id": user_id})
     await db.email_delivery_logs.delete_many({"user_id": user_id})
@@ -1713,6 +1766,7 @@ async def delete_admin_user(
         await db.accounts.delete_many({"user_id": user_id})
         await db.notifications.delete_many({"user_id": user_id})
         await db.files.delete_many({"user_id": user_id})
+        await db.websocket_tickets.delete_many({"user_id": user_id})
         await db.password_reset_tokens.delete_many({"user_id": user_id})
         await db.password_reset_requests.delete_many({"user_id": user_id})
         await db.email_delivery_logs.delete_many({"user_id": user_id})
@@ -2972,39 +3026,80 @@ async def set_notif_prefs(body: NotifPrefsIn, user=Depends(get_current_user)):
     return clean
 
 
+@api.post("/notifications/ws-ticket")
+async def create_ws_ticket(user=Depends(get_current_user)):
+    raw_ticket = secrets.token_urlsafe(48)
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=WS_TICKET_TTL_SECONDS)
+
+    await db.websocket_tickets.delete_many({
+        "user_id": user["id"],
+        "used_at": None,
+    })
+    await db.websocket_tickets.insert_one({
+        "id": new_id(),
+        "user_id": user["id"],
+        "session_version": int(user.get("session_version", 0)),
+        "ticket_hash": hash_ws_ticket(raw_ticket),
+        "created_at": now,
+        "expires_at": expires_at,
+        "used_at": None,
+    })
+    return {
+        "ticket": raw_ticket,
+        "expires_in": WS_TICKET_TTL_SECONDS,
+    }
+
+
 @app.websocket("/api/ws/notifications")
 async def ws_notifications(websocket: WebSocket):
-    token = websocket.query_params.get("token")
-    user_id = None
-    if token:
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            user_id = payload.get("sub")
-            user = await db.users.find_one(
-                {"id": user_id},
-                {"_id": 0, "password_hash": 0},
-            )
-            if not user:
-                raise ValueError("User not found")
-            if int(payload.get("ver", 0)) != int(user.get("session_version", 0)):
-                raise ValueError("Session invalidated")
-            ensure_active_user(user)
-        except Exception:
-            user_id = None
-    if not user_id:
+    if not websocket_origin_allowed(websocket.headers.get("origin")):
         await websocket.close(code=1008)
         return
+
     await websocket.accept()
-    ws_manager.connect(user_id, websocket)
+    user_id = None
     try:
+        auth_message = await asyncio.wait_for(
+            websocket.receive_json(),
+            timeout=WS_AUTH_TIMEOUT_SECONDS,
+        )
+        if (
+            not isinstance(auth_message, dict)
+            or auth_message.get("type") != "authenticate"
+        ):
+            await websocket.close(code=4401)
+            return
+
+        user, status = await consume_ws_ticket(auth_message.get("ticket"))
+        if not user:
+            await websocket.close(
+                code=4001 if status == "invalid_session" else 4401
+            )
+            return
+
+        user_id = user["id"]
+        ws_manager.connect(user_id, websocket)
         unread = await db.notifications.count_documents({"user_id": user_id, "read": False})
-        await websocket.send_json({"event": "init", "unread": unread})
+        await websocket.send_json({
+            "event": "authenticated",
+            "unread": unread,
+        })
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        ws_manager.disconnect(user_id, websocket)
+        pass
+    except asyncio.TimeoutError:
+        await websocket.close(code=4408)
     except Exception:
-        ws_manager.disconnect(user_id, websocket)
+        logger.exception("WebSocket notification connection failed")
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
+    finally:
+        if user_id:
+            ws_manager.disconnect(user_id, websocket)
 
 
 @api.put("/shared-expenses/{sid}")
@@ -3909,6 +4004,11 @@ async def startup():
     await db.shared_expenses.create_index("participant_ids")
     await db.groups.create_index("member_ids")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.websocket_tickets.create_index("ticket_hash", unique=True)
+    await db.websocket_tickets.create_index(
+        "expires_at",
+        expireAfterSeconds=0,
+    )
     await db.password_reset_tokens.create_index("token_hash", unique=True)
     await db.password_reset_tokens.create_index(
         "expires_at",
