@@ -501,6 +501,19 @@ class ChangePasswordIn(BaseModel):
     new_password: str
 
 
+class AccountDeletionIn(BaseModel):
+    password: str
+    confirmation: str
+
+
+class AccountDeletionImpactOut(BaseModel):
+    can_delete: bool
+    blockers: List[str]
+    impact: dict[str, int]
+    shared_history_will_be_anonymized: bool = True
+    sessions_will_be_terminated: bool = True
+
+
 class CategoryIn(BaseModel):
     name: str
     icon: Optional[str] = "tag"
@@ -646,6 +659,30 @@ def public_user(u: dict) -> dict:
         "role": role,
         "is_admin": role in {"ADMIN", "SUPER_ADMIN"},
         "is_super_admin": role == "SUPER_ADMIN",
+    }
+
+
+def deleted_user_summary(user_id: str, language: str = "pt") -> dict:
+    deleted_names = {
+        "pt": "Usuário excluído",
+        "it": "Utente eliminato",
+        "en": "Deleted user",
+        "es": "Usuario eliminado",
+    }
+    return {
+        "id": user_id,
+        "name": deleted_names.get(language, deleted_names["pt"]),
+        "email": "",
+        "currency": "EUR",
+        "language": "pt",
+        "avatar_color": "#6B7068",
+        "created_at": "",
+        "security_question": None,
+        "has_security_question": False,
+        "status": "inactive",
+        "role": "USER",
+        "is_admin": False,
+        "is_super_admin": False,
     }
 
 
@@ -829,6 +866,7 @@ async def search_users(email: str, user=Depends(get_current_user)):
     u = await db.users.find_one(
         {
             "email": email.lower(),
+            "deletion_in_progress": {"$ne": True},
             "$or": [
                 {"status": "active"},
                 {"status": {"$exists": False}},
@@ -1042,8 +1080,193 @@ async def active_admin_count() -> int:
                     {"status": {"$exists": False}},
                 ],
             },
+            {"deletion_in_progress": {"$ne": True}},
         ],
     })
+
+
+async def build_account_deletion_impact(user: dict) -> dict:
+    impact = await user_financial_impact(user["id"])
+    blockers = []
+    if impact.get("pending_settlements", 0) > 0:
+        blockers.append("pending_settlements")
+    if is_admin_user(user):
+        active_admins = await active_admin_count()
+        minimum_remaining = 0 if user.get("deletion_in_progress") else 1
+        if active_admins <= minimum_remaining:
+            blockers.append("last_active_admin")
+    return {
+        "can_delete": not blockers,
+        "blockers": blockers,
+        "impact": impact,
+        "shared_history_will_be_anonymized": True,
+        "sessions_will_be_terminated": True,
+    }
+
+
+async def anonymize_user_in_shared_history(
+    user_id: str,
+    anonymous_user_id: str,
+) -> None:
+    shared_query = {
+        "$or": [
+            {"participant_ids": user_id},
+            {"creator_id": user_id},
+            {"payer_id": user_id},
+        ],
+    }
+    shared_items = await db.shared_expenses.find(
+        shared_query,
+        {"_id": 0},
+    ).to_list(5000)
+    for expense in shared_items:
+        participants = [
+            {
+                **participant,
+                "user_id": (
+                    anonymous_user_id
+                    if participant.get("user_id") == user_id
+                    else participant.get("user_id")
+                ),
+            }
+            for participant in expense.get("participants", [])
+        ]
+        participant_ids = [
+            anonymous_user_id if participant_id == user_id else participant_id
+            for participant_id in expense.get("participant_ids", [])
+        ]
+        updates = {
+            "participants": participants,
+            "participant_ids": participant_ids,
+            "anonymized_at": now_iso(),
+        }
+        if expense.get("creator_id") == user_id:
+            updates["creator_id"] = anonymous_user_id
+        if expense.get("payer_id") == user_id:
+            updates["payer_id"] = anonymous_user_id
+        await db.shared_expenses.update_one(
+            {"id": expense["id"]},
+            {"$set": updates},
+        )
+
+    await db.settlement_history.update_many(
+        {"debtor_id": user_id},
+        {"$set": {"debtor_id": anonymous_user_id}},
+    )
+    await db.settlement_history.update_many(
+        {"creditor_id": user_id},
+        {"$set": {"creditor_id": anonymous_user_id}},
+    )
+
+
+async def delete_user_owned_data(user_id: str) -> None:
+    await db.categories.delete_many({"user_id": user_id})
+    await db.accounts.delete_many({"user_id": user_id})
+    await db.transactions.delete_many({"user_id": user_id})
+    await db.goals.delete_many({"user_id": user_id})
+    await db.recurrences.delete_many({"user_id": user_id})
+    await db.installments.delete_many({"user_id": user_id})
+    await db.installment_purchases.delete_many({"user_id": user_id})
+    await db.receivables.delete_many({"user_id": user_id})
+    await db.notifications.delete_many({"user_id": user_id})
+    await db.files.delete_many({"user_id": user_id})
+    await db.groups.delete_many({"creator_id": user_id})
+    await db.groups.update_many(
+        {"member_ids": user_id},
+        {"$pull": {"member_ids": user_id}},
+    )
+
+
+@api.get(
+    "/auth/account/deletion-impact",
+    response_model=AccountDeletionImpactOut,
+)
+async def account_deletion_impact(user=Depends(get_current_user)):
+    return await build_account_deletion_impact(user)
+
+
+@api.delete("/auth/account")
+async def delete_own_account(
+    payload: AccountDeletionIn,
+    user=Depends(get_current_user),
+):
+    candidate = await db.users.find_one({"id": user["id"]})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if not verify_password(payload.password, candidate.get("password_hash", "")):
+        raise HTTPException(status_code=400, detail="Senha atual incorreta")
+    if payload.confirmation.strip().lower() != candidate["email"].strip().lower():
+        raise HTTPException(
+            status_code=400,
+            detail="Digite o e-mail da conta exatamente como informado",
+        )
+
+    preview = await build_account_deletion_impact(candidate)
+    if not preview["can_delete"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "A exclusão está bloqueada. Resolva os itens informados antes de continuar.",
+                "blockers": preview["blockers"],
+                "impact": preview["impact"],
+            },
+        )
+
+    lock = await db.users.update_one(
+        {
+            "id": user["id"],
+            "deletion_in_progress": {"$ne": True},
+        },
+        {"$set": {"deletion_in_progress": True}},
+    )
+    if not lock.matched_count:
+        raise HTTPException(
+            status_code=409,
+            detail="A exclusão desta conta já está sendo processada",
+        )
+
+    try:
+        locked_candidate = {**candidate, "deletion_in_progress": True}
+        recheck = await build_account_deletion_impact(locked_candidate)
+        if not recheck["can_delete"]:
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$unset": {"deletion_in_progress": ""}},
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Novas pendências foram encontradas. Revise sua conta e tente novamente.",
+                    "blockers": recheck["blockers"],
+                    "impact": recheck["impact"],
+                },
+            )
+
+        await ws_manager.disconnect_user(user["id"], code=4001)
+        anonymous_user_id = f"deleted:{new_id()}"
+        await anonymize_user_in_shared_history(user["id"], anonymous_user_id)
+        await delete_user_owned_data(user["id"])
+        deleted = await db.users.delete_one({
+            "id": user["id"],
+            "deletion_in_progress": True,
+        })
+        if not deleted.deleted_count:
+            raise RuntimeError("User deletion lock was lost")
+    except HTTPException:
+        raise
+    except Exception:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$unset": {"deletion_in_progress": ""}},
+        )
+        logger.exception("Self-service account deletion failed: user=%s", user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível concluir a exclusão com segurança",
+        )
+
+    logger.info("Self-service account deletion completed: user=%s", user["id"])
+    return {"ok": True}
 
 
 @api.patch("/admin/users/{user_id}/role", response_model=AdminUserOut)
@@ -2368,9 +2591,13 @@ async def list_shared(user=Depends(get_current_user), group_id: Optional[str] = 
     users = await db.users.find({"id": {"$in": list(user_ids)}}, {"_id": 0, "password_hash": 0}).to_list(200)
     umap = {u["id"]: public_user(u) for u in users}
     for it in items:
-        it["payer"] = umap.get(it["payer_id"])
+        it["payer"] = umap.get(it["payer_id"]) or deleted_user_summary(
+            it["payer_id"], user.get("language", "pt")
+        )
         for p in it["participants"]:
-            p["user"] = umap.get(p["user_id"])
+            p["user"] = umap.get(p["user_id"]) or deleted_user_summary(
+                p["user_id"], user.get("language", "pt")
+            )
     return items
 
 
@@ -2681,8 +2908,12 @@ async def settlement_history(user=Depends(get_current_user), limit: int = 100):
     users = await db.users.find({"id": {"$in": list(uids)}}, {"_id": 0, "password_hash": 0}).to_list(200)
     umap = {u["id"]: public_user(u) for u in users}
     for it in items:
-        it["debtor"] = umap.get(it["debtor_id"])
-        it["creditor"] = umap.get(it["creditor_id"])
+        it["debtor"] = umap.get(it["debtor_id"]) or deleted_user_summary(
+            it["debtor_id"], user.get("language", "pt")
+        )
+        it["creditor"] = umap.get(it["creditor_id"]) or deleted_user_summary(
+            it["creditor_id"], user.get("language", "pt")
+        )
     return items
 
 

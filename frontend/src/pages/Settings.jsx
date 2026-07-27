@@ -5,13 +5,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Plus, Pencil, X, RefreshCw, CheckCircle2, DownloadCloud } from "lucide-react";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Trash2, Plus, Pencil, X, RefreshCw, CheckCircle2, DownloadCloud, AlertTriangle, UserX } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ThemeToggle from "@/components/ThemeToggle";
 import { usePWAUpdate } from "@/context/PWAUpdateContext";
+import { useAuth } from "@/context/AuthContext";
 import LanguageSelector from "@/components/LanguageSelector";
 import { translate as tr } from "@/i18n";
+import { useNavigate } from "react-router-dom";
 
 const NOTIF_LABELS = {
   shared_expense_added: { title: tr("Despesas compartilhadas"), desc: tr("Quando você é adicionado a uma nova despesa.") },
@@ -30,6 +33,8 @@ const KIND_BADGE = {
 const defaultCatForm = () => ({ name: "", color: "#061B4A", kind: "expense" });
 
 export default function Settings() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const {
     appVersion,
     supported: pwaSupported,
@@ -45,6 +50,11 @@ export default function Settings() {
   const [confirmDel, setConfirmDel] = useState(null);
   const [prefs, setPrefs] = useState(null);
   const [tab, setTab] = useState("expense"); // expense | income | both
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteImpact, setDeleteImpact] = useState(null);
+  const [deleteForm, setDeleteForm] = useState({ password: "", confirmation: "" });
+  const [loadingDeleteImpact, setLoadingDeleteImpact] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const load = () => api.get("/categories").then(r => setCats(r.data));
   const loadPrefs = () => api.get("/notifications/preferences").then(r => setPrefs(r.data));
@@ -120,6 +130,53 @@ export default function Settings() {
       toast.success(tr("Você já está usando a versão mais recente."));
     }
   };
+
+  const openAccountDeletion = async () => {
+    setDeleteOpen(true);
+    setDeleteImpact(null);
+    setDeleteForm({ password: "", confirmation: "" });
+    setLoadingDeleteImpact(true);
+    try {
+      const { data } = await api.get("/auth/account/deletion-impact");
+      setDeleteImpact(data);
+    } catch (err) {
+      toast.error(formatApiError(err));
+      setDeleteOpen(false);
+    } finally {
+      setLoadingDeleteImpact(false);
+    }
+  };
+
+  const deleteAccount = async () => {
+    if (!deleteImpact?.can_delete || deletingAccount) return;
+    setDeletingAccount(true);
+    try {
+      await api.delete("/auth/account", { data: deleteForm });
+      logout();
+      navigate("/login", { replace: true });
+      toast.success(tr("Sua conta foi excluída definitivamente."));
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      if (detail && typeof detail === "object" && detail.message) {
+        toast.error(tr(detail.message));
+        try {
+          const { data } = await api.get("/auth/account/deletion-impact");
+          setDeleteImpact(data);
+        } catch {
+          // A mensagem original continua sendo a informação mais útil.
+        }
+      } else {
+        toast.error(formatApiError(err));
+      }
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
+
+  const deletionBlockerLabel = (blocker) => ({
+    pending_settlements: tr("Existem despesas compartilhadas ou acertos pendentes."),
+    last_active_admin: tr("Você é a única pessoa administradora ativa. Defina outra antes de excluir sua conta."),
+  }[blocker] || blocker);
 
   return (
     <div className="space-y-6 max-w-2xl" data-testid="settings-page">
@@ -347,6 +404,32 @@ export default function Settings() {
         )}
       </div>
 
+      <div className="card-soft border border-rose-200" data-testid="account-section">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>
+              {tr("Conta")}
+            </h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+              {tr("Exclua sua conta e remova definitivamente seus dados pessoais e financeiros.")}
+            </p>
+          </div>
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-700">
+            <UserX size={20} />
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={openAccountDeletion}
+          data-testid="delete-own-account"
+          className="mt-4 rounded-xl border-rose-300 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+        >
+          <Trash2 size={16} className="mr-2" />
+          {tr("Excluir minha conta")}
+        </Button>
+      </div>
+
       <ConfirmDialog
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
@@ -355,6 +438,118 @@ export default function Settings() {
         onConfirm={remove}
         testId="cat-confirm-delete"
       />
+
+      <Dialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (!deletingAccount) setDeleteOpen(open);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto" data-testid="delete-account-dialog">
+          <DialogHeader>
+            <DialogTitle>{tr("Excluir minha conta")}</DialogTitle>
+          </DialogHeader>
+
+          {loadingDeleteImpact ? (
+            <div className="py-8 text-center text-sm text-[#6B7068]">
+              {tr("Verificando sua conta...")}
+            </div>
+          ) : deleteImpact && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 flex-shrink-0 text-rose-700" size={20} />
+                  <div>
+                    <p className="font-semibold text-rose-800">{tr("Esta ação é irreversível.")}</p>
+                    <p className="mt-1 text-sm text-rose-700">
+                      {tr("Sua conta, lançamentos, carteiras, metas, categorias e preferências serão excluídos. Todas as sessões serão encerradas.")}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {deleteImpact.blockers?.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4" data-testid="delete-account-blockers">
+                  <p className="font-semibold text-amber-900">{tr("A exclusão está bloqueada")}</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-800">
+                    {deleteImpact.blockers.map((blocker) => (
+                      <li key={blocker}>{deletionBlockerLabel(blocker)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {deleteImpact.impact?.shared_expenses > 0 && (
+                <p className="text-sm text-[#6B7068]">
+                  {tr("O histórico compartilhado já concluído será mantido para os outros participantes com sua identidade anonimizada.")}
+                </p>
+              )}
+
+              {deleteImpact.can_delete && (
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="delete-account-password">{tr("Senha atual")}</Label>
+                    <Input
+                      id="delete-account-password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={deleteForm.password}
+                      onChange={(event) => setDeleteForm((current) => ({
+                        ...current,
+                        password: event.target.value,
+                      }))}
+                      data-testid="delete-account-password"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="delete-account-confirmation">
+                      {tr("Digite seu e-mail para confirmar")}
+                    </Label>
+                    <Input
+                      id="delete-account-confirmation"
+                      value={deleteForm.confirmation}
+                      onChange={(event) => setDeleteForm((current) => ({
+                        ...current,
+                        confirmation: event.target.value,
+                      }))}
+                      placeholder={user?.email}
+                      autoComplete="off"
+                      data-testid="delete-account-confirmation"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteOpen(false)}
+              disabled={deletingAccount}
+              className="rounded-xl"
+            >
+              {tr("Cancelar")}
+            </Button>
+            {deleteImpact?.can_delete && (
+              <Button
+                type="button"
+                onClick={deleteAccount}
+                disabled={
+                  deletingAccount
+                  || !deleteForm.password
+                  || deleteForm.confirmation.trim().toLowerCase() !== user?.email?.trim().toLowerCase()
+                }
+                data-testid="confirm-delete-own-account"
+                className="rounded-xl bg-[#D9453B] text-white hover:bg-[#B83A30]"
+              >
+                {deletingAccount ? tr("Excluindo...") : tr("Excluir definitivamente")}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
