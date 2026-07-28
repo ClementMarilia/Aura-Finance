@@ -6,9 +6,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, UserPlus, Pencil, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Trash2, UserPlus, Pencil, X, ChevronDown, ChevronRight, ShieldCheck, ShieldOff, Crown } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+import {
+  canDeleteGroup,
+  canManageGroup,
+  groupRoleLabel,
+  nextGroupRole,
+} from "@/lib/groupRoles";
 
 import { translate as tr } from "@/i18n";
 function Initials({ name, color, size = 32 }) {
@@ -71,6 +77,18 @@ export default function Groups() {
     try { await api.delete(`/groups/${gid}/members/${uid}`); toast.success(tr("Removido")); load(); }
     catch (err) { toast.error(formatApiError(err)); }
   };
+  const changeRole = async (gid, member) => {
+    const role = nextGroupRole(member);
+    try {
+      await api.patch(`/groups/${gid}/members/${member.id}/role`, { role });
+      toast.success(
+        role === "admin"
+          ? tr("{name} agora administra este grupo", { name: member.name })
+          : tr("{name} agora é membro do grupo", { name: member.name })
+      );
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
 
   const remove = async () => {
     if (!confirmDel) return;
@@ -124,7 +142,7 @@ export default function Groups() {
           const toggle = () => setExpanded(prev => ({ ...prev, [g.id]: !prev[g.id] }));
           return (
           <div key={g.id} className="card-soft" data-testid={`group-${g.id}`}>
-            <div className="flex items-start justify-between">
+            <div className="flex flex-wrap items-start justify-between gap-2">
               <button onClick={toggle} data-testid={`group-toggle-${g.id}`} className="flex items-start gap-2 text-left flex-1">
                 <span className="mt-1 text-[#6B7068]">{isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</span>
                 <div>
@@ -138,13 +156,20 @@ export default function Groups() {
                   )}
                 </div>
               </button>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap justify-end gap-1">
+                <span className="self-center mr-1 rounded-full bg-[#F1EFE7] px-2 py-1 text-[11px] text-[#6B7068]">
+                  {tr(g.current_user_role === "owner" ? "Proprietário" : g.current_user_role === "admin" ? "Administrador do grupo" : "Membro")}
+                </span>
+                {canManageGroup(g) && (
                 <button onClick={() => openEdit(g)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`group-edit-${g.id}`} title={tr("Editar")}>
                   <Pencil size={16} />
                 </button>
+                )}
+                {canDeleteGroup(g) && (
                 <button onClick={() => setConfirmDel(g)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`group-delete-${g.id}`} title={tr("Excluir")}>
                   <Trash2 size={16} />
                 </button>
+                )}
               </div>
             </div>
             {isOpen && (
@@ -153,13 +178,41 @@ export default function Groups() {
               <div className="text-xs text-[#6B7068] mb-2">{g.members.length} {tr("membro(s)")}</div>
               <div className="flex flex-wrap gap-2">
                 {g.members.map(m => (
-                  <div key={m.id} className="flex items-center gap-2 bg-[#F1EFE7] rounded-full pl-1 pr-3 py-1">
+                  <div key={m.id} className="flex items-center gap-2 bg-[#F1EFE7] rounded-full pl-1 pr-2 py-1" data-testid={`group-member-${g.id}-${m.id}`}>
                     <Initials name={m.name} color={m.avatar_color} size={24} />
                     <span className="text-xs">{m.name}</span>
+                    <span className="flex items-center gap-1 text-[10px] text-[#6B7068]" title={tr(groupRoleLabel(m))}>
+                      {m.group_role === "owner" && <Crown size={12} />}
+                      {m.group_role === "admin" && <ShieldCheck size={12} />}
+                      {tr(groupRoleLabel(m))}
+                    </span>
+                    {canManageGroup(g) && !m.is_group_owner && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => changeRole(g.id, m)}
+                          className="text-[#6B7068] hover:text-[#1268F4]"
+                          data-testid={`group-role-${g.id}-${m.id}`}
+                          title={m.group_role === "admin" ? tr("Remover função administrativa") : tr("Tornar administrador do grupo")}
+                        >
+                          {m.group_role === "admin" ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeMember(g.id, m.id, m.name)}
+                          className="text-[#6B7068] hover:text-[#D9453B]"
+                          data-testid={`group-remove-${g.id}-${m.id}`}
+                          title={tr("Remover do grupo")}
+                        >
+                          <X size={14} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
+            {canManageGroup(g) && (
             <div className="mt-4 flex gap-2">
               <Input placeholder={tr("adicionar por e-mail")} type="email"
                 value={addEmail[g.id] || ""}
@@ -168,6 +221,7 @@ export default function Groups() {
               <Button type="button" onClick={() => addMember(g.id)} data-testid={`group-add-member-${g.id}`}
                 className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl"><UserPlus size={16} /></Button>
             </div>
+            )}
             </>
             )}
           </div>

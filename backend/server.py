@@ -805,6 +805,10 @@ class GroupIn(BaseModel):
     member_emails: List[EmailStr] = []
 
 
+class GroupMemberRoleIn(BaseModel):
+    role: Literal["admin", "member"]
+
+
 class PersonIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     email: Optional[EmailStr] = None
@@ -1704,7 +1708,7 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.groups.delete_many({"creator_id": user_id})
     await db.groups.update_many(
         {"member_ids": user_id},
-        {"$pull": {"member_ids": user_id}},
+        {"$pull": {"member_ids": user_id, "admin_ids": user_id}},
     )
 
 
@@ -2047,7 +2051,7 @@ async def delete_admin_user(
         })
         await db.groups.update_many(
             {"member_ids": user_id},
-            {"$pull": {"member_ids": user_id}},
+            {"$pull": {"member_ids": user_id, "admin_ids": user_id}},
         )
         deleted = await db.users.delete_one({
             "id": user_id,
@@ -3397,6 +3401,42 @@ async def delete_receivable(rid: str, user=Depends(get_current_user)):
 
 
 # ---------- Groups ----------
+def group_admin_ids(group: dict) -> set[str]:
+    """Return local group administrators, including legacy group creators."""
+    admins = set(group.get("admin_ids") or [])
+    if group.get("creator_id"):
+        admins.add(group["creator_id"])
+    return admins
+
+
+def is_group_admin(group: dict, user_id: str) -> bool:
+    return user_id in group_admin_ids(group)
+
+
+def group_member_summary(member: dict, group: dict) -> dict:
+    summary = public_user(member)
+    is_owner = member["id"] == group.get("creator_id")
+    is_admin = is_group_admin(group, member["id"])
+    summary.update({
+        "group_role": "owner" if is_owner else ("admin" if is_admin else "member"),
+        "is_group_owner": is_owner,
+        "is_group_admin": is_admin,
+    })
+    return summary
+
+
+async def find_group_for_admin(gid: str, user_id: str) -> dict:
+    group = await db.groups.find_one({"id": gid, "member_ids": user_id})
+    if not group:
+        raise HTTPException(404, "Grupo não encontrado")
+    if not is_group_admin(group, user_id):
+        raise HTTPException(
+            403,
+            "Apenas administradores do grupo podem realizar esta ação",
+        )
+    return group
+
+
 @api.get("/groups")
 async def list_groups(user=Depends(get_current_user)):
     groups = await db.groups.find(
@@ -3406,7 +3446,15 @@ async def list_groups(user=Depends(get_current_user)):
         members = await db.users.find(
             {"id": {"$in": g.get("member_ids", [])}}, {"_id": 0, "password_hash": 0}
         ).to_list(50)
-        g["members"] = [public_user(m) for m in members]
+        g["admin_ids"] = sorted(group_admin_ids(g))
+        g["members"] = [group_member_summary(m, g) for m in members]
+        is_owner = g.get("creator_id") == user["id"]
+        can_manage = is_group_admin(g, user["id"])
+        g["current_user_role"] = (
+            "owner" if is_owner else ("admin" if can_manage else "member")
+        )
+        g["can_manage_members"] = can_manage
+        g["can_delete_group"] = is_owner
     return groups
 
 
@@ -3430,7 +3478,8 @@ async def create_group(
                 member_ids.append(u["id"])
         doc = {
             "id": new_id(), "name": payload.name, "description": payload.description,
-            "creator_id": user["id"], "member_ids": member_ids, "created_at": now_iso(),
+            "creator_id": user["id"], "member_ids": member_ids,
+            "admin_ids": [user["id"]], "created_at": now_iso(),
         }
         await db.groups.insert_one(doc)
         doc.pop("_id", None)
@@ -3455,9 +3504,7 @@ async def create_group(
 @api.post("/groups/{gid}/members")
 async def add_group_member(gid: str, body: dict, user=Depends(get_current_user)):
     email = body.get("email", "").lower()
-    group = await db.groups.find_one({"id": gid, "member_ids": user["id"]})
-    if not group:
-        raise HTTPException(404, "Grupo não encontrado")
+    group = await find_group_for_admin(gid, user["id"])
     u = await db.users.find_one({
         "email": email,
         "$or": [
@@ -3467,12 +3514,17 @@ async def add_group_member(gid: str, body: dict, user=Depends(get_current_user))
     })
     if not u:
         raise HTTPException(404, "Usuário não encontrado")
+    if u["id"] in group.get("member_ids", []):
+        return {"ok": True, "already_member": True}
     await db.groups.update_one({"id": gid}, {"$addToSet": {"member_ids": u["id"]}})
-    await push_notification(
-        u["id"], "group_added", "Adicionado a um grupo",
-        f"{user['name']} adicionou você ao grupo '{group['name']}'.",
-        "/grupos", {"group_id": gid},
-    )
+    try:
+        await push_notification(
+            u["id"], "group_added", "Adicionado a um grupo",
+            f"{user['name']} adicionou você ao grupo '{group['name']}'.",
+            "/grupos", {"group_id": gid},
+        )
+    except Exception as exc:
+        logger.warning("Group notification failed for %s: %s", u["id"], exc)
     return {"ok": True}
 
 
@@ -3483,9 +3535,7 @@ class GroupUpdateIn(BaseModel):
 
 @api.put("/groups/{gid}")
 async def update_group(gid: str, payload: GroupUpdateIn, user=Depends(get_current_user)):
-    g = await db.groups.find_one({"id": gid})
-    if not g or g.get("creator_id") != user["id"]:
-        raise HTTPException(403, "Apenas o criador pode editar")
+    await find_group_for_admin(gid, user["id"])
     upd = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
     if upd:
         await db.groups.update_one({"id": gid}, {"$set": upd})
@@ -3494,13 +3544,56 @@ async def update_group(gid: str, payload: GroupUpdateIn, user=Depends(get_curren
 
 @api.delete("/groups/{gid}/members/{uid}")
 async def remove_group_member(gid: str, uid: str, user=Depends(get_current_user)):
-    g = await db.groups.find_one({"id": gid})
-    if not g or g.get("creator_id") != user["id"]:
-        raise HTTPException(403, "Apenas o criador pode remover membros")
+    g = await find_group_for_admin(gid, user["id"])
     if uid == g["creator_id"]:
-        raise HTTPException(400, "Não é possível remover o criador")
-    await db.groups.update_one({"id": gid}, {"$pull": {"member_ids": uid}})
+        raise HTTPException(400, "Não é possível remover o proprietário do grupo")
+    if uid not in g.get("member_ids", []):
+        raise HTTPException(404, "Membro não encontrado")
+    await db.groups.update_one(
+        {"id": gid},
+        {"$pull": {"member_ids": uid, "admin_ids": uid}},
+    )
     return {"ok": True}
+
+
+@api.patch("/groups/{gid}/members/{uid}/role")
+async def update_group_member_role(
+    gid: str,
+    uid: str,
+    payload: GroupMemberRoleIn,
+    user=Depends(get_current_user),
+):
+    group = await find_group_for_admin(gid, user["id"])
+    if uid == group.get("creator_id"):
+        raise HTTPException(400, "O papel do proprietário do grupo é protegido")
+    if uid not in group.get("member_ids", []):
+        raise HTTPException(404, "Membro não encontrado")
+    currently_admin = uid in group_admin_ids(group)
+    if (payload.role == "admin") == currently_admin:
+        return {"ok": True, "role": payload.role, "unchanged": True}
+
+    if payload.role == "admin":
+        update = {"$addToSet": {"admin_ids": uid}}
+    else:
+        update = {"$pull": {"admin_ids": uid}}
+    await db.groups.update_one({"id": gid}, update)
+
+    try:
+        await push_notification(
+            uid,
+            "group_role_changed",
+            "Função no grupo atualizada",
+            (
+                f"{user['name']} definiu você como "
+                f"{'administrador' if payload.role == 'admin' else 'membro'} "
+                f"do grupo '{group['name']}'."
+            ),
+            "/grupos",
+            {"group_id": gid, "group_role": payload.role},
+        )
+    except Exception as exc:
+        logger.warning("Group role notification failed for %s: %s", uid, exc)
+    return {"ok": True, "role": payload.role}
 
 
 @api.delete("/groups/{gid}")
@@ -6583,6 +6676,7 @@ async def startup():
             repaired_settlements,
         )
     await db.groups.create_index("member_ids")
+    await db.groups.create_index("admin_ids")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.insight_dismissals.create_index(
         [("user_id", 1), ("insight_id", 1)],
