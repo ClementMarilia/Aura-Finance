@@ -41,6 +41,7 @@ export default function Transactions() {
       year: searchParams.get("year") || saved?.year || String(d.getFullYear()),
       month: searchParams.get("month") || saved?.month || String(d.getMonth() + 1),
       account_id: searchParams.get("account_id") || "",
+      currency: searchParams.get("currency") || "",
     };
   });
   const [open, setOpen] = useState(false);
@@ -169,7 +170,7 @@ export default function Transactions() {
     });
     return () => { active = false; };
   }, [open, editing, form.type, form.account_id, form.from_account_id, form.to_account_id, form.date, sourceCurrency, targetCurrency, sourceAccount, targetAccount, rateContext, editingRateContext]);
-  useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id, filter.year, filter.month, filter.account_id]);
+  useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id, filter.year, filter.month, filter.account_id, filter.currency]);
 
   // React to URL changes (when user navigates from another page like Dashboard)
   const sp = searchParams.toString();
@@ -183,6 +184,7 @@ export default function Transactions() {
       year: searchParams.get("year") || saved?.year || String(d.getFullYear()),
       month: searchParams.get("month") || saved?.month || String(d.getMonth() + 1),
       account_id: searchParams.get("account_id") || "",
+      currency: searchParams.get("currency") || "",
     });
   }, [sp]);
 
@@ -194,7 +196,7 @@ export default function Transactions() {
   }, [filter.year, filter.month]);
 
   const clearFilters = () => {
-    setFilter({ status: "", type: "", category_id: "", year: "", month: "", account_id: "" });
+    setFilter({ status: "", type: "", category_id: "", year: "", month: "", account_id: "", currency: "" });
     setSearchParams({}, { replace: true });
   };
   const hasActiveFilters = Object.values(filter).some(Boolean);
@@ -650,7 +652,7 @@ export default function Transactions() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
           <div>
             <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>{tr("Tipo")}</label>
             <select value={filter.type} onChange={e => setFilter({ ...filter, type: e.target.value })}
@@ -701,6 +703,14 @@ export default function Transactions() {
               data-testid="filter-account" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
               <option value="">{tr("Todas")}</option>
               {accs.map(a => <option key={a.id} value={a.id}>{tr(a.name)}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>{tr("Moeda")}</label>
+            <select value={filter.currency} onChange={e => setFilter({ ...filter, currency: e.target.value })}
+              data-testid="filter-currency" className="w-full bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+              <option value="">{tr("Todas")}</option>
+              {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
           </div>
         </div>

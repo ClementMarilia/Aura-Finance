@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import api, { fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ function Initials({ name, color, size = 28 }) {
 const emptyForm = (user) => ({
   title: "", amount: "", date: new Date().toISOString().slice(0, 10),
   category: tr("Mercado"), payer_id: user?.id || "", split_type: "equal", group_id: "", notes: "",
+  currency: user?.currency || "EUR",
 });
 
 export default function SharedExpenses() {
@@ -42,18 +43,24 @@ export default function SharedExpenses() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm(user));
   const [confirmDelete, setConfirmDelete] = useState(null); // expense id
+  const [currencyFilter, setCurrencyFilter] = useState("");
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const [a, b, c] = await Promise.all([
-      api.get("/shared-expenses"),
+      api.get("/shared-expenses", {
+        params: currencyFilter ? { currency: currencyFilter } : {},
+      }),
       api.get("/settlements"),
       api.get("/people"),
     ]);
     setList(a.data);
     setSummary(b.data.summary || []);
     setPeople(c.data);
-  };
-  useEffect(() => { load(); api.get("/groups").then(r => setGroups(r.data)); }, []);
+  }, [currencyFilter]);
+  useEffect(() => { api.get("/groups").then(r => setGroups(r.data)); }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const openNew = () => {
     setEditing(null);
@@ -110,6 +117,7 @@ export default function SharedExpenses() {
       title: e.title, amount: String(e.amount), date: e.date,
       category: e.category, payer_id: e.payer_id, split_type: e.split_type,
       group_id: e.group_id || "", notes: e.notes || "",
+      currency: e.currency || curr,
     });
     setParticipants(e.participants.map(p => ({
       user: p.user,
@@ -172,6 +180,7 @@ export default function SharedExpenses() {
         title: form.title, amount: parseFloat(form.amount), date: form.date,
         category: form.category, payer_id: form.payer_id, split_type: form.split_type,
         group_id: form.group_id || null, notes: form.notes,
+        currency: form.currency,
         participants: participants.map(p => ({
           user_id: p.user_id || null,
           person_id: p.person_id || null,
@@ -229,6 +238,14 @@ export default function SharedExpenses() {
         </Button>
       </div>
 
+      <div className="flex justify-end">
+        <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
+          data-testid="shared-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+          <option value="">{tr("Todas as moedas")}</option>
+          {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </div>
+
       {/* Banner compacto de acertos pendentes (atalho para a página /acertos) */}
       {summary.length > 0 && (() => {
         const credits = summary.filter(s => s.net > 0);
@@ -277,6 +294,13 @@ export default function SharedExpenses() {
               <div><Label>{tr("Data")}</Label>
                 <Input type="date" value={form.date} required data-testid="shared-date-input"
                   onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+              <div><Label>{tr("Moeda")}</Label>
+                <Select value={form.currency} onValueChange={value => setForm({ ...form, currency: value })}>
+                  <SelectTrigger data-testid="shared-currency-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                  </SelectContent>
+                </Select></div>
               <div><Label>{tr("Categoria")}</Label>
                 <Input value={form.category} data-testid="shared-category-input"
                   onChange={e => setForm({ ...form, category: e.target.value })} /></div>
@@ -357,7 +381,7 @@ export default function SharedExpenses() {
                           onChange={e => setParticipants(participants.map(x => x.user.id === p.user.id ? { ...x, percent: e.target.value } : x))} />
                       )}
                       <div className="text-sm font-semibold text-[#061B4A] w-20 text-right" data-testid={`preview-share-${p.user.id}`}>
-                        {fmtMoney(preview[p.user.id] || 0, curr)}
+                        {fmtMoney(preview[p.user.id] || 0, form.currency || curr)}
                       </div>
                       {p.user.id !== user.id && (
                         <button type="button" onClick={() => removeParticipant(p.user.id)} className="text-[#6B7068] hover:text-[#D9453B]">

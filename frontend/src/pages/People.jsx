@@ -13,6 +13,7 @@ import { translate as tr } from "@/i18n";
 
 const emptyForm = {
   name: "",
+  email: "",
   nickname: "",
   relationship: "",
   notes: "",
@@ -39,6 +40,7 @@ export default function People() {
     setEditing(person);
     setForm({
       name: person.name || "",
+      email: person.email || "",
       nickname: person.nickname || "",
       relationship: person.relationship || "",
       notes: person.notes || "",
@@ -52,10 +54,10 @@ export default function People() {
     setSaving(true);
     try {
       if (editing) {
-        await api.put(`/people/${editing.id}`, form);
+        await api.put(`/people/${editing.id}`, { ...form, email: form.email || null });
         toast.success(tr("Pessoa atualizada"));
       } else {
-        await postCreate("/people", form);
+        await postCreate("/people", { ...form, email: form.email || null });
         toast.success(tr("Pessoa adicionada"));
       }
       setOpen(false);
@@ -87,7 +89,7 @@ export default function People() {
         <div>
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">{tr("Pessoas")}</h1>
           <p className="text-[#6B7068] mt-1">
-            {tr("Cadastre referências privadas para organizar despesas e relatórios. Ninguém recebe convite ou notificação.")}
+            {tr("Cadastre referências privadas para organizar despesas, valores pendentes e relatórios.")}
           </p>
         </div>
         <Button
@@ -100,7 +102,7 @@ export default function People() {
       </div>
 
       <div className="card-soft border-emerald-200 bg-emerald-50/50 text-sm text-emerald-800">
-        {tr("Este cadastro pertence somente a você. A pessoa não precisa ter conta nem saber que foi adicionada.")}
+        {tr("O e-mail é opcional. Se já pertencer a uma conta ativa, a pessoa poderá receber notificações sobre valores pendentes vinculados a ela.")}
       </div>
 
       {items.length === 0 ? (
@@ -117,6 +119,9 @@ export default function People() {
                   <div className="font-semibold text-lg truncate">{person.name}</div>
                   {person.nickname && (
                     <div className="text-sm text-[#6B7068] truncate">{person.nickname}</div>
+                  )}
+                  {person.email && (
+                    <div className="text-sm text-[#6B7068] truncate">{person.email}</div>
                   )}
                   {person.relationship && (
                     <span className="pill mt-2">{person.relationship}</span>
@@ -164,6 +169,19 @@ export default function People() {
                 maxLength={120}
                 data-testid="person-name"
               />
+            </div>
+            <div>
+              <Label>{tr("E-mail (opcional)")}</Label>
+              <Input
+                type="email"
+                value={form.email}
+                onChange={event => setForm({ ...form, email: event.target.value })}
+                maxLength={254}
+                data-testid="person-email"
+              />
+              <p className="text-xs text-[#6B7068] mt-1">
+                {tr("Se o e-mail tiver uma conta ativa, ela poderá ser avisada sobre valores pendentes.")}
+              </p>
             </div>
             <div>
               <Label>{tr("Apelido (opcional)")}</Label>

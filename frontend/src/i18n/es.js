@@ -704,4 +704,11 @@ export default {
   "Anomalias": "Anomalías",
   "Possíveis duplicidades e comportamentos incomuns.": "Posibles duplicados y comportamientos inusuales.",
   "Escolha quais tipos de análises e recomendações deseja receber.": "Elige qué tipos de análisis y recomendaciones quieres recibir.",
+  "Todas as moedas": "Todas las monedas",
+  "Moedas": "Monedas",
+  "E-mail (opcional)": "Correo electrónico (opcional)",
+  "Cadastre referências privadas para organizar despesas, valores pendentes e relatórios.": "Añade contactos privados para organizar gastos, importes pendientes e informes.",
+  "O e-mail é opcional. Se já pertencer a uma conta ativa, a pessoa poderá receber notificações sobre valores pendentes vinculados a ela.": "El correo es opcional. Si pertenece a una cuenta activa, la persona podrá recibir notificaciones sobre importes pendientes vinculados.",
+  "Se o e-mail tiver uma conta ativa, ela poderá ser avisada sobre valores pendentes.": "Si el correo pertenece a una cuenta activa, la persona podrá recibir avisos sobre importes pendientes.",
+  "A moeda não pode ser alterada depois do primeiro aporte.": "La moneda no se puede cambiar después de la primera aportación.",
 };

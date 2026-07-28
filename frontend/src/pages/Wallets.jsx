@@ -41,6 +41,7 @@ export default function Wallets() {
   const [transfer, setTransfer] = useState(emptyTransfer);
   const [rateLoading, setRateLoading] = useState(false);
   const [rateError, setRateError] = useState("");
+  const [currencyFilter, setCurrencyFilter] = useState("");
 
   const fromAccount = list.find(a => a.id === transfer.from_account_id);
   const toAccount = list.find(a => a.id === transfer.to_account_id);
@@ -156,7 +157,10 @@ export default function Wallets() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const total = list.reduce((s, a) => s + (a.balance_base ?? a.balance ?? 0), 0);
+  const visibleList = currencyFilter
+    ? list.filter(account => (account.currency || curr) === currencyFilter)
+    : list;
+  const total = visibleList.reduce((s, a) => s + (a.balance_base ?? a.balance ?? 0), 0);
 
   const openNew = () => { setEditing(null); setForm({ ...emptyForm, currency: curr }); setOpen(true); };
   const openEdit = (a) => {
@@ -200,6 +204,14 @@ export default function Wallets() {
         </div>
       </div>
 
+      <div className="flex justify-end">
+        <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
+          data-testid="wallet-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+          <option value="">{tr("Todas as moedas")}</option>
+          {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </div>
+
       <div className="card-soft" data-testid="wallets-total">
         <div className="text-sm text-[#6B7068]">{tr("Saldo total disponível")}</div>
         <div className={`text-4xl font-semibold mt-1 ${total >= 0 ? "text-[#061B4A]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }}>
@@ -208,7 +220,7 @@ export default function Wallets() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {list.map(a => {
+        {visibleList.map(a => {
           const meta = typeMeta(a.type);
           const Icon = meta.icon;
           return (

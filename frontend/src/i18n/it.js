@@ -704,4 +704,11 @@ export default {
   "Anomalias": "Anomalie",
   "Possíveis duplicidades e comportamentos incomuns.": "Possibili duplicati e comportamenti insoliti.",
   "Escolha quais tipos de análises e recomendações deseja receber.": "Scegli quali tipi di analisi e raccomandazioni vuoi ricevere.",
+  "Todas as moedas": "Tutte le valute",
+  "Moedas": "Valute",
+  "E-mail (opcional)": "E-mail (facoltativa)",
+  "Cadastre referências privadas para organizar despesas, valores pendentes e relatórios.": "Aggiungi contatti privati per organizzare spese, importi in sospeso e report.",
+  "O e-mail é opcional. Se já pertencer a uma conta ativa, a pessoa poderá receber notificações sobre valores pendentes vinculados a ela.": "L'e-mail è facoltativa. Se appartiene a un account attivo, la persona potrà ricevere notifiche sugli importi in sospeso associati.",
+  "Se o e-mail tiver uma conta ativa, ela poderá ser avisada sobre valores pendentes.": "Se l'e-mail appartiene a un account attivo, la persona potrà essere avvisata degli importi in sospeso.",
+  "A moeda não pode ser alterada depois do primeiro aporte.": "La valuta non può essere modificata dopo il primo versamento.",
 };

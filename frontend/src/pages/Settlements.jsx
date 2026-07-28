@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import api, { fmtMoney, fmtDate } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,6 +17,7 @@ const emptyHistoryFilters = {
   startDate: "",
   endDate: "",
   sort: "recent",
+  currency: "",
 };
 
 function Initials({ name, color, size = 32 }) {
@@ -41,6 +42,7 @@ export default function Settlements() {
   const load = () => api.get("/settlements").then(r => setData(r.data));
   const loadHistory = useCallback(async (filters = emptyHistoryFilters) => {
     const params = { search: filters.search.trim() || undefined, sort: filters.sort };
+    if (filters.currency) params.currency = filters.currency;
     if (filters.period === "date") params.specific_date = filters.specificDate || undefined;
     if (filters.period === "month") params.month = filters.month || undefined;
     if (filters.period === "year") params.year = filters.year || undefined;
@@ -260,6 +262,13 @@ export default function Settlements() {
                   <SelectItem value="oldest">{tr("Mais antigos primeiro")}</SelectItem>
                   <SelectItem value="amount_desc">{tr("Maior valor")}</SelectItem>
                   <SelectItem value="amount_asc">{tr("Menor valor")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={historyFilters.currency || "all"} onValueChange={value => updateHistoryFilter("currency", value === "all" ? "" : value)}>
+                <SelectTrigger data-testid="history-currency"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{tr("Todas as moedas")}</SelectItem>
+                  {CURRENCIES.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

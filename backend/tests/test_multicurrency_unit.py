@@ -166,3 +166,62 @@ def test_automatic_transaction_rate_cannot_be_overridden_by_one_to_one(monkeypat
 
     assert values["exchange_rate_to_base"] == pytest.approx(0.16)
     assert values["base_amount"] == pytest.approx(285.76)
+
+
+def test_custom_report_currency_filter_uses_original_currency():
+    filters = server.ReportFiltersIn(currencies=["BRL"])
+    rows = [
+        {"id": "brl", "currency": "BRL", "date": "2026-07-01"},
+        {"id": "eur", "currency": "EUR", "date": "2026-07-02"},
+        {
+            "id": "transfer-to-brl",
+            "currency": "EUR",
+            "target_currency": "BRL",
+            "date": "2026-07-03",
+        },
+    ]
+
+    result = server.apply_custom_report_filters(rows, filters, {})
+
+    assert [item["id"] for item in result] == ["brl", "transfer-to-brl"]
+
+
+def test_goal_currency_must_match_linked_wallet(monkeypatch):
+    async def account_map(_user):
+        return {"eur-wallet": "EUR"}
+
+    monkeypatch.setattr(server, "account_currency_map", account_map)
+    payload = server.GoalIn(
+        title="Viagem",
+        target_amount=1000,
+        account_id="eur-wallet",
+        currency="BRL",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(server.goal_currency_values(
+            payload,
+            {"id": "u1", "currency": "EUR"},
+        ))
+
+    assert exc.value.status_code == 400
+    assert "moeda da meta" in exc.value.detail
+
+
+def test_financial_record_currency_must_match_linked_wallet():
+    assert server.currency_for_account(
+        None,
+        "brl-wallet",
+        {"brl-wallet": "BRL"},
+        "EUR",
+    ) == "BRL"
+
+    with pytest.raises(HTTPException) as exc:
+        server.currency_for_account(
+            "USD",
+            "brl-wallet",
+            {"brl-wallet": "BRL"},
+            "EUR",
+        )
+
+    assert exc.value.status_code == 400

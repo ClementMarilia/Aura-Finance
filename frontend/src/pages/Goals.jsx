@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 import { translate as tr } from "@/i18n";
-const emptyForm = { title: "", target_amount: "", current_amount: "", deadline: "", color: "#061B4A", account_id: "" };
+const emptyForm = { title: "", target_amount: "", current_amount: "", deadline: "", color: "#061B4A", account_id: "", currency: "EUR" };
 
 export default function Goals() {
   const { user } = useAuth();
@@ -32,15 +32,24 @@ export default function Goals() {
   const [withdrawFor, setWithdrawFor] = useState(null);
   const [withdrawAmt, setWithdrawAmt] = useState("");
   const [withdrawTo, setWithdrawTo] = useState("");
+  const [currencyFilter, setCurrencyFilter] = useState("");
 
-  const load = () => api.get("/goals").then(r => setGoals(r.data || []));
-  useEffect(() => { load(); api.get("/accounts").then(r => setAccs(r.data || [])); }, []);
+  const load = () => api.get("/goals", {
+    params: currencyFilter ? { currency: currencyFilter } : {},
+  }).then(r => setGoals(r.data || []));
+  useEffect(() => { api.get("/accounts").then(r => setAccs(r.data || [])); }, []);
+  useEffect(() => {
+    api.get("/goals", {
+      params: currencyFilter ? { currency: currencyFilter } : {},
+    }).then(r => setGoals(r.data || []));
+  }, [currencyFilter]);
 
-  const openNew = () => { setEditing(null); setForm(emptyForm); setOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ ...emptyForm, currency: curr }); setOpen(true); };
   const openEdit = (g) => {
     setEditing(g);
     setForm({ title: g.title, target_amount: g.target_amount, current_amount: g.current_amount,
-      deadline: g.deadline || "", color: g.color || "#061B4A", account_id: g.account_id || "" });
+      deadline: g.deadline || "", color: g.color || "#061B4A", account_id: g.account_id || "",
+      currency: g.currency || curr });
     setOpen(true);
   };
 
@@ -53,6 +62,7 @@ export default function Goals() {
       deadline: form.deadline || null,
       color: form.color,
       account_id: form.account_id || null,
+      currency: form.currency,
     };
     try {
       if (editing) { await api.put(`/goals/${editing.id}`, payload); toast.success(tr("Meta atualizada")); }
@@ -80,7 +90,7 @@ export default function Goals() {
       await api.post(`/goals/${contribFor.id}/contribute`, {
         amount, from_account_id: contribFrom || null,
       });
-      toast.success(`${fmtMoney(amount, curr)} adicionado à meta${contribFrom ? " (lançamento criado)" : ""}`);
+      toast.success(`${fmtMoney(amount, contribFor.currency || curr)} adicionado à meta${contribFrom ? " (lançamento criado)" : ""}`);
       setContribFor(null);
       setContribAmt("");
       setContribFrom("");
@@ -98,7 +108,7 @@ export default function Goals() {
       await api.post(`/goals/${withdrawFor.id}/withdraw`, {
         amount, to_account_id: withdrawTo || null,
       });
-      toast.success(`${fmtMoney(amount, curr)} resgatado da meta${withdrawTo ? " (lançamento criado)" : ""}`);
+      toast.success(`${fmtMoney(amount, withdrawFor.currency || curr)} resgatado da meta${withdrawTo ? " (lançamento criado)" : ""}`);
       setWithdrawFor(null);
       setWithdrawAmt("");
       setWithdrawTo("");
@@ -116,6 +126,14 @@ export default function Goals() {
         <Button onClick={openNew} data-testid="goal-new-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
           <Plus size={16} className="mr-1" /> {tr("Nova meta")}
         </Button>
+      </div>
+
+      <div className="flex justify-end">
+        <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
+          data-testid="goal-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+          <option value="">{tr("Todas as moedas")}</option>
+          {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
       </div>
 
       {goals.length === 0 && (
@@ -151,8 +169,8 @@ export default function Goals() {
               </div>
 
               <div className="mt-4 flex items-baseline justify-between">
-                <span className="text-2xl font-semibold" style={{ fontFamily: "Outfit" }}>{fmtMoney(g.current_amount, curr)}</span>
-                <span className="text-sm text-[#6B7068]">de {fmtMoney(g.target_amount, curr)}</span>
+                <span className="text-2xl font-semibold" style={{ fontFamily: "Outfit" }}>{fmtMoney(g.current_amount, g.currency || curr)}</span>
+                <span className="text-sm text-[#6B7068]">de {fmtMoney(g.target_amount, g.currency || curr)}</span>
               </div>
               <div className="mt-2 h-2.5 bg-[#F1EFE7] rounded-full overflow-hidden">
                 <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: done ? "#2C7A51" : g.color }} />
@@ -201,6 +219,24 @@ export default function Goals() {
                   onChange={e => setForm({ ...form, current_amount: e.target.value })} />
               </div>
             </div>
+            <div>
+              <Label>{tr("Moeda")}</Label>
+              <Select disabled={!!editing && Number(editing.current_amount || 0) !== 0}
+                value={form.currency} onValueChange={value => setForm({
+                  ...form,
+                  currency: value,
+                  account_id: accs.some(account => account.id === form.account_id && (account.currency || curr) === value)
+                    ? form.account_id : "",
+                })}>
+                <SelectTrigger data-testid="goal-currency-select"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {!!editing && Number(editing.current_amount || 0) !== 0 && (
+                <p className="text-xs text-[#6B7068] mt-1">{tr("A moeda não pode ser alterada depois do primeiro aporte.")}</p>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{tr("Prazo (opcional)")}</Label>
@@ -215,11 +251,20 @@ export default function Goals() {
             </div>
             <div>
               <Label>{tr("Conta vinculada (opcional)")}</Label>
-              <Select value={form.account_id || "none"} onValueChange={(v) => setForm({ ...form, account_id: v === "none" ? "" : v })}>
+              <Select value={form.account_id || "none"} onValueChange={(v) => {
+                const account = accs.find(item => item.id === v);
+                setForm({
+                  ...form,
+                  account_id: v === "none" ? "" : v,
+                  currency: account?.currency || form.currency,
+                });
+              }}>
                 <SelectTrigger data-testid="goal-account-select"><SelectValue placeholder={tr("Nenhuma")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{tr("Nenhuma")}</SelectItem>
-                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
+                  {accs.filter(a => (a.currency || curr) === form.currency).map(a => (
+                    <SelectItem key={a.id} value={a.id}>{tr(a.name)} ({a.currency || curr})</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-[#6B7068] mt-1">{tr("Aportes podem virar uma transferência para esta conta.")}</p>
@@ -249,7 +294,9 @@ export default function Goals() {
                 <SelectTrigger data-testid="goal-contrib-account"><SelectValue placeholder={tr("Não criar lançamento")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{tr("Não criar lançamento")}</SelectItem>
-                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
+                  {accs.filter(a => (a.currency || curr) === (contribFor?.currency || curr)).map(a => (
+                    <SelectItem key={a.id} value={a.id}>{tr(a.name)} ({a.currency || curr})</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-[#6B7068] mt-1">
@@ -276,7 +323,7 @@ export default function Goals() {
               <Label>{tr("Valor do resgate")}</Label>
               <Input type="number" step="0.01" autoFocus value={withdrawAmt} required data-testid="goal-withdraw-input"
                 onChange={e => setWithdrawAmt(e.target.value)} />
-              <p className="text-xs text-[#6B7068] mt-1">{tr("Disponível:")} {fmtMoney(withdrawFor?.current_amount || 0, curr)}</p>
+              <p className="text-xs text-[#6B7068] mt-1">{tr("Disponível:")} {fmtMoney(withdrawFor?.current_amount || 0, withdrawFor?.currency || curr)}</p>
             </div>
             <div>
               <Label>{tr("Creditar na conta (opcional)")}</Label>
@@ -284,7 +331,9 @@ export default function Goals() {
                 <SelectTrigger data-testid="goal-withdraw-account"><SelectValue placeholder={tr("Não criar lançamento")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{tr("Não criar lançamento")}</SelectItem>
-                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
+                  {accs.filter(a => (a.currency || curr) === (withdrawFor?.currency || curr)).map(a => (
+                    <SelectItem key={a.id} value={a.id}>{tr(a.name)} ({a.currency || curr})</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-[#6B7068] mt-1">

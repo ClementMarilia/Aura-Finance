@@ -150,3 +150,101 @@ def test_recurrence_copies_person_to_generated_transaction(monkeypatch):
     inserted = transactions.insert_one.await_args.args[0]
     assert inserted["person_id"] == "mother"
     assert inserted["recurrence_id"] == "rec-1"
+
+
+def test_private_person_summary_keeps_optional_email():
+    person = server.private_person_summary({
+        "id": "friend-1",
+        "name": "Amigo 1",
+        "email": "friend@example.test",
+    })
+
+    assert person["email"] == "friend@example.test"
+    assert person["external"] is True
+
+
+def test_pending_receivable_notifies_matching_active_user_once(monkeypatch):
+    people = SimpleNamespace(find_one=AsyncMock(return_value={
+        "id": "friend-1",
+        "owner_user_id": "marilia",
+        "name": "Amigo 1",
+        "email": "friend@example.test",
+    }))
+    users = SimpleNamespace(find_one=AsyncMock(return_value={
+        "id": "friend-user",
+        "name": "Amigo 1",
+        "email": "friend@example.test",
+        "status": "active",
+    }))
+    transactions = SimpleNamespace(update_one=AsyncMock())
+    notify = AsyncMock()
+    monkeypatch.setattr(
+        server,
+        "db",
+        SimpleNamespace(
+            people=people,
+            users=users,
+            transactions=transactions,
+        ),
+    )
+    monkeypatch.setattr(server, "push_notification", notify)
+    transaction = {
+        "id": "tx-1",
+        "type": "income",
+        "status": "pending",
+        "person_id": "friend-1",
+        "amount": 50,
+        "currency": "BRL",
+        "description": "Empréstimo",
+    }
+
+    asyncio.run(server.notify_pending_receivable_counterparty(
+        transaction,
+        {"id": "marilia", "name": "Marilia", "currency": "EUR"},
+    ))
+    asyncio.run(server.notify_pending_receivable_counterparty(
+        transaction,
+        {"id": "marilia", "name": "Marilia", "currency": "EUR"},
+    ))
+
+    notify.assert_awaited_once()
+    args = notify.await_args.args
+    assert args[0] == "friend-user"
+    assert "R$ 50.00" in args[3]
+    assert args[5]["currency"] == "BRL"
+    transactions.update_one.assert_awaited_once()
+
+
+def test_person_without_email_never_performs_account_lookup(monkeypatch):
+    users = SimpleNamespace(find_one=AsyncMock())
+    monkeypatch.setattr(
+        server,
+        "db",
+        SimpleNamespace(
+            people=SimpleNamespace(find_one=AsyncMock(return_value={
+                "id": "friend-2",
+                "owner_user_id": "marilia",
+                "name": "Amigo 2",
+                "email": None,
+            })),
+            users=users,
+            transactions=SimpleNamespace(update_one=AsyncMock()),
+        ),
+    )
+    notify = AsyncMock()
+    monkeypatch.setattr(server, "push_notification", notify)
+
+    asyncio.run(server.notify_pending_receivable_counterparty(
+        {
+            "id": "tx-2",
+            "type": "income",
+            "status": "pending",
+            "person_id": "friend-2",
+            "amount": 100,
+            "currency": "BRL",
+        },
+        {"id": "marilia", "name": "Marilia", "currency": "EUR"},
+    ))
+
+    users.find_one.assert_not_awaited()
+    notify.assert_not_awaited()
