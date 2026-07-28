@@ -23,6 +23,15 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 - Categorias padrão + personalizadas
 - Relatórios anuais
 
+## Pessoas, relatório consolidado e responsividade (2026-07-28)
+- ✅ Cadastro privado de pessoas externas, sem conta, convite ou notificação.
+- ✅ Relatório personalizado com filtros combináveis por descrição, categoria, pessoa, status, tipo, período e carteira; exportações seguem o resultado filtrado.
+- ✅ Campo opcional `person_id` em lançamentos de receita/despesa e recorrências; cada ocorrência gerada herda a pessoa.
+- ✅ Pessoas vinculadas aparecem na tabela, no CSV e no relatório personalizado. O resumo individual interpreta receita/despesa e status para mostrar valores pagos, recebidos e pendentes.
+- ✅ Backend valida ownership ou relacionamento compartilhado antes de aceitar uma pessoa; transferências entre carteiras não aceitam contraparte.
+- ✅ Lançamentos antigos permanecem válidos com `person_id` ausente; nenhum histórico é migrado ou regravado.
+- ✅ Cards monetários do Painel, Orçamento, Recorrências e Relatórios usam grade responsiva e proteção contra overflow em valores longos.
+
 ## What's Implemented (2026-02)- ✅ Auth completo: register, login, /me, profile update, change-password
 - ✅ Categories CRUD + 11 categorias padrão seedadas por usuário
 - ✅ Accounts (conta principal seedada automaticamente)

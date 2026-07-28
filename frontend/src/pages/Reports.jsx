@@ -44,9 +44,9 @@ function SummaryCard({ label, value, currency, icon: Icon, tone, comparison, inv
   return (
     <div className="card-soft hover:shadow-md hover:-translate-y-0.5 transition-[box-shadow,transform] duration-200">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="stat-label">{label}</div>
-          <div className={`text-3xl font-light tracking-tight tabular-nums mt-2 ${tone === "red" ? "text-rose-600" : tone === "green" ? "text-emerald-600" : ""}`} style={{ fontFamily: "Outfit" }}>
+          <div className={`money-value text-3xl font-light tracking-tight mt-2 ${tone === "red" ? "text-rose-600" : tone === "green" ? "text-emerald-600" : ""}`} style={{ fontFamily: "Outfit" }}>
             {fmtMoney(value, currency)}
           </div>
         </div>

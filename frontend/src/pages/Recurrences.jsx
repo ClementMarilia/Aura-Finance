@@ -12,10 +12,16 @@ import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 import { translate as tr } from "@/i18n";
-const FREQ_LABEL = { weekly: tr("Semanal"), monthly: tr("Mensal"), yearly: tr("Anual") };
+const FREQ_LABEL = {
+  weekly: tr("Semanal"),
+  monthly: tr("Mensal"),
+  quarterly: tr("Trimestral"),
+  semiannual: tr("Semestral"),
+  yearly: tr("Anual"),
+};
 
 const emptyForm = {
-  type: "expense", amount: "", category_id: "", account_id: "", payment_method: "",
+  type: "expense", amount: "", category_id: "", person_id: "", account_id: "", payment_method: "",
   description: "", frequency: "monthly", next_run: new Date().toISOString().slice(0, 10), active: true,
 };
 
@@ -25,6 +31,7 @@ export default function Recurrences() {
   const [items, setItems] = useState([]);
   const [cats, setCats] = useState([]);
   const [accs, setAccs] = useState([]);
+  const [people, setPeople] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState(null);
@@ -36,6 +43,9 @@ export default function Recurrences() {
     load();
     api.get("/categories").then(r => setCats(r.data));
     api.get("/accounts").then(r => setAccs(r.data || []));
+    api.get("/reports/filter-options").then(r => {
+      setPeople((r.data?.participants || []).filter(person => !person.self));
+    });
   }, []);
 
   const FACTOR = { weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, semiannual: 1 / 6, yearly: 1 / 12 };
@@ -50,7 +60,7 @@ export default function Recurrences() {
     setEditing(r);
     setForm({
       type: r.type, amount: String(r.amount), category_id: r.category_id || "",
-      account_id: r.account_id || "",
+      person_id: r.person_id || "", account_id: r.account_id || "",
       payment_method: r.payment_method || "", description: r.description || "",
       frequency: r.frequency, next_run: r.next_run, active: r.active,
     });
@@ -61,7 +71,8 @@ export default function Recurrences() {
     e.preventDefault();
     const payload = {
       type: form.type, amount: parseFloat(form.amount) || 0,
-      category_id: form.category_id || null, account_id: form.account_id || null,
+      category_id: form.category_id || null, person_id: form.person_id || null,
+      account_id: form.account_id || null,
       payment_method: form.payment_method || null,
       description: form.description, frequency: form.frequency,
       next_run: form.next_run, active: form.active,
@@ -103,19 +114,19 @@ export default function Recurrences() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="rec-summary">
           <div className="card-soft">
             <div className="text-sm text-[#6B7068]">{tr("Gasto fixo mensal (média)")}</div>
-            <div className="text-2xl font-semibold text-rose-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-expense">
+            <div className="money-value text-2xl font-semibold text-rose-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-expense">
               {fmtMoney(fixedExpense, curr)}
             </div>
           </div>
           <div className="card-soft">
             <div className="text-sm text-[#6B7068]">{tr("Receita fixa mensal (média)")}</div>
-            <div className="text-2xl font-semibold text-emerald-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-income">
+            <div className="money-value text-2xl font-semibold text-emerald-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-income">
               {fmtMoney(fixedIncome, curr)}
             </div>
           </div>
           <div className="card-soft">
             <div className="text-sm text-[#6B7068]">{tr("Saldo fixo estimado")}</div>
-            <div className={`text-2xl font-semibold mt-1 ${fixedIncome - fixedExpense >= 0 ? "text-[#061B4A]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-balance">
+            <div className={`money-value text-2xl font-semibold mt-1 ${fixedIncome - fixedExpense >= 0 ? "text-[#061B4A]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-balance">
               {fmtMoney(fixedIncome - fixedExpense, curr)}
             </div>
           </div>
@@ -132,6 +143,7 @@ export default function Recurrences() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {items.map(r => {
           const cat = cats.find(c => c.id === r.category_id);
+          const person = people.find(item => item.id === r.person_id);
           const isOpen = !!expanded[r.id];
           const toggleOpen = () => setExpanded(prev => ({ ...prev, [r.id]: !prev[r.id] }));
           return (
@@ -153,7 +165,7 @@ export default function Recurrences() {
                 </div>
               </div>
               <div className="mt-4 flex items-center justify-between">
-                <span className={`text-2xl font-semibold ${r.type === "income" ? "text-emerald-600" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }}>
+                <span className={`money-value text-2xl font-semibold ${r.type === "income" ? "text-emerald-600" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }}>
                   {r.type === "income" ? "+" : "-"}{fmtMoney(r.amount, r.currency || curr)}
                 </span>
                 <span className={`text-xs ${r.active ? "text-emerald-700" : "text-[#6B7068]"}`}>{r.active ? tr("Ativa") : tr("Pausada")}</span>
@@ -161,6 +173,11 @@ export default function Recurrences() {
               {isOpen && (
               <div className="mt-3 border-t border-[#E5E4E0] pt-3 space-y-2" data-testid={`rec-details-${r.id}`}>
                 {cat && <div className="text-xs inline-flex items-center gap-1.5 text-[#6B7068]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{tr(cat.name)}</div>}
+                {person && (
+                  <div className="text-xs text-[#6B7068]">
+                    {tr("Pessoa")}: <span className="font-medium text-[#1A1C1A]">{person.name}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-[#6B7068]">{r.active ? "Pausar" : "Ativar"} recorrência</span>
                   <Switch data-testid={`rec-toggle-${r.id}`} className="data-[state=checked]:bg-[#061B4A] data-[state=unchecked]:bg-[#D6D3CA]"
@@ -231,6 +248,31 @@ export default function Recurrences() {
                   {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label>{tr("Pessoa (opcional)")}</Label>
+              <Select
+                value={form.person_id || "__none"}
+                onValueChange={(value) => setForm({
+                  ...form,
+                  person_id: value === "__none" ? "" : value,
+                })}
+              >
+                <SelectTrigger data-testid="rec-person-select">
+                  <SelectValue placeholder={tr("Nenhuma pessoa")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">{tr("Nenhuma pessoa")}</SelectItem>
+                  {people.map(person => (
+                    <SelectItem key={person.id} value={person.id}>
+                      {person.name}{person.external ? ` · ${tr("externa")}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-[#6B7068] mt-1">
+                {tr("A pessoa será vinculada a cada lançamento gerado.")}
+              </p>
             </div>
             <div>
               <Label>{tr("Descrição")}</Label>
