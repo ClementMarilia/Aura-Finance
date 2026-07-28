@@ -1692,6 +1692,7 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.installment_purchases.delete_many({"user_id": user_id})
     await db.receivables.delete_many({"user_id": user_id})
     await db.notifications.delete_many({"user_id": user_id})
+    await db.insight_dismissals.delete_many({"user_id": user_id})
     await db.files.delete_many({"user_id": user_id})
     await db.websocket_tickets.delete_many({"user_id": user_id})
     await db.password_reset_tokens.delete_many({"user_id": user_id})
@@ -2028,6 +2029,7 @@ async def delete_admin_user(
         await db.categories.delete_many({"user_id": user_id})
         await db.accounts.delete_many({"user_id": user_id})
         await db.notifications.delete_many({"user_id": user_id})
+        await db.insight_dismissals.delete_many({"user_id": user_id})
         await db.files.delete_many({"user_id": user_id})
         await db.websocket_tickets.delete_many({"user_id": user_id})
         await db.password_reset_tokens.delete_many({"user_id": user_id})
@@ -5246,71 +5248,515 @@ async def projection(months: int = 6, user=Depends(get_current_user)):
             "base_currency": base_currency, "projection": series}
 
 
+INSIGHT_PRIORITY = {
+    "critical": 0,
+    "warning": 1,
+    "opportunity": 2,
+    "good": 3,
+    "info": 4,
+}
+
+
+def build_crelith_insights(
+    *,
+    today: date,
+    currency: str,
+    current_items: List[dict],
+    previous_items: List[dict],
+    categories: List[dict],
+    current_balance: float,
+    future_cashflows: List[dict],
+    overdue_settlements: int,
+    hidden_ids: Optional[set[str]] = None,
+) -> List[dict]:
+    """Build deterministic, auditable insights without external AI services."""
+    hidden_ids = hidden_ids or set()
+    period = f"{today.year}-{today.month:02d}"
+    category_map = {item["id"]: item.get("name", "Outros") for item in categories}
+    insights = []
+    had_candidate = False
+
+    def add(
+        code: str,
+        severity: str,
+        title: str,
+        message: str,
+        *,
+        discriminator: str = "",
+        data: Optional[dict] = None,
+        action_path: Optional[str] = None,
+        dismissible: bool = True,
+    ) -> None:
+        nonlocal had_candidate
+        had_candidate = True
+        insight_id = ":".join(part for part in (code, period, discriminator) if part)
+        if insight_id in hidden_ids:
+            return
+        insights.append({
+            "id": insight_id,
+            "type": code,
+            "code": code,
+            "severity": severity,
+            "title": title,
+            "message": message,
+            "data": data or {},
+            "action_path": action_path,
+            "dismissible": dismissible,
+            "generated_for": period,
+        })
+
+    current_income = round(sum(
+        item["base_amount"] for item in current_items
+        if item.get("type") == "income"
+    ), 2)
+    current_expense = round(sum(
+        item["base_amount"] for item in current_items
+        if item.get("type") == "expense"
+    ), 2)
+
+    # Savings rate only becomes meaningful after at least one income and two
+    # financial movements in the comparable period.
+    if current_income > 0 and len(current_items) >= 2:
+        net = round(current_income - current_expense, 2)
+        rate = round((net / current_income) * 100, 1)
+        if net < 0:
+            add(
+                "spending_above_income",
+                "warning",
+                "Gastos acima da receita",
+                f"Suas despesas superaram a receita em {fmt_eur(abs(net), currency)} neste mês.",
+                data={"amount": abs(net), "rate": rate},
+                action_path=f"/lancamentos?type=expense&year={today.year}&month={today.month}",
+            )
+        elif rate >= 10:
+            add(
+                "savings_rate",
+                "good",
+                "Economia do mês",
+                f"Você preservou {rate}% da sua receita até agora ({fmt_eur(net, currency)}).",
+                data={"amount": net, "rate": rate},
+                action_path="/metas",
+            )
+
+    current_by_category = defaultdict(float)
+    previous_by_category = defaultdict(float)
+    current_category_count = defaultdict(int)
+    previous_category_count = defaultdict(int)
+    for item in current_items:
+        category_id = item.get("category_id")
+        if item.get("type") == "expense" and category_id:
+            current_by_category[category_id] += item["base_amount"]
+            current_category_count[category_id] += 1
+    for item in previous_items:
+        category_id = item.get("category_id")
+        if item.get("type") == "expense" and category_id:
+            previous_by_category[category_id] += item["base_amount"]
+            previous_category_count[category_id] += 1
+
+    # Compare equal portions of consecutive months. The endpoint deliberately
+    # supplies only days 1..today for both periods.
+    growing_categories = []
+    for category_id, current_amount in current_by_category.items():
+        previous_amount = previous_by_category.get(category_id, 0)
+        if (
+            previous_amount >= 20
+            and current_category_count[category_id] >= 2
+            and previous_category_count[category_id] >= 1
+        ):
+            change = ((current_amount - previous_amount) / previous_amount) * 100
+            if change >= 15 and current_amount - previous_amount >= 10:
+                growing_categories.append(
+                    (current_amount - previous_amount, category_id, current_amount, previous_amount, change)
+                )
+    if growing_categories:
+        _, category_id, current_amount, previous_amount, change = max(growing_categories)
+        category_name = category_map.get(category_id, "Outros")
+        add(
+            "category_growth",
+            "warning",
+            "Categoria em alta",
+            f"Seus gastos com {category_name} aumentaram {round(change, 1)}% no mesmo intervalo do mês anterior.",
+            discriminator=category_id,
+            data={
+                "category_id": category_id,
+                "category": category_name,
+                "current_amount": round(current_amount, 2),
+                "previous_amount": round(previous_amount, 2),
+                "percent": round(change, 1),
+            },
+            action_path=(
+                f"/lancamentos?type=expense&category_id={category_id}"
+                f"&year={today.year}&month={today.month}"
+            ),
+        )
+
+    # Forecast the end-of-month balance using the real wallet balance and
+    # already registered pending movements. No statistical guess is mixed in.
+    projected_balance = round(current_balance, 2)
+    negative_on = None
+    future_outgoing = 0.0
+    for item in sorted(future_cashflows, key=lambda row: row["date"]):
+        amount = round(float(item.get("base_amount") or 0), 2)
+        if item.get("type") == "income":
+            projected_balance += amount
+        else:
+            projected_balance -= amount
+            future_outgoing += amount
+        projected_balance = round(projected_balance, 2)
+        if projected_balance < 0 and negative_on is None:
+            negative_on = item["date"]
+    if negative_on:
+        day = int(negative_on[-2:])
+        add(
+            "negative_balance_forecast",
+            "critical",
+            "Saldo em risco",
+            f"Com os lançamentos previstos, seu saldo pode ficar negativo no dia {day}.",
+            data={"date": negative_on, "projected_balance": projected_balance},
+            action_path=f"/lancamentos?status=pending&year={today.year}&month={today.month}",
+        )
+    elif future_outgoing > 0:
+        add(
+            "month_covered",
+            "good",
+            "Contas previstas cobertas",
+            f"Seu saldo cobre os lançamentos pendentes do mês, com previsão de {fmt_eur(projected_balance, currency)} ao final.",
+            data={"projected_balance": projected_balance, "future_outgoing": round(future_outgoing, 2)},
+            action_path=f"/lancamentos?status=pending&year={today.year}&month={today.month}",
+        )
+
+    upcoming = [
+        item for item in future_cashflows
+        if item.get("recurrence_id") and item.get("type") == "expense"
+        and 0 <= (date.fromisoformat(item["date"]) - today).days <= 7
+    ]
+    if upcoming:
+        nearest = min(upcoming, key=lambda item: item["date"])
+        days = (date.fromisoformat(nearest["date"]) - today).days
+        description = nearest.get("description") or "Uma conta recorrente"
+        when = "hoje" if days == 0 else (
+            "amanhã" if days == 1 else f"em {days} dias"
+        )
+        add(
+            "recurrence_due",
+            "info",
+            "Conta recorrente próxima",
+            f"{description} vence {when}: {fmt_eur(nearest['base_amount'], currency)}.",
+            discriminator=str(nearest.get("recurrence_id") or nearest.get("id") or ""),
+            data={
+                "days": days,
+                "date": nearest["date"],
+                "amount": nearest["base_amount"],
+                "description": description,
+            },
+            action_path="/recorrencias",
+        )
+
+    if overdue_settlements > 0:
+        noun = "acerto pendente" if overdue_settlements == 1 else "acertos pendentes"
+        add(
+            "overdue_settlements",
+            "warning",
+            "Acertos aguardando",
+            f"Você possui {overdue_settlements} {noun} há mais de 15 dias.",
+            data={"count": overdue_settlements, "days": 15},
+            action_path="/acertos",
+        )
+
+    duplicate_groups = defaultdict(list)
+    for item in current_items:
+        if item.get("type") not in ("income", "expense"):
+            continue
+        description = normalized_search_text(item.get("description"))
+        key = (
+            item.get("date"),
+            item.get("type"),
+            round(float(item.get("base_amount") or 0), 2),
+            item.get("account_id"),
+            description,
+        )
+        duplicate_groups[key].append(item)
+    duplicate = next(
+        (items for key, items in duplicate_groups.items() if len(items) >= 2 and (key[3] or key[4])),
+        None,
+    )
+    if duplicate:
+        sample = duplicate[0]
+        add(
+            "possible_duplicate",
+            "warning",
+            "Possível duplicidade",
+            f"Encontramos {len(duplicate)} lançamentos semelhantes de {fmt_eur(sample['base_amount'], currency)} no mesmo dia.",
+            discriminator=str(sample.get("date") or ""),
+            data={
+                "count": len(duplicate),
+                "date": sample.get("date"),
+                "amount": sample.get("base_amount"),
+            },
+            action_path=(
+                f"/lancamentos?year={today.year}&month={today.month}"
+            ),
+        )
+
+    if not insights and not had_candidate:
+        add(
+            "insufficient_data",
+            "info",
+            "Sem dados suficientes",
+            "Continue registrando receitas e despesas para receber análises úteis.",
+            dismissible=False,
+        )
+
+    insights.sort(key=lambda item: (
+        INSIGHT_PRIORITY.get(item["severity"], 99),
+        item["id"],
+    ))
+    return insights[:6]
+
+
+async def _insight_installment_items(
+    user: dict,
+    start: str,
+    end: str,
+    currencies: dict,
+) -> List[dict]:
+    installments = await db.installments.find(
+        {"user_id": user["id"], "due_date": {"$gte": start, "$lt": end}},
+        {"_id": 0},
+    ).to_list(3000)
+    if not installments:
+        return []
+    purchase_ids = list({item["purchase_id"] for item in installments})
+    purchases = await db.installment_purchases.find(
+        {"id": {"$in": purchase_ids}, "user_id": user["id"]},
+        {"_id": 0},
+    ).to_list(1000)
+    purchase_map = {item["id"]: item for item in purchases}
+    base_currency = normalize_currency(user.get("currency"))
+    rows = []
+    for installment in installments:
+        purchase = purchase_map.get(installment.get("purchase_id"), {})
+        doc = {**purchase, "amount": installment.get("amount", 0)}
+        if not doc.get("currency"):
+            doc["currency"] = currencies.get(doc.get("account_id"), base_currency)
+        rows.append({
+            **installment,
+            "type": "expense",
+            "date": installment.get("due_date"),
+            "category_id": purchase.get("category_id"),
+            "account_id": purchase.get("account_id"),
+            "description": purchase.get("description", ""),
+            "base_amount": round(amount_in_currency(doc, base_currency), 2),
+            "source": "installment",
+        })
+    return rows
+
+
+async def _insight_account_balance(
+    user: dict,
+    accounts: List[dict],
+    paid_transactions: List[dict],
+    currencies: dict,
+) -> float:
+    base_currency = normalize_currency(user.get("currency"))
+    total = 0.0
+    for account in accounts:
+        doc = {
+            **account,
+            "amount": account.get("initial_balance", 0),
+            "currency": normalize_currency(account.get("currency"), base_currency),
+        }
+        total += amount_in_currency(doc, base_currency)
+    for transaction in paid_transactions:
+        if transaction.get("type") not in ("income", "expense"):
+            continue
+        doc = dict(transaction)
+        if not doc.get("currency"):
+            doc["currency"] = currencies.get(doc.get("account_id"), base_currency)
+        amount = amount_in_currency(doc, base_currency)
+        total += amount if doc["type"] == "income" else -amount
+    paid_installments = await _insight_installment_items(
+        user, "1900-01-01", "2201-01-01", currencies,
+    )
+    total -= sum(
+        item["base_amount"] for item in paid_installments
+        if item.get("status") == "paid"
+    )
+    return round(total, 2)
+
+
+def _overdue_settlement_count(
+    expenses: List[dict],
+    user_id: str,
+    cutoff: date,
+) -> int:
+    count = 0
+    for expense in expenses:
+        try:
+            expense_date = date.fromisoformat(str(expense.get("date"))[:10])
+        except (TypeError, ValueError):
+            continue
+        if expense_date > cutoff:
+            continue
+        payer_id = expense.get("payer_id")
+        for participant in expense.get("participants", []):
+            party_id = participant_reference(participant)
+            if (
+                participant.get("paid_back")
+                or not party_id
+                or party_id == payer_id
+            ):
+                continue
+            if payer_id == user_id or party_id == user_id:
+                count += 1
+    return count
+
+
 @api.get("/insights")
 async def insights(user=Depends(get_current_user)):
     now = datetime.now(timezone.utc)
-    cur_inc, cur_exp = await _month_net(user, now.year, now.month)
-    pmm, pyy = now.month - 1, now.year
-    if pmm <= 0:
-        pmm, pyy = 12, now.year - 1
-    prev_inc, prev_exp = await _month_net(user, pyy, pmm)
+    today = now.date()
+    month_start = date(today.year, today.month, 1)
+    month_end = month_end_date(today.year, today.month)
+    previous_month_end = month_start - timedelta(days=1)
+    previous_month_start = date(previous_month_end.year, previous_month_end.month, 1)
+    comparable_day = min(today.day, previous_month_end.day)
+    previous_comparable_end = date(
+        previous_month_end.year, previous_month_end.month, comparable_day,
+    ) + timedelta(days=1)
+    current_end = today + timedelta(days=1)
 
-    out = []
-    # Savings rate
-    if cur_inc > 0:
-        rate = round((cur_inc - cur_exp) / cur_inc * 100, 1)
-        if rate >= 0:
-            out.append({"type": "savings", "severity": "good",
-                        "title": "Taxa de poupança",
-                        "message": f"Você guardou {rate}% da sua receita este mês ({fmt_eur(cur_inc - cur_exp, user.get('currency','EUR'))})."})
-        else:
-            out.append({"type": "savings", "severity": "warning",
-                        "title": "Gastos acima da receita",
-                        "message": f"Suas despesas superaram a receita em {fmt_eur(cur_exp - cur_inc, user.get('currency','EUR'))} este mês."})
-    # Expense trend vs last month
-    if prev_exp > 0:
-        diff = cur_exp - prev_exp
-        pct = round(abs(diff) / prev_exp * 100, 1)
-        if diff > 0:
-            out.append({"type": "trend", "severity": "warning",
-                        "title": "Despesas em alta",
-                        "message": f"Seus gastos subiram {pct}% em relação a {pyy}-{pmm:02d}."})
-        elif diff < 0:
-            out.append({"type": "trend", "severity": "good",
-                        "title": "Despesas em queda",
-                        "message": f"Você gastou {pct}% menos que no mês passado. Continue assim!"})
-    # Top category this month
-    start, end = month_range(now.year, now.month)
-    txs = await db.transactions.find(
-        {"user_id": user["id"], "type": "expense", "date": {"$gte": start[:10], "$lt": end[:10]},
-         "status": {"$ne": "cancelled"}}, {"_id": 0},
-    ).to_list(5000)
+    await materialize_recurrences(user["id"], month_end)
+    current_query = {
+        "user_id": user["id"],
+        "date": {"$gte": month_start.isoformat(), "$lt": current_end.isoformat()},
+        "status": {"$ne": "cancelled"},
+    }
+    previous_query = {
+        "user_id": user["id"],
+        "date": {
+            "$gte": previous_month_start.isoformat(),
+            "$lt": previous_comparable_end.isoformat(),
+        },
+        "status": {"$ne": "cancelled"},
+    }
+    accounts, current_transactions, previous_transactions, paid_transactions, categories, shared, hidden = await asyncio.gather(
+        db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(500),
+        db.transactions.find(current_query, {"_id": 0}).to_list(5000),
+        db.transactions.find(previous_query, {"_id": 0}).to_list(5000),
+        db.transactions.find(
+            {"user_id": user["id"], "status": "paid"}, {"_id": 0},
+        ).to_list(20000),
+        db.categories.find({"user_id": user["id"]}, {"_id": 0}).to_list(500),
+        db.shared_expenses.find(
+            visible_shared_query(user["id"]), {"_id": 0},
+        ).to_list(5000),
+        db.insight_dismissals.find(
+            {"user_id": user["id"]}, {"_id": 0, "insight_id": 1},
+        ).to_list(1000),
+    )
     base_currency = normalize_currency(user.get("currency"))
-    currencies = await account_currency_map(user)
-    for tx in txs:
-        if not tx.get("currency"):
-            tx["currency"] = currencies.get(tx.get("account_id"), base_currency)
-    by_cat = defaultdict(float)
-    for t in txs:
-        if t.get("category_id"):
-            by_cat[t["category_id"]] += amount_in_currency(t, base_currency)
-    if by_cat:
-        top_id, top_val = max(by_cat.items(), key=lambda x: x[1])
-        cat = await db.categories.find_one({"id": top_id}, {"_id": 0, "name": 1})
-        share = round(top_val / cur_exp * 100, 1) if cur_exp else 0
-        out.append({"type": "category", "severity": "info",
-                    "title": "Maior categoria de gasto",
-                    "message": f"'{cat['name'] if cat else 'Outros'}' representa {share}% dos seus gastos ({fmt_eur(top_val, user.get('currency','EUR'))})."})
-    # Pending payables
-    pend = sum(amount_in_currency(t, base_currency) for t in txs if t["status"] == "pending")
-    if pend > 0:
-        out.append({"type": "pending", "severity": "warning",
-                    "title": "Contas pendentes",
-                    "message": f"Você tem {fmt_eur(pend, user.get('currency','EUR'))} em despesas pendentes este mês."})
-    if not out:
-        out.append({"type": "empty", "severity": "info", "title": "Sem dados suficientes",
-                    "message": "Cadastre receitas e despesas para receber insights personalizados."})
-    return out
+    currencies = {
+        account["id"]: normalize_currency(account.get("currency"), base_currency)
+        for account in accounts
+    }
+
+    def normalize_items(items: List[dict]) -> List[dict]:
+        rows = []
+        for item in items:
+            if item.get("type") not in ("income", "expense"):
+                continue
+            doc = dict(item)
+            if not doc.get("currency"):
+                doc["currency"] = currencies.get(doc.get("account_id"), base_currency)
+            rows.append({
+                **doc,
+                "base_amount": round(amount_in_currency(doc, base_currency), 2),
+            })
+        return rows
+
+    current_installments, previous_installments, future_installments, current_balance = await asyncio.gather(
+        _insight_installment_items(
+            user, month_start.isoformat(), current_end.isoformat(), currencies,
+        ),
+        _insight_installment_items(
+            user, previous_month_start.isoformat(),
+            previous_comparable_end.isoformat(), currencies,
+        ),
+        _insight_installment_items(
+            user, today.isoformat(), (month_end + timedelta(days=1)).isoformat(), currencies,
+        ),
+        _insight_account_balance(user, accounts, paid_transactions, currencies),
+    )
+    current_items = normalize_items(current_transactions) + current_installments
+    previous_items = normalize_items(previous_transactions) + previous_installments
+
+    future_transactions = await db.transactions.find(
+        {
+            "user_id": user["id"],
+            "date": {"$gte": today.isoformat(), "$lte": month_end.isoformat()},
+            "status": "pending",
+            "type": {"$in": ["income", "expense"]},
+        },
+        {"_id": 0},
+    ).to_list(5000)
+    future_cashflows = normalize_items(future_transactions)
+    future_cashflows.extend(
+        item for item in future_installments if item.get("status") == "pending"
+    )
+
+    # Shared debts do not have a separate due date. Treat them as obligations
+    # payable today so the forecast remains conservative and transparent.
+    for expense in shared:
+        if expense.get("payer_id") == user["id"]:
+            continue
+        for participant in expense.get("participants", []):
+            if (
+                participant_reference(participant) == user["id"]
+                and not participant.get("paid_back")
+            ):
+                doc = {**expense, "amount": participant.get("owed", 0)}
+                if not doc.get("currency"):
+                    doc["currency"] = base_currency
+                future_cashflows.append({
+                    "id": f"shared:{expense.get('id')}",
+                    "type": "expense",
+                    "date": today.isoformat(),
+                    "base_amount": round(amount_in_currency(doc, base_currency), 2),
+                    "description": expense.get("title", ""),
+                    "source": "shared_expense",
+                })
+
+    return build_crelith_insights(
+        today=today,
+        currency=base_currency,
+        current_items=current_items,
+        previous_items=previous_items,
+        categories=categories,
+        current_balance=current_balance,
+        future_cashflows=future_cashflows,
+        overdue_settlements=_overdue_settlement_count(
+            shared, user["id"], today - timedelta(days=15),
+        ),
+        hidden_ids={item["insight_id"] for item in hidden},
+    )
+
+
+@api.post("/insights/{insight_id}/dismiss")
+async def dismiss_insight(insight_id: str, user=Depends(get_current_user)):
+    if not insight_id or len(insight_id) > 240:
+        raise HTTPException(400, "Insight inválido")
+    await db.insight_dismissals.update_one(
+        {"user_id": user["id"], "insight_id": insight_id},
+        {
+            "$set": {
+                "dismissed_at": now_iso(),
+                "expires_at": datetime.now(timezone.utc) + timedelta(days=120),
+            },
+        },
+        upsert=True,
+    )
+    return {"ok": True}
 
 
 # ---------- Financial Goals ----------
@@ -5509,6 +5955,14 @@ async def startup():
         )
     await db.groups.create_index("member_ids")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.insight_dismissals.create_index(
+        [("user_id", 1), ("insight_id", 1)],
+        unique=True,
+    )
+    await db.insight_dismissals.create_index(
+        "expires_at",
+        expireAfterSeconds=0,
+    )
     await db.websocket_tickets.create_index("ticket_hash", unique=True)
     await db.websocket_tickets.create_index(
         "expires_at",

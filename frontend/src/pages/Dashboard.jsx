@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "@/lib/api";
 import { fmtMoney } from "@/lib/api";
+import { formatInsight, insightCategory } from "@/lib/insights";
 import { useAuth } from "@/context/AuthContext";
 import { getMonthNames, translate as tr } from "@/i18n";
 import {
   TrendingUp, TrendingDown, Wallet, Clock, HandCoins, CreditCard,
-  Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat, PiggyBank, ChevronRight
+  Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat, PiggyBank, ChevronRight, X
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -18,7 +19,7 @@ const months = getMonthNames("short");
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
-  const [insights, setInsights] = useState([]);
+  const [insights, setInsights] = useState(null);
   const [projection, setProjection] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [period, setPeriod] = useState(() => {
@@ -43,6 +44,16 @@ export default function Dashboard() {
     api.get("/reports/projection", { params: { months: 6 } }).then(r => setProjection(r.data)).catch(() => {});
     api.get("/accounts").then(r => setAccounts(r.data || [])).catch(() => {});
   }, [user?.currency]);
+
+  const dismissInsight = async (insightId) => {
+    const previous = insights;
+    setInsights((items) => (items || []).filter((item) => item.id !== insightId));
+    try {
+      await api.post(`/insights/${encodeURIComponent(insightId)}/dismiss`);
+    } catch (_) {
+      setInsights(previous);
+    }
+  };
 
   const curr = user?.currency || "EUR";
   const patrimonio = accounts.reduce((s, a) => s + (a.balance_base ?? a.balance ?? 0), 0);
@@ -243,27 +254,54 @@ export default function Dashboard() {
       {/* Insights + Projection */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-soft" data-testid="insights-section">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ fontFamily: "Outfit" }}>
-            <Lightbulb size={18} className="text-[#E5A83B]" /> {tr("Insights")}
-          </h3>
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2" style={{ fontFamily: "Outfit" }}>
+              <Lightbulb size={18} className="text-[#E5A83B]" /> {tr("Crelith Insights")}
+            </h3>
+            <p className="text-xs text-[#6B7068] mt-1">
+              {tr("Análises automáticas baseadas nos seus próprios lançamentos.")}
+            </p>
+          </div>
           <div className="space-y-3">
-            {insights.length === 0 && <div className="text-sm text-[#6B7068]">{tr("Calculando insights...")}</div>}
-            {insights.map((ins, i) => {
+            {insights === null && <div className="text-sm text-[#6B7068]">{tr("Calculando insights...")}</div>}
+            {insights?.length === 0 && (
+              <div className="text-sm text-[#6B7068]">{tr("Nenhuma nova análise no momento.")}</div>
+            )}
+            {insights?.map((ins, i) => {
               const map = {
+                critical: { Icon: AlertTriangle, c: "text-rose-700", bg: "bg-rose-50", border: "border-rose-100" },
                 good: { Icon: CheckCircle2, c: "text-emerald-600", bg: "bg-emerald-50" },
                 warning: { Icon: AlertTriangle, c: "text-amber-700", bg: "bg-amber-50" },
+                opportunity: { Icon: Lightbulb, c: "text-violet-700", bg: "bg-violet-50" },
                 info: { Icon: Info, c: "text-blue-600", bg: "bg-blue-50" },
               };
               const { Icon, c, bg } = map[ins.severity] || map.info;
+              const content = formatInsight(ins, curr);
               return (
-                <div key={i} className="flex items-start gap-3" data-testid={`insight-${i}`}>
+                <div key={ins.id || i} className={`relative flex items-start gap-3 rounded-xl border p-3 ${map[ins.severity]?.border || "border-[#E5E4E0]"}`}
+                  data-testid={`insight-${i}`}>
                   <div className={`w-8 h-8 rounded-lg ${bg} ${c} flex items-center justify-center flex-shrink-0`}>
                     <Icon size={16} />
                   </div>
-                  <div>
-                    <div className="text-sm font-medium text-[#1A1C1A]">{ins.title}</div>
-                    <div className="text-xs text-[#6B7068] mt-0.5">{ins.message}</div>
+                  <div className="min-w-0 pr-6">
+                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${c}`}>
+                      {insightCategory(ins.severity)}
+                    </div>
+                    <div className="text-sm font-medium text-[#1A1C1A] mt-0.5">{content.title}</div>
+                    <div className="text-xs text-[#6B7068] mt-0.5">{content.message}</div>
+                    {ins.action_path && (
+                      <Link to={ins.action_path} className="inline-flex items-center gap-1 text-xs font-medium text-[#1268F4] mt-2 hover:underline">
+                        {tr("Ver detalhes")} <ChevronRight size={13} />
+                      </Link>
+                    )}
                   </div>
+                  {ins.dismissible && (
+                    <button type="button" onClick={() => dismissInsight(ins.id)}
+                      className="absolute right-2 top-2 p-1 rounded-md text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#1A1C1A]"
+                      aria-label={tr("Ocultar sugestão")} title={tr("Ocultar sugestão")}>
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               );
             })}

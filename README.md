@@ -68,7 +68,7 @@ Cada card no Dashboard navega direto para a tela com filtro aplicado, mostrando 
 - **Metas financeiras** com aporte/resgate (opcionalmente vinculados a uma carteira).
 
 ### Análise
-- **Dashboard / Painel**: 6 cards clicáveis (Receita, Despesa, Saldo, Patrimônio, Recebíveis, Gasto fixo), evolução de 6 meses, gráfico de categorias, projeção e **insights automáticos**.
+- **Dashboard / Painel**: cards clicáveis, evolução de 6 meses, gráfico de categorias, projeção e **Crelith Insights**, um motor gratuito de regras financeiras sem IA externa.
 - **Relatórios anuais**: cards, **comparação YoY**, barras mensais, exportação CSV/PDF (jsPDF).
 
 ### Conta & segurança
@@ -336,7 +336,8 @@ POST   /settlements/nudge/{debtor_id}            # cutucar
 GET    /dashboard?year=&month=                   # cards, evolução, categorias, fixed_monthly_*
 GET    /reports/annual?year=                     # totals + months + prev_year + prev_totals + prev_months
 GET    /reports/projection?months=               # projeção (média 6m)
-GET    /insights                                 # poupança, tendência, top categoria, contas pendentes
+GET    /insights                                 # regras auditáveis: tendência, saldo, recorrências, acertos e duplicidade
+POST   /insights/{insight_id}/dismiss            # oculta uma ocorrência por até 120 dias
 GET|POST|PUT|DELETE /goals[/{gid}]
 POST   /goals/{gid}/contribute, /withdraw
 GET    /notifications, /unread-count
