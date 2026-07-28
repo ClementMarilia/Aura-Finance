@@ -49,6 +49,7 @@ def account_deletion_db(shared_items=None, shared_count=0):
         installment_purchases=collection(),
         receivables=collection(),
         groups=collection(),
+        people=collection(),
         categories=collection(),
         notifications=collection(),
         files=collection(),

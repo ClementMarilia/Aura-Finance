@@ -124,7 +124,9 @@ export default function Settlements() {
                   <Initials name={s.user?.name} color={s.user?.avatar_color} size={40} />
                   <div>
                     <div className="font-medium">{s.user?.name}</div>
-                    <div className="text-xs text-[#6B7068]">{s.user?.email}</div>
+                    <div className="text-xs text-[#6B7068]">
+                      {s.user?.external ? tr("Pessoa externa") : s.user?.email}
+                    </div>
                   </div>
                 </div>
                 <div className="mt-4">
@@ -141,7 +143,7 @@ export default function Settlements() {
                   )}
                 </div>
                 <div className="mt-4 flex gap-2">
-                  {s.net > 0 && (
+                  {s.net > 0 && !s.user?.external && (
                     <button onClick={() => nudge(s.user?.id, s.user?.name)} data-testid={`nudge-${s.user?.id}`}
                       className="flex-1 px-3 py-1.5 rounded-lg text-xs border border-[#061B4A] text-[#061B4A] hover:bg-[#061B4A] hover:text-white flex items-center justify-center gap-1 transition-colors">
                       <Bell size={12} /> {tr("Cutucar")}
@@ -212,7 +214,7 @@ export default function Settlements() {
                     <td className="py-3 px-4">{fmtDate(r.date)}</td>
                     <td className="py-3 px-4 text-right font-semibold">{fmtMoney(r.amount, curr)}</td>
                     <td className="py-3 px-4">
-                      {(r.debtor_id === user.id || r.creditor_id === user.id) && (
+                      {(r.debtor_id === user.id || r.creditor_id === user.id || r.managed_by_user) && (
                         <button onClick={() => markPaid(r)} data-testid={`mark-paid-${i}`}
                           className="px-3 py-1.5 rounded-lg text-xs bg-[#061B4A] text-white hover:bg-[#1268F4] flex items-center gap-1">
                           <Check size={12} /> {tr("Marcar pago")}

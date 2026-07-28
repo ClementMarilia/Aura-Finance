@@ -24,6 +24,7 @@ const nav = [
   { to: "/carteiras", icon: Wallet, label: tr("Carteiras") },
   { to: "/metas", icon: Target, label: tr("Metas") },
   { to: "/despesas-compartilhadas", icon: Users, label: tr("Despesas Compartilhadas") },
+  { to: "/pessoas", icon: UserCircle, label: tr("Pessoas") },
   { to: "/grupos", icon: FolderOpen, label: tr("Grupos") },
   { to: "/acertos", icon: Scale, label: tr("Acertos") },
   { to: "/relatorios", icon: FileBarChart, label: tr("Relatórios") },
@@ -106,7 +107,7 @@ export default function Layout() {
         <div className="flex items-center justify-center py-4 mb-4">
           <Logo variant="full" className="h-16 w-auto" />
         </div>
-        <nav className="flex flex-col gap-1 flex-1">
+        <nav className="flex flex-col gap-1 flex-1 overflow-y-auto pr-1">
           {visibleNav.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={linkCls} data-testid={`nav-${n.to.replace(/\//g, "") || "painel"}`}>
               <n.icon size={18} />

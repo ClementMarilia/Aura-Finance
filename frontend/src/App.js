@@ -23,6 +23,7 @@ import Goals from "@/pages/Goals";
 import Recurrences from "@/pages/Recurrences";
 import Wallets from "@/pages/Wallets";
 import AdminUsers from "@/pages/AdminUsers";
+import People from "@/pages/People";
 import InstallPrompt from "@/components/InstallPrompt";
 import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
 import { translate as tr } from "@/i18n";
@@ -67,6 +68,7 @@ function App() {
             <Route path="contas-a-receber" element={<Receivables />} />
             <Route path="orcamento" element={<Budget />} />
             <Route path="despesas-compartilhadas" element={<SharedExpenses />} />
+            <Route path="pessoas" element={<People />} />
             <Route path="grupos" element={<Groups />} />
             <Route path="acertos" element={<Settlements />} />
             <Route path="relatorios" element={<Reports />} />
