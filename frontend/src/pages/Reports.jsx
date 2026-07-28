@@ -13,6 +13,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   PieChart, Pie, Cell,
 } from "recharts";
+import CustomReport from "@/components/CustomReport";
 
 const MONTHS = getMonthNames("short");
 const MONTHS_LONG = getMonthNames("long");
@@ -144,6 +145,11 @@ export default function Reports() {
   const years = Array.from({ length: 5 }, (_, index) => now.getFullYear() - 2 + index);
 
   useEffect(() => {
+    if (view === "custom") {
+      setLoading(false);
+      setError("");
+      return undefined;
+    }
     let active = true;
     setLoading(true);
     setError("");
@@ -211,17 +217,18 @@ export default function Reports() {
           <div className="p-1 rounded-xl bg-[#F1EFE7] flex" data-testid="reports-view-switch">
             <button onClick={() => setView("monthly")} className={`px-3 py-1.5 rounded-lg text-sm transition ${view === "monthly" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Mensal")}</button>
             <button onClick={() => setView("annual")} className={`px-3 py-1.5 rounded-lg text-sm transition ${view === "annual" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Anual")}</button>
+            <button onClick={() => setView("custom")} className={`px-3 py-1.5 rounded-lg text-sm transition ${view === "custom" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Personalizado")}</button>
           </div>
-          <Button variant="outline" disabled={loading || (view === "monthly" ? !monthly : !annual)} onClick={view === "monthly" ? exportMonthlyCSV : exportAnnualCSV} data-testid="export-csv-btn" className="rounded-xl">
+          {view !== "custom" && <Button variant="outline" disabled={loading || (view === "monthly" ? !monthly : !annual)} onClick={view === "monthly" ? exportMonthlyCSV : exportAnnualCSV} data-testid="export-csv-btn" className="rounded-xl">
             <FileDown size={16} className="mr-1" /> {tr("CSV")}
-          </Button>
-          <Button variant="outline" disabled={loading || (view === "monthly" ? !monthly : !annual)} onClick={view === "monthly" ? () => exportMonthlyReportPDF(monthly, user?.name) : exportAnnualPDF} data-testid="export-pdf-btn" className="rounded-xl">
+          </Button>}
+          {view !== "custom" && <Button variant="outline" disabled={loading || (view === "monthly" ? !monthly : !annual)} onClick={view === "monthly" ? () => exportMonthlyReportPDF(monthly, user?.name) : exportAnnualPDF} data-testid="export-pdf-btn" className="rounded-xl">
             <FileText size={16} className="mr-1" /> {tr("PDF")}
-          </Button>
+          </Button>}
         </div>
       </div>
 
-      <div className="card-soft py-4 flex items-center justify-between gap-4 flex-wrap">
+      {view !== "custom" && <div className="card-soft py-4 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2 text-sm font-medium"><CalendarDays size={17} className="text-[#061B4A]" /> {tr("Período do relatório")}</div>
         <div className="flex gap-2">
           {view === "monthly" && (
@@ -233,12 +240,13 @@ export default function Reports() {
             {years.map(year => <option key={year} value={year}>{year}</option>)}
           </select>
         </div>
-      </div>
+      </div>}
 
       {loading && <div className="card-soft text-sm text-[#6B7068]">{tr("Carregando relatório...")}</div>}
       {error && <div className="card-soft border-rose-200 text-rose-600">{error}</div>}
       {!loading && !error && view === "monthly" && monthly && <MonthlyReport data={monthly} currency={monthly.base_currency || currency} />}
       {!loading && !error && view === "annual" && annual && <AnnualReport data={annual} currency={annual.base_currency || currency} />}
+      {view === "custom" && <CustomReport user={user} />}
     </div>
   );
 }

@@ -32,28 +32,33 @@ export default function SharedExpenses() {
   const curr = user?.currency || "EUR";
   const [list, setList] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [people, setPeople] = useState([]);
   const [summary, setSummary] = useState([]); // {user, net}
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null); // expense being edited or null
   const [participants, setParticipants] = useState([]);
   const [searchEmail, setSearchEmail] = useState("");
+  const [externalName, setExternalName] = useState("");
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm(user));
   const [confirmDelete, setConfirmDelete] = useState(null); // expense id
 
   const load = async () => {
-    const [a, b] = await Promise.all([
+    const [a, b, c] = await Promise.all([
       api.get("/shared-expenses"),
       api.get("/settlements"),
+      api.get("/people"),
     ]);
     setList(a.data);
     setSummary(b.data.summary || []);
+    setPeople(c.data);
   };
   useEffect(() => { load(); api.get("/groups").then(r => setGroups(r.data)); }, []);
 
   const openNew = () => {
     setEditing(null);
     setForm(emptyForm(user));
-    setParticipants([{ user, amount: "", percent: "" }]);
+    setParticipants([{ user, user_id: user.id, amount: "", percent: "" }]);
     setOpen(true);
   };
 
@@ -66,10 +71,10 @@ export default function SharedExpenses() {
     setParticipants(prev => {
       const existing = new Map(prev.map(p => [p.user.id, p]));
       (g.members || []).forEach(m => {
-        if (!existing.has(m.id)) existing.set(m.id, { user: m, amount: "", percent: "" });
+        if (!existing.has(m.id)) existing.set(m.id, { user: m, user_id: m.id, amount: "", percent: "" });
       });
       // garante o próprio usuário sempre
-      if (!existing.has(user.id)) existing.set(user.id, { user, amount: "", percent: "" });
+      if (!existing.has(user.id)) existing.set(user.id, { user, user_id: user.id, amount: "", percent: "" });
       return Array.from(existing.values());
     });
   };
@@ -107,7 +112,11 @@ export default function SharedExpenses() {
       group_id: e.group_id || "", notes: e.notes || "",
     });
     setParticipants(e.participants.map(p => ({
-      user: p.user, amount: p.owed ? String(p.owed) : "", percent: "",
+      user: p.user,
+      user_id: p.user_id || null,
+      person_id: p.person_id || null,
+      amount: p.owed ? String(p.owed) : "",
+      percent: "",
     })));
     setOpen(true);
   };
@@ -118,22 +127,54 @@ export default function SharedExpenses() {
       const r = await api.get("/users/search", { params: { email: searchEmail } });
       if (!r.data) { toast.error(tr("Usuário não encontrado")); return; }
       if (participants.some(p => p.user.id === r.data.id)) { toast.warning(tr("Já adicionado")); return; }
-      setParticipants([...participants, { user: r.data, amount: "", percent: "" }]);
+      setParticipants([...participants, { user: r.data, user_id: r.data.id, amount: "", percent: "" }]);
       setSearchEmail("");
     } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const addExternalPerson = (person) => {
+    if (!person) return;
+    if (participants.some(item => item.user.id === person.id)) {
+      toast.warning(tr("Já adicionado"));
+      return;
+    }
+    setParticipants([
+      ...participants,
+      { user: person, person_id: person.id, user_id: null, amount: "", percent: "" },
+    ]);
+  };
+
+  const createAndAddExternalPerson = async () => {
+    const name = externalName.trim();
+    if (!name) return;
+    try {
+      const response = await postCreate("/people", {
+        name, nickname: "", relationship: "", notes: "",
+      });
+      const person = response.data;
+      setPeople(current => [...current, person].sort((a, b) => a.name.localeCompare(b.name)));
+      addExternalPerson(person);
+      setExternalName("");
+      toast.success(tr("Pessoa adicionada"));
+    } catch (error) {
+      toast.error(formatApiError(error));
+    }
   };
 
   const removeParticipant = (id) => setParticipants(participants.filter(p => p.user.id !== id));
 
   const submit = async (e) => {
     e.preventDefault();
+    if (saving) return;
+    setSaving(true);
     try {
       const body = {
         title: form.title, amount: parseFloat(form.amount), date: form.date,
         category: form.category, payer_id: form.payer_id, split_type: form.split_type,
         group_id: form.group_id || null, notes: form.notes,
         participants: participants.map(p => ({
-          user_id: p.user.id,
+          user_id: p.user_id || null,
+          person_id: p.person_id || null,
           amount: p.amount ? parseFloat(p.amount) : null,
           percent: p.percent ? parseFloat(p.percent) : null,
         })),
@@ -148,7 +189,11 @@ export default function SharedExpenses() {
       setOpen(false); setEditing(null); setParticipants([]);
       setForm(emptyForm(user));
       load();
-    } catch (err) { toast.error(formatApiError(err)); }
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const togglePaid = async (sid, uid) => {
@@ -256,6 +301,39 @@ export default function SharedExpenses() {
                 <Button type="button" onClick={addParticipantByEmail} data-testid="shared-add-participant-button"
                   className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl"><UserPlus size={16} /></Button>
               </div>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Select onValueChange={value => addExternalPerson(people.find(person => person.id === value))}>
+                  <SelectTrigger data-testid="shared-person-select">
+                    <SelectValue placeholder={tr("Selecionar pessoa cadastrada")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {people.map(person => (
+                      <SelectItem key={person.id} value={person.id}>
+                        {person.name}{person.nickname ? ` (${person.nickname})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex gap-2">
+                  <Input
+                    value={externalName}
+                    onChange={event => setExternalName(event.target.value)}
+                    placeholder={tr("Nova pessoa externa")}
+                    data-testid="shared-external-name"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={createAndAddExternalPerson}
+                    data-testid="shared-add-external"
+                  >
+                    <Plus size={16} />
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-[#6B7068] mt-2">
+                {tr("Pessoas externas são privadas: não recebem convite, acesso ou notificação.")}
+              </p>
               <div className="mt-3 space-y-2">
                 {(() => {
                   const preview = previewSplit();
@@ -264,7 +342,9 @@ export default function SharedExpenses() {
                       <Initials name={p.user.name} color={p.user.avatar_color} />
                       <div className="flex-1 text-sm min-w-0">
                         <div className="font-medium truncate">{p.user.name}</div>
-                        <div className="text-xs text-[#6B7068] truncate">{p.user.email}</div>
+                        <div className="text-xs text-[#6B7068] truncate">
+                          {p.user.external ? tr("Pessoa externa") : p.user.email}
+                        </div>
                       </div>
                       {form.split_type === "manual" && (
                         <Input type="number" step="0.01" placeholder="valor" className="w-24"
@@ -309,8 +389,8 @@ export default function SharedExpenses() {
                 </Select></div>
             </div>
 
-            <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="shared-submit-button">
-              {editing ? tr("Salvar alterações") : "Criar despesa"}
+            <Button type="submit" disabled={saving} className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="shared-submit-button">
+              {saving ? tr("Salvando...") : editing ? tr("Salvar alterações") : tr("Criar despesa")}
             </Button>
           </form>
         </DialogContent>
@@ -346,17 +426,18 @@ export default function SharedExpenses() {
                   {/* Resumo em 1 linha: quanto cada um deve */}
                   <div className="mt-1.5 text-xs text-[#6B7068] flex flex-wrap gap-x-3 gap-y-0.5" data-testid={`shared-summary-${e.id}`}>
                     {e.participants.map(p => {
-                      const isPayer = p.user_id === e.payer_id;
+                      const participantId = p.participant_id || p.user_id || p.person_id;
+                      const isPayer = participantId === e.payer_id;
                       const name = (p.user?.name || "").split(" ")[0];
                       if (isPayer) {
                         return (
-                          <span key={p.user_id} className="text-emerald-700">
+                          <span key={participantId} className="text-emerald-700">
                             <strong>{name}</strong> {fmtMoney(p.owed || 0, e.currency || curr)} (pagou)
                           </span>
                         );
                       }
                       return (
-                        <span key={p.user_id} className={p.paid_back ? "text-emerald-600" : ""}>
+                        <span key={participantId} className={p.paid_back ? "text-emerald-600" : ""}>
                           <strong>{name}</strong> {fmtMoney(p.owed || 0, e.currency || curr)}{p.paid_back ? " ✓" : ""}
                         </span>
                       );
@@ -388,9 +469,10 @@ export default function SharedExpenses() {
 
               <div className="mt-4 space-y-2">
                 {e.participants.map(p => {
-                  const isPayer = p.user_id === e.payer_id;
+                  const participantId = p.participant_id || p.user_id || p.person_id;
+                  const isPayer = participantId === e.payer_id;
                   const iAmPayer = e.payer_id === user.id;       // eu recebo
-                  const iAmThisDebtor = p.user_id === user.id;   // eu devo
+                  const iAmThisDebtor = participantId === user.id;   // eu devo
                   let actionLabel = tr("Marcar pago");
                   let actionTitle = "Confirmar pagamento";
                   if (iAmPayer && !isPayer) {
@@ -403,7 +485,7 @@ export default function SharedExpenses() {
                     actionLabel = p.paid_back ? tr("Pago") : tr("Marcar pago");
                   }
                   return (
-                    <div key={p.user_id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-[#F1EFE7]" data-testid={`participant-row-${e.id}-${p.user_id}`}>
+                    <div key={participantId} className="flex items-center gap-3 p-2 rounded-lg hover:bg-[#F1EFE7]" data-testid={`participant-row-${e.id}-${participantId}`}>
                       <Initials name={p.user?.name} color={p.user?.avatar_color} />
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-sm truncate">
@@ -419,11 +501,11 @@ export default function SharedExpenses() {
                       {/* Valor da parte da pessoa em destaque */}
                       <div className={`text-base font-semibold whitespace-nowrap ${
                         isPayer ? "text-[#061B4A]" : p.paid_back ? "text-emerald-600 line-through opacity-60" : "text-rose-600"
-                      }`} style={{ fontFamily: "Outfit" }} data-testid={`participant-amount-${e.id}-${p.user_id}`}>
+                      }`} style={{ fontFamily: "Outfit" }} data-testid={`participant-amount-${e.id}-${participantId}`}>
                         {fmtMoney(p.owed || 0, e.currency || curr)}
                       </div>
                       {!isPayer && (
-                        <button onClick={() => togglePaid(e.id, p.user_id)} data-testid={`settle-${e.id}-${p.user_id}`}
+                        <button onClick={() => togglePaid(e.id, participantId)} data-testid={`settle-${e.id}-${participantId}`}
                           disabled={p.paid_back}
                           title={actionTitle}
                           className={`px-3 py-1.5 rounded-lg text-xs whitespace-nowrap ${
