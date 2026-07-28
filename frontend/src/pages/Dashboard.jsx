@@ -142,7 +142,7 @@ export default function Dashboard() {
           <Link
             key={s.label}
             to={s.to}
-            className="card-soft block hover:shadow-md hover:-translate-y-0.5 transition cursor-pointer relative"
+            className="card-soft min-w-0 p-4 sm:p-6 block hover:shadow-md hover:-translate-y-0.5 transition cursor-pointer relative"
             data-testid={`stat-${s.label.toLowerCase().replace(/\s+/g, "-")}`}
           >
             <ChevronRight size={16} className="absolute top-4 right-4 text-[#A8ABA0]" />
@@ -150,7 +150,7 @@ export default function Dashboard() {
               <s.icon size={18} />
             </div>
             <div className="stat-label">{s.label}</div>
-            <div className={`money-value stat-value mt-1 ${s.accent}`}>{fmtMoney(s.value, curr)}</div>
+            <div className={`money-value stat-value dashboard-stat-value mt-1 ${s.accent}`}>{fmtMoney(s.value, curr)}</div>
             {s.hint && <div className="text-xs text-[#6B7068] mt-1.5">{s.hint}</div>}
           </Link>
         ))}
