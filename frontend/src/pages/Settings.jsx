@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Trash2, Plus, Pencil, X, RefreshCw, CheckCircle2, DownloadCloud, AlertTriangle, UserX, Mail, ShieldCheck } from "lucide-react";
+import { Trash2, Plus, Pencil, X, RefreshCw, CheckCircle2, DownloadCloud, AlertTriangle, UserX, Mail, ShieldCheck, Lightbulb } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -24,6 +24,15 @@ const NOTIF_LABELS = {
   settlement_paid: { title: tr("Acertos recebidos"), desc: tr("Quando alguém marca um valor como pago a você.") },
   nudge: { title: tr("Lembretes (cutucadas)"), desc: tr("Quando alguém te lembra de uma dívida pendente.") },
   group_added: { title: tr("Grupos"), desc: tr("Quando você é adicionado a um grupo.") },
+};
+
+const INSIGHT_LABELS = {
+  spending: { title: tr("Gastos e limites"), desc: tr("Orçamento restante, limite diário e gastos acima da receita.") },
+  economy: { title: tr("Oportunidades de economia"), desc: tr("Categorias que podem ser reduzidas e impacto mensal estimado.") },
+  balance: { title: tr("Saldo e projeções"), desc: tr("Risco de saldo negativo e cobertura das contas previstas.") },
+  recurring: { title: tr("Contas recorrentes"), desc: tr("Vencimentos recorrentes próximos.") },
+  settlements: { title: tr("Acertos compartilhados"), desc: tr("Valores compartilhados que aguardam acerto.") },
+  anomalies: { title: tr("Anomalias"), desc: tr("Possíveis duplicidades e comportamentos incomuns.") },
 };
 
 const KIND_LABEL = { expense: tr("Despesa"), income: tr("Receita"), both: tr("Ambos") };
@@ -59,6 +68,7 @@ export default function Settings() {
   const { isRunning: isSavingCategory, run: runCategorySave } = useSingleFlight();
   const [confirmDel, setConfirmDel] = useState(null);
   const [prefs, setPrefs] = useState(null);
+  const [insightPrefs, setInsightPrefs] = useState(null);
   const [tab, setTab] = useState("expense"); // expense | income | both
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteImpact, setDeleteImpact] = useState(null);
@@ -73,7 +83,8 @@ export default function Settings() {
 
   const load = () => api.get("/categories").then(r => setCats(r.data));
   const loadPrefs = () => api.get("/notifications/preferences").then(r => setPrefs(r.data));
-  useEffect(() => { load(); loadPrefs(); }, []);
+  const loadInsightPrefs = () => api.get("/insights/preferences").then(r => setInsightPrefs(r.data));
+  useEffect(() => { load(); loadPrefs(); loadInsightPrefs(); }, []);
   useEffect(() => {
     if (!user?.is_super_admin) return;
     setEmailSettingsLoading(true);
@@ -91,6 +102,17 @@ export default function Settings() {
     } catch (err) {
       toast.error(formatApiError(err));
       loadPrefs();
+    }
+  };
+
+  const toggleInsightPref = async (key, value) => {
+    const next = { ...insightPrefs, [key]: value };
+    setInsightPrefs(next);
+    try {
+      await api.put("/insights/preferences", { prefs: next });
+    } catch (err) {
+      toast.error(formatApiError(err));
+      loadInsightPrefs();
     }
   };
 
@@ -367,6 +389,38 @@ export default function Settings() {
                 className="data-[state=checked]:bg-[#061B4A] data-[state=unchecked]:bg-[#D6D3CA]"
                 checked={prefs ? prefs[key] !== false : true}
                 onCheckedChange={(v) => togglePref(key, v)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card-soft" data-testid="insight-prefs-section">
+        <div className="mb-4 flex items-start gap-3">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700">
+            <Lightbulb size={18} />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>
+              {tr("Crelith Insights")}
+            </h3>
+            <p className="text-sm text-[#6B7068]">
+              {tr("Escolha quais tipos de análises e recomendações deseja receber.")}
+            </p>
+          </div>
+        </div>
+        <div className="space-y-3">
+          {Object.entries(INSIGHT_LABELS).map(([key, { title, desc }]) => (
+            <div key={key} className="flex items-center justify-between gap-4 rounded-xl border border-[#E5E4E0] p-3">
+              <div>
+                <div className="text-sm font-medium text-[#1A1C1A]">{title}</div>
+                <div className="text-xs text-[#6B7068]">{desc}</div>
+              </div>
+              <Switch
+                data-testid={`insight-pref-${key}`}
+                className="data-[state=checked]:bg-[#061B4A] data-[state=unchecked]:bg-[#D6D3CA]"
+                checked={insightPrefs ? insightPrefs[key] !== false : true}
+                onCheckedChange={(value) => toggleInsightPref(key, value)}
               />
             </div>
           ))}

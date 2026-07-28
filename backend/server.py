@@ -1693,6 +1693,7 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.receivables.delete_many({"user_id": user_id})
     await db.notifications.delete_many({"user_id": user_id})
     await db.insight_dismissals.delete_many({"user_id": user_id})
+    await db.insight_feedback.delete_many({"user_id": user_id})
     await db.files.delete_many({"user_id": user_id})
     await db.websocket_tickets.delete_many({"user_id": user_id})
     await db.password_reset_tokens.delete_many({"user_id": user_id})
@@ -2030,6 +2031,7 @@ async def delete_admin_user(
         await db.accounts.delete_many({"user_id": user_id})
         await db.notifications.delete_many({"user_id": user_id})
         await db.insight_dismissals.delete_many({"user_id": user_id})
+        await db.insight_feedback.delete_many({"user_id": user_id})
         await db.files.delete_many({"user_id": user_id})
         await db.websocket_tickets.delete_many({"user_id": user_id})
         await db.password_reset_tokens.delete_many({"user_id": user_id})
@@ -5256,6 +5258,20 @@ INSIGHT_PRIORITY = {
     "info": 4,
 }
 
+INSIGHT_PREF_TYPES = (
+    "spending",
+    "economy",
+    "balance",
+    "recurring",
+    "settlements",
+    "anomalies",
+)
+
+
+def default_insight_prefs(values: Optional[dict] = None) -> dict:
+    source = values or {}
+    return {key: bool(source.get(key, True)) for key in INSIGHT_PREF_TYPES}
+
 
 def build_crelith_insights(
     *,
@@ -5268,50 +5284,63 @@ def build_crelith_insights(
     future_cashflows: List[dict],
     overdue_settlements: int,
     hidden_ids: Optional[set[str]] = None,
+    preferences: Optional[dict] = None,
+    feedback: Optional[dict] = None,
+    comparable_days: Optional[int] = None,
 ) -> List[dict]:
     """Build deterministic, auditable insights without external AI services."""
     hidden_ids = hidden_ids or set()
+    preferences = default_insight_prefs(preferences)
+    feedback = feedback or {}
     period = f"{today.year}-{today.month:02d}"
     category_map = {item["id"]: item.get("name", "Outros") for item in categories}
     insights = []
     had_candidate = False
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    days_remaining = max(days_in_month - today.day + 1, 1)
+    previous_period_days = max(comparable_days or today.day, 1)
 
     def add(
         code: str,
+        insight_type: str,
         severity: str,
         title: str,
         message: str,
         *,
         discriminator: str = "",
         data: Optional[dict] = None,
+        evidence: Optional[List[dict]] = None,
         action_path: Optional[str] = None,
         dismissible: bool = True,
     ) -> None:
         nonlocal had_candidate
         had_candidate = True
         insight_id = ":".join(part for part in (code, period, discriminator) if part)
-        if insight_id in hidden_ids:
+        if not preferences.get(insight_type, True) or insight_id in hidden_ids:
             return
         insights.append({
             "id": insight_id,
             "type": code,
             "code": code,
+            "insight_type": insight_type,
             "severity": severity,
             "title": title,
             "message": message,
             "data": data or {},
+            "evidence": evidence or [],
             "action_path": action_path,
             "dismissible": dismissible,
+            "useful": feedback.get(insight_id),
             "generated_for": period,
         })
 
     current_income = round(sum(
         item["base_amount"] for item in current_items
-        if item.get("type") == "income"
+        if item.get("type") == "income" and item.get("status") != "pending"
     ), 2)
     current_expense = round(sum(
         item["base_amount"] for item in current_items
-        if item.get("type") == "expense"
+        if item.get("type") == "expense" and item.get("status") != "pending"
     ), 2)
 
     # Savings rate only becomes meaningful after at least one income and two
@@ -5322,19 +5351,31 @@ def build_crelith_insights(
         if net < 0:
             add(
                 "spending_above_income",
+                "spending",
                 "warning",
                 "Gastos acima da receita",
                 f"Suas despesas superaram a receita em {fmt_eur(abs(net), currency)} neste mês.",
                 data={"amount": abs(net), "rate": rate},
+                evidence=[
+                    {"key": "income_to_date", "value": current_income, "format": "money"},
+                    {"key": "expense_to_date", "value": current_expense, "format": "money"},
+                    {"key": "difference", "value": abs(net), "format": "money"},
+                ],
                 action_path=f"/lancamentos?type=expense&year={today.year}&month={today.month}",
             )
         elif rate >= 10:
             add(
                 "savings_rate",
+                "economy",
                 "good",
                 "Economia do mês",
                 f"Você preservou {rate}% da sua receita até agora ({fmt_eur(net, currency)}).",
                 data={"amount": net, "rate": rate},
+                evidence=[
+                    {"key": "income_to_date", "value": current_income, "format": "money"},
+                    {"key": "expense_to_date", "value": current_expense, "format": "money"},
+                    {"key": "savings_rate", "value": rate, "format": "percent"},
+                ],
                 action_path="/metas",
             )
 
@@ -5344,12 +5385,20 @@ def build_crelith_insights(
     previous_category_count = defaultdict(int)
     for item in current_items:
         category_id = item.get("category_id")
-        if item.get("type") == "expense" and category_id:
+        if (
+            item.get("type") == "expense"
+            and item.get("status") != "pending"
+            and category_id
+        ):
             current_by_category[category_id] += item["base_amount"]
             current_category_count[category_id] += 1
     for item in previous_items:
         category_id = item.get("category_id")
-        if item.get("type") == "expense" and category_id:
+        if (
+            item.get("type") == "expense"
+            and item.get("status") != "pending"
+            and category_id
+        ):
             previous_by_category[category_id] += item["base_amount"]
             previous_category_count[category_id] += 1
 
@@ -5363,16 +5412,25 @@ def build_crelith_insights(
             and current_category_count[category_id] >= 2
             and previous_category_count[category_id] >= 1
         ):
-            change = ((current_amount - previous_amount) / previous_amount) * 100
-            if change >= 15 and current_amount - previous_amount >= 10:
+            previous_daily = previous_amount / previous_period_days
+            expected_current = previous_daily * max(today.day, 1)
+            change = ((current_amount - expected_current) / expected_current) * 100
+            if change >= 15 and current_amount - expected_current >= 10:
                 growing_categories.append(
-                    (current_amount - previous_amount, category_id, current_amount, previous_amount, change)
+                    (
+                        current_amount - expected_current,
+                        category_id,
+                        current_amount,
+                        previous_amount,
+                        change,
+                    )
                 )
     if growing_categories:
         _, category_id, current_amount, previous_amount, change = max(growing_categories)
         category_name = category_map.get(category_id, "Outros")
         add(
             "category_growth",
+            "spending",
             "warning",
             "Categoria em alta",
             f"Seus gastos com {category_name} aumentaram {round(change, 1)}% no mesmo intervalo do mês anterior.",
@@ -5384,6 +5442,11 @@ def build_crelith_insights(
                 "previous_amount": round(previous_amount, 2),
                 "percent": round(change, 1),
             },
+            evidence=[
+                {"key": "category_current", "value": round(current_amount, 2), "format": "money"},
+                {"key": "category_previous", "value": round(previous_amount, 2), "format": "money"},
+                {"key": "variation", "value": round(change, 1), "format": "percent"},
+            ],
             action_path=(
                 f"/lancamentos?type=expense&category_id={category_id}"
                 f"&year={today.year}&month={today.month}"
@@ -5409,19 +5472,31 @@ def build_crelith_insights(
         day = int(negative_on[-2:])
         add(
             "negative_balance_forecast",
+            "balance",
             "critical",
             "Saldo em risco",
             f"Com os lançamentos previstos, seu saldo pode ficar negativo no dia {day}.",
             data={"date": negative_on, "projected_balance": projected_balance},
+            evidence=[
+                {"key": "current_balance", "value": current_balance, "format": "money"},
+                {"key": "pending_outgoing", "value": round(future_outgoing, 2), "format": "money"},
+                {"key": "projected_balance", "value": projected_balance, "format": "money"},
+            ],
             action_path=f"/lancamentos?status=pending&year={today.year}&month={today.month}",
         )
     elif future_outgoing > 0:
         add(
             "month_covered",
+            "balance",
             "good",
             "Contas previstas cobertas",
             f"Seu saldo cobre os lançamentos pendentes do mês, com previsão de {fmt_eur(projected_balance, currency)} ao final.",
             data={"projected_balance": projected_balance, "future_outgoing": round(future_outgoing, 2)},
+            evidence=[
+                {"key": "current_balance", "value": current_balance, "format": "money"},
+                {"key": "pending_outgoing", "value": round(future_outgoing, 2), "format": "money"},
+                {"key": "projected_balance", "value": projected_balance, "format": "money"},
+            ],
             action_path=f"/lancamentos?status=pending&year={today.year}&month={today.month}",
         )
 
@@ -5439,6 +5514,7 @@ def build_crelith_insights(
         )
         add(
             "recurrence_due",
+            "recurring",
             "info",
             "Conta recorrente próxima",
             f"{description} vence {when}: {fmt_eur(nearest['base_amount'], currency)}.",
@@ -5449,6 +5525,10 @@ def build_crelith_insights(
                 "amount": nearest["base_amount"],
                 "description": description,
             },
+            evidence=[
+                {"key": "due_date", "value": nearest["date"], "format": "date"},
+                {"key": "amount", "value": nearest["base_amount"], "format": "money"},
+            ],
             action_path="/recorrencias",
         )
 
@@ -5456,10 +5536,15 @@ def build_crelith_insights(
         noun = "acerto pendente" if overdue_settlements == 1 else "acertos pendentes"
         add(
             "overdue_settlements",
+            "settlements",
             "warning",
             "Acertos aguardando",
             f"Você possui {overdue_settlements} {noun} há mais de 15 dias.",
             data={"count": overdue_settlements, "days": 15},
+            evidence=[
+                {"key": "overdue_settlements", "value": overdue_settlements, "format": "number"},
+                {"key": "minimum_delay", "value": 15, "format": "days"},
+            ],
             action_path="/acertos",
         )
 
@@ -5484,6 +5569,7 @@ def build_crelith_insights(
         sample = duplicate[0]
         add(
             "possible_duplicate",
+            "anomalies",
             "warning",
             "Possível duplicidade",
             f"Encontramos {len(duplicate)} lançamentos semelhantes de {fmt_eur(sample['base_amount'], currency)} no mesmo dia.",
@@ -5493,14 +5579,127 @@ def build_crelith_insights(
                 "date": sample.get("date"),
                 "amount": sample.get("base_amount"),
             },
+            evidence=[
+                {"key": "similar_entries", "value": len(duplicate), "format": "number"},
+                {"key": "amount", "value": sample.get("base_amount"), "format": "money"},
+                {"key": "transaction_date", "value": sample.get("date"), "format": "date"},
+            ],
             action_path=(
                 f"/lancamentos?year={today.year}&month={today.month}"
             ),
         )
 
+    # Practical savings opportunities require repeated behavior in both
+    # comparable periods. The estimate restores the previous daily pace; it
+    # never assumes that already-spent money can be recovered.
+    reducible_categories = []
+    for category_id, current_amount in current_by_category.items():
+        previous_amount = previous_by_category.get(category_id, 0)
+        if (
+            previous_amount < 20
+            or current_category_count[category_id] < 2
+            or previous_category_count[category_id] < 2
+        ):
+            continue
+        current_daily = current_amount / max(today.day, 1)
+        previous_daily = previous_amount / previous_period_days
+        expected_current = previous_daily * max(today.day, 1)
+        increase = current_amount - expected_current
+        percent = (increase / expected_current) * 100
+        monthly_impact = (current_daily - previous_daily) * days_in_month
+        if increase < 10 or percent < 15 or monthly_impact < 10:
+            continue
+        monthly_target = previous_daily * days_in_month
+        remaining_limit = max(monthly_target - current_amount, 0)
+        reducible_categories.append({
+            "category_id": category_id,
+            "category": category_map.get(category_id, "Outros"),
+            "current_amount": round(current_amount, 2),
+            "previous_amount": round(previous_amount, 2),
+            "excess_to_date": round(increase, 2),
+            "monthly_impact": round(monthly_impact, 2),
+            "remaining_limit": round(remaining_limit, 2),
+            "daily_limit": round(remaining_limit / days_remaining, 2),
+            "percent": round(percent, 1),
+        })
+    reducible_categories.sort(
+        key=lambda item: (-item["monthly_impact"], item["category"]),
+    )
+    top_reducible = reducible_categories[:3]
+    if top_reducible:
+        monthly_impact = round(sum(
+            item["monthly_impact"] for item in top_reducible
+        ), 2)
+        add(
+            "savings_opportunity",
+            "economy",
+            "opportunity",
+            "Oportunidade de economia",
+            "Algumas categorias estão acima do seu padrão recente.",
+            data={
+                "categories": top_reducible,
+                "category_names": [item["category"] for item in top_reducible],
+                "monthly_impact": monthly_impact,
+                "days_remaining": days_remaining,
+            },
+            evidence=[
+                {"key": "estimated_monthly_impact", "value": monthly_impact, "format": "money"},
+                {"key": "categories_analyzed", "value": len(top_reducible), "format": "number"},
+                {"key": "comparable_days", "value": previous_period_days, "format": "days"},
+            ],
+            action_path=f"/lancamentos?type=expense&year={today.year}&month={today.month}",
+        )
+
+    realized_items = [
+        item for item in current_items if item.get("status") != "pending"
+    ]
+    realized_income = round(sum(
+        item["base_amount"] for item in realized_items
+        if item.get("type") == "income"
+    ), 2)
+    realized_expense = round(sum(
+        item["base_amount"] for item in realized_items
+        if item.get("type") == "expense"
+    ), 2)
+    pending_income = round(sum(
+        item["base_amount"] for item in future_cashflows
+        if item.get("type") == "income"
+    ), 2)
+    pending_expense = round(sum(
+        item["base_amount"] for item in future_cashflows
+        if item.get("type") == "expense"
+    ), 2)
+    available_to_spend = round(
+        realized_income + pending_income - realized_expense - pending_expense,
+        2,
+    )
+    if realized_income > 0 and available_to_spend > 0:
+        daily_limit = round(available_to_spend / days_remaining, 2)
+        add(
+            "spending_limit",
+            "spending",
+            "opportunity",
+            "Limite de gastos até o fim do mês",
+            "Há orçamento disponível depois das despesas já registradas.",
+            data={
+                "available_to_spend": available_to_spend,
+                "daily_limit": daily_limit,
+                "days_remaining": days_remaining,
+            },
+            evidence=[
+                {"key": "realized_income", "value": realized_income, "format": "money"},
+                {"key": "realized_expense", "value": realized_expense, "format": "money"},
+                {"key": "pending_income", "value": pending_income, "format": "money"},
+                {"key": "pending_expense", "value": pending_expense, "format": "money"},
+                {"key": "days_remaining", "value": days_remaining, "format": "days"},
+            ],
+            action_path=f"/lancamentos?year={today.year}&month={today.month}",
+        )
+
     if not insights and not had_candidate:
         add(
             "insufficient_data",
+            "spending",
             "info",
             "Sem dados suficientes",
             "Continue registrando receitas e despesas para receber análises úteis.",
@@ -5640,7 +5839,7 @@ async def insights(user=Depends(get_current_user)):
         },
         "status": {"$ne": "cancelled"},
     }
-    accounts, current_transactions, previous_transactions, paid_transactions, categories, shared, hidden = await asyncio.gather(
+    accounts, current_transactions, previous_transactions, paid_transactions, categories, shared, hidden, stored_feedback = await asyncio.gather(
         db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(500),
         db.transactions.find(current_query, {"_id": 0}).to_list(5000),
         db.transactions.find(previous_query, {"_id": 0}).to_list(5000),
@@ -5653,6 +5852,10 @@ async def insights(user=Depends(get_current_user)):
         ).to_list(5000),
         db.insight_dismissals.find(
             {"user_id": user["id"]}, {"_id": 0, "insight_id": 1},
+        ).to_list(1000),
+        db.insight_feedback.find(
+            {"user_id": user["id"]},
+            {"_id": 0, "insight_id": 1, "useful": 1},
         ).to_list(1000),
     )
     base_currency = normalize_currency(user.get("currency"))
@@ -5684,7 +5887,8 @@ async def insights(user=Depends(get_current_user)):
             previous_comparable_end.isoformat(), currencies,
         ),
         _insight_installment_items(
-            user, today.isoformat(), (month_end + timedelta(days=1)).isoformat(), currencies,
+            user, month_start.isoformat(),
+            (month_end + timedelta(days=1)).isoformat(), currencies,
         ),
         _insight_account_balance(user, accounts, paid_transactions, currencies),
     )
@@ -5694,7 +5898,7 @@ async def insights(user=Depends(get_current_user)):
     future_transactions = await db.transactions.find(
         {
             "user_id": user["id"],
-            "date": {"$gte": today.isoformat(), "$lte": month_end.isoformat()},
+            "date": {"$gte": month_start.isoformat(), "$lte": month_end.isoformat()},
             "status": "pending",
             "type": {"$in": ["income", "expense"]},
         },
@@ -5704,6 +5908,14 @@ async def insights(user=Depends(get_current_user)):
     future_cashflows.extend(
         item for item in future_installments if item.get("status") == "pending"
     )
+    # Pending obligations from earlier in the month still reduce the safe
+    # spending budget. Treat them as payable today without pretending their
+    # original due date is a future due date.
+    for item in future_cashflows:
+        if item.get("date", "") < today.isoformat():
+            item["original_date"] = item.get("date")
+            item["date"] = today.isoformat()
+            item["recurrence_id"] = None
 
     # Shared debts do not have a separate due date. Treat them as obligations
     # payable today so the forecast remains conservative and transparent.
@@ -5739,7 +5951,61 @@ async def insights(user=Depends(get_current_user)):
             shared, user["id"], today - timedelta(days=15),
         ),
         hidden_ids={item["insight_id"] for item in hidden},
+        preferences=user.get("insight_prefs"),
+        feedback={
+            item["insight_id"]: item.get("useful")
+            for item in stored_feedback
+        },
+        comparable_days=comparable_day,
     )
+
+
+class InsightPreferencesIn(BaseModel):
+    prefs: dict
+
+
+class InsightFeedbackIn(BaseModel):
+    useful: bool
+
+
+@api.get("/insights/preferences")
+async def get_insight_preferences(user=Depends(get_current_user)):
+    return default_insight_prefs(user.get("insight_prefs"))
+
+
+@api.put("/insights/preferences")
+async def set_insight_preferences(
+    body: InsightPreferencesIn,
+    user=Depends(get_current_user),
+):
+    clean = default_insight_prefs(body.prefs)
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"insight_prefs": clean}},
+    )
+    return clean
+
+
+@api.put("/insights/{insight_id}/feedback")
+async def set_insight_feedback(
+    insight_id: str,
+    body: InsightFeedbackIn,
+    user=Depends(get_current_user),
+):
+    if not insight_id or len(insight_id) > 240:
+        raise HTTPException(400, "Insight inválido")
+    await db.insight_feedback.update_one(
+        {"user_id": user["id"], "insight_id": insight_id},
+        {
+            "$set": {
+                "useful": body.useful,
+                "updated_at": now_iso(),
+            },
+            "$setOnInsert": {"created_at": now_iso()},
+        },
+        upsert=True,
+    )
+    return {"ok": True, "useful": body.useful}
 
 
 @api.post("/insights/{insight_id}/dismiss")
@@ -5962,6 +6228,10 @@ async def startup():
     await db.insight_dismissals.create_index(
         "expires_at",
         expireAfterSeconds=0,
+    )
+    await db.insight_feedback.create_index(
+        [("user_id", 1), ("insight_id", 1)],
+        unique=True,
     )
     await db.websocket_tickets.create_index("ticket_hash", unique=True)
     await db.websocket_tickets.create_index(

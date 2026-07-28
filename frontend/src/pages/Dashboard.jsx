@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "@/lib/api";
 import { fmtMoney } from "@/lib/api";
-import { formatInsight, insightCategory } from "@/lib/insights";
+import { formatInsight, formatInsightEvidence, insightCategory } from "@/lib/insights";
 import { useAuth } from "@/context/AuthContext";
 import { getMonthNames, translate as tr } from "@/i18n";
 import {
   TrendingUp, TrendingDown, Wallet, Clock, HandCoins, CreditCard,
-  Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat, PiggyBank, ChevronRight, X
+  Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat, PiggyBank, ChevronRight,
+  ChevronDown, X, ThumbsUp
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -22,6 +23,7 @@ export default function Dashboard() {
   const [insights, setInsights] = useState(null);
   const [projection, setProjection] = useState(null);
   const [accounts, setAccounts] = useState([]);
+  const [expandedInsight, setExpandedInsight] = useState(null);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
     try {
@@ -39,8 +41,22 @@ export default function Dashboard() {
     api.get("/dashboard", { params: period }).then(r => setData(r.data));
   }, [period.year, period.month]);
 
+  const now = new Date();
+  const isCurrentPeriod = (
+    period.year === now.getFullYear()
+    && period.month === now.getMonth() + 1
+  );
+
   useEffect(() => {
-    api.get("/insights").then(r => setInsights(r.data || [])).catch(() => {});
+    if (isCurrentPeriod) {
+      setInsights(null);
+      api.get("/insights").then(r => setInsights(r.data || [])).catch(() => setInsights([]));
+    } else {
+      setInsights([]);
+    }
+  }, [isCurrentPeriod, user?.currency]);
+
+  useEffect(() => {
     api.get("/reports/projection", { params: { months: 6 } }).then(r => setProjection(r.data)).catch(() => {});
     api.get("/accounts").then(r => setAccounts(r.data || [])).catch(() => {});
   }, [user?.currency]);
@@ -50,6 +66,18 @@ export default function Dashboard() {
     setInsights((items) => (items || []).filter((item) => item.id !== insightId));
     try {
       await api.post(`/insights/${encodeURIComponent(insightId)}/dismiss`);
+    } catch (_) {
+      setInsights(previous);
+    }
+  };
+
+  const setInsightUseful = async (insightId, useful) => {
+    const previous = insights;
+    setInsights((items) => (items || []).map((item) => (
+      item.id === insightId ? { ...item, useful } : item
+    )));
+    try {
+      await api.put(`/insights/${encodeURIComponent(insightId)}/feedback`, { useful });
     } catch (_) {
       setInsights(previous);
     }
@@ -264,21 +292,28 @@ export default function Dashboard() {
           </div>
           <div className="space-y-3">
             {insights === null && <div className="text-sm text-[#6B7068]">{tr("Calculando insights...")}</div>}
-            {insights?.length === 0 && (
+            {!isCurrentPeriod && (
+              <div className="text-sm text-[#6B7068]">
+                {tr("As recomendações práticas são calculadas para o mês atual.")}
+              </div>
+            )}
+            {isCurrentPeriod && insights?.length === 0 && (
               <div className="text-sm text-[#6B7068]">{tr("Nenhuma nova análise no momento.")}</div>
             )}
             {insights?.map((ins, i) => {
               const map = {
-                critical: { Icon: AlertTriangle, c: "text-rose-700", bg: "bg-rose-50", border: "border-rose-100" },
-                good: { Icon: CheckCircle2, c: "text-emerald-600", bg: "bg-emerald-50" },
-                warning: { Icon: AlertTriangle, c: "text-amber-700", bg: "bg-amber-50" },
-                opportunity: { Icon: Lightbulb, c: "text-violet-700", bg: "bg-violet-50" },
-                info: { Icon: Info, c: "text-blue-600", bg: "bg-blue-50" },
+                critical: { Icon: AlertTriangle, c: "text-rose-700", bg: "bg-rose-50", border: "border-rose-200" },
+                good: { Icon: CheckCircle2, c: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200" },
+                warning: { Icon: AlertTriangle, c: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200" },
+                opportunity: { Icon: Lightbulb, c: "text-violet-700", bg: "bg-violet-50", border: "border-violet-200" },
+                info: { Icon: Info, c: "text-blue-700", bg: "bg-blue-50", border: "border-blue-200" },
               };
-              const { Icon, c, bg } = map[ins.severity] || map.info;
+              const { Icon, c, bg, border } = map[ins.severity] || map.info;
               const content = formatInsight(ins, curr);
+              const evidence = formatInsightEvidence(ins, curr);
+              const isExpanded = expandedInsight === ins.id;
               return (
-                <div key={ins.id || i} className={`relative flex items-start gap-3 rounded-xl border p-3 ${map[ins.severity]?.border || "border-[#E5E4E0]"}`}
+                <div key={ins.id || i} className={`relative flex items-start gap-3 rounded-xl border p-3 ${border}`}
                   data-testid={`insight-${i}`}>
                   <div className={`w-8 h-8 rounded-lg ${bg} ${c} flex items-center justify-center flex-shrink-0`}>
                     <Icon size={16} />
@@ -289,10 +324,77 @@ export default function Dashboard() {
                     </div>
                     <div className="text-sm font-medium text-[#1A1C1A] mt-0.5">{content.title}</div>
                     <div className="text-xs text-[#6B7068] mt-0.5">{content.message}</div>
-                    {ins.action_path && (
-                      <Link to={ins.action_path} className="inline-flex items-center gap-1 text-xs font-medium text-[#1268F4] mt-2 hover:underline">
-                        {tr("Ver detalhes")} <ChevronRight size={13} />
-                      </Link>
+                    {content.recommendation && (
+                      <div className="mt-2 text-xs font-medium leading-relaxed text-[#1A1C1A]">
+                        {content.recommendation}
+                      </div>
+                    )}
+                    {content.impact && (
+                      <div className="mt-1 text-[11px] text-[#6B7068]">{content.impact}</div>
+                    )}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {ins.action_path && (
+                        <Link to={ins.action_path} className="inline-flex items-center gap-1 text-xs font-medium text-[#1268F4] hover:underline">
+                          {tr("Ver lançamentos")} <ChevronRight size={13} />
+                        </Link>
+                      )}
+                      {evidence.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedInsight(isExpanded ? null : ins.id)}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-[#6B7068] hover:text-[#1A1C1A]"
+                          aria-expanded={isExpanded}
+                        >
+                          {tr("Por que estou vendo isso?")}
+                          <ChevronDown size={13} className={isExpanded ? "rotate-180" : ""} />
+                        </button>
+                      )}
+                      {ins.dismissible && (
+                        <button
+                          type="button"
+                          onClick={() => setInsightUseful(ins.id, ins.useful !== true)}
+                          className={`inline-flex items-center gap-1 text-xs font-medium ${
+                            ins.useful ? "text-emerald-700" : "text-[#6B7068] hover:text-[#1A1C1A]"
+                          }`}
+                          aria-pressed={ins.useful === true}
+                        >
+                          <ThumbsUp size={13} fill={ins.useful ? "currentColor" : "none"} />
+                          {ins.useful ? tr("Marcado como útil") : tr("Foi útil?")}
+                        </button>
+                      )}
+                    </div>
+
+                    {isExpanded && (
+                      <div className="mt-3 rounded-lg bg-[#F8F7F3] p-3" data-testid={`insight-evidence-${i}`}>
+                        <div className="mb-2 text-[11px] font-semibold text-[#1A1C1A]">
+                          {tr("Dados usados no cálculo")}
+                        </div>
+                        <dl className="space-y-1.5">
+                          {evidence.map((entry, index) => (
+                            <div key={`${entry.label}-${index}`} className="flex items-start justify-between gap-4 text-[11px]">
+                              <dt className="text-[#6B7068]">{entry.label}</dt>
+                              <dd className="text-right font-medium text-[#1A1C1A]">{entry.value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        {ins.code === "savings_opportunity" && ins.data?.categories?.length > 0 && (
+                          <div className="mt-3 border-t border-[#E5E4E0] pt-2 space-y-2">
+                            {ins.data.categories.map((category) => (
+                              <div key={category.category_id} className="text-[11px]">
+                                <div className="font-medium text-[#1A1C1A]">{category.category}</div>
+                                <div className="text-[#6B7068]">
+                                  {tr("Atual: {current} · Período anterior: {previous} · Impacto mensal: {impact}", {
+                                    current: fmtMoney(category.current_amount, curr),
+                                    previous: fmtMoney(category.previous_amount, curr),
+                                    impact: fmtMoney(category.monthly_impact, curr),
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                   {ins.dismissible && (

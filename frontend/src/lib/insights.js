@@ -79,9 +79,91 @@ export function formatInsight(insight, currency) {
       title: tr("Sem dados suficientes"),
       message: tr("Continue registrando receitas e despesas para receber análises úteis."),
     },
+    savings_opportunity: (() => {
+      const categories = data.categories || [];
+      const first = categories[0] || {};
+      if (categories.length === 1) {
+        return {
+          title: tr("Oportunidade de economia"),
+          message: tr("Você gastou {amount} acima do seu padrão recente com {category}.", {
+            amount: amount(first.excess_to_date),
+            category: first.category,
+          }),
+          recommendation: first.daily_limit > 0
+            ? tr("Para encerrar o mês dentro desse padrão, limite os gastos restantes nessa categoria a {amount} por dia.", {
+                amount: amount(first.daily_limit),
+              })
+            : tr("Você já ultrapassou o padrão mensal estimado dessa categoria. Evite novos gastos nela até o fim do mês."),
+          impact: tr("Impacto estimado: {amount} por mês.", {
+            amount: amount(data.monthly_impact),
+          }),
+        };
+      }
+      return {
+        title: tr("Oportunidade de economia"),
+        message: tr("{count} categorias estão acima do seu padrão recente: {categories}.", {
+          count: categories.length,
+          categories: categories.map((item) => item.category).join(", "),
+        }),
+        recommendation: tr("Retomar o ritmo anterior nessas categorias pode reduzir seus gastos em cerca de {amount} por mês.", {
+          amount: amount(data.monthly_impact),
+        }),
+        impact: tr("Estimativa baseada no ritmo diário dos dois períodos comparados."),
+      };
+    })(),
+    spending_limit: {
+      title: tr("Limite de gastos até o fim do mês"),
+      message: tr("Depois das despesas registradas, você ainda pode gastar {amount} neste mês.", {
+        amount: amount(data.available_to_spend),
+      }),
+      recommendation: tr("Para manter esse orçamento, use como referência o limite de {amount} por dia durante os próximos {days} dias.", {
+        amount: amount(data.daily_limit),
+        days: data.days_remaining,
+      }),
+    },
   };
 
   return templates[insight?.code] || fallback;
+}
+
+const EVIDENCE_LABELS = {
+  income_to_date: "Receitas consideradas",
+  expense_to_date: "Despesas consideradas",
+  difference: "Diferença calculada",
+  savings_rate: "Taxa de economia",
+  category_current: "Categoria no período atual",
+  category_previous: "Categoria no período anterior",
+  variation: "Variação calculada",
+  current_balance: "Saldo atual das carteiras",
+  pending_outgoing: "Saídas pendentes",
+  projected_balance: "Saldo projetado",
+  due_date: "Data de vencimento",
+  amount: "Valor considerado",
+  overdue_settlements: "Acertos pendentes",
+  minimum_delay: "Atraso mínimo",
+  similar_entries: "Lançamentos semelhantes",
+  transaction_date: "Data dos lançamentos",
+  estimated_monthly_impact: "Impacto mensal estimado",
+  categories_analyzed: "Categorias analisadas",
+  comparable_days: "Dias comparados",
+  realized_income: "Receitas já realizadas",
+  realized_expense: "Despesas já realizadas",
+  pending_income: "Receitas pendentes",
+  pending_expense: "Despesas pendentes",
+  days_remaining: "Dias restantes",
+};
+
+export function formatInsightEvidence(insight, currency) {
+  return (insight?.evidence || []).map((entry) => {
+    let value = entry.value;
+    if (entry.format === "money") value = fmtMoney(Number(value || 0), currency);
+    if (entry.format === "percent") value = `${Number(value || 0)}%`;
+    if (entry.format === "days") value = tr("{count} dias", { count: Number(value || 0) });
+    return {
+      label: tr(EVIDENCE_LABELS[entry.key] || entry.key),
+      value,
+    };
+  });
 }
 
 export function insightCategory(severity) {

@@ -53,6 +53,7 @@ def account_deletion_db(shared_items=None, shared_count=0):
         categories=collection(),
         notifications=collection(),
         insight_dismissals=collection(),
+        insight_feedback=collection(),
         files=collection(),
         websocket_tickets=collection(),
         settlement_history=collection(),
@@ -196,6 +197,9 @@ def test_account_deletion_removes_personal_data_and_anonymizes_shared_history(
         {"user_id": "user-1"}
     )
     fake_db.insight_dismissals.delete_many.assert_awaited_once_with(
+        {"user_id": "user-1"}
+    )
+    fake_db.insight_feedback.delete_many.assert_awaited_once_with(
         {"user_id": "user-1"}
     )
     fake_db.users.delete_one.assert_awaited_once_with({
