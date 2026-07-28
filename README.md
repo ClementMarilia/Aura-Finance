@@ -69,6 +69,8 @@ Cada card no Dashboard navega direto para a tela com filtro aplicado, mostrando 
 
 ### Análise
 - **Dashboard / Painel**: cards clicáveis, evolução de 6 meses, gráfico de categorias, projeção e **Crelith Insights**, um motor gratuito de regras financeiras sem IA externa.
+- O **Crelith Insights** calcula oportunidades de economia por categoria, orçamento restante e limite diário até o fim do mês. Cada recomendação exibe a memória de cálculo, aceita feedback de utilidade e respeita as preferências do usuário por tipo de análise.
+- Comparações entre meses usam períodos equivalentes e ritmo diário quando os meses têm quantidades diferentes de dias. Somente valores realizados são tratados como gastos; pendências continuam reservadas no orçamento disponível.
 - **Relatórios anuais**: cards, **comparação YoY**, barras mensais, exportação CSV/PDF (jsPDF).
 
 ### Conta & segurança
@@ -336,7 +338,9 @@ POST   /settlements/nudge/{debtor_id}            # cutucar
 GET    /dashboard?year=&month=                   # cards, evolução, categorias, fixed_monthly_*
 GET    /reports/annual?year=                     # totals + months + prev_year + prev_totals + prev_months
 GET    /reports/projection?months=               # projeção (média 6m)
-GET    /insights                                 # regras auditáveis: tendência, saldo, recorrências, acertos e duplicidade
+GET    /insights                                 # regras, recomendações práticas e memória de cálculo
+GET|PUT /insights/preferences                    # tipos de insight habilitados pelo usuário
+PUT    /insights/{insight_id}/feedback           # marca ou desmarca uma recomendação como útil
 POST   /insights/{insight_id}/dismiss            # oculta uma ocorrência por até 120 dias
 GET|POST|PUT|DELETE /goals[/{gid}]
 POST   /goals/{gid}/contribute, /withdraw
