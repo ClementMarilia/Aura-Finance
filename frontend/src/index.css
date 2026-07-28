@@ -132,6 +132,13 @@ html.dark {
     font-variant-numeric: tabular-nums;
     line-height: 1.15;
   }
+  .dashboard-stat-value {
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    font-size: clamp(1.25rem, 6vw, 1.875rem);
+    letter-spacing: -0.04em;
+  }
   .stat-label {
     @apply text-xs uppercase font-medium;
     letter-spacing: 0.06em;
