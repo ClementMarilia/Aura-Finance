@@ -323,8 +323,9 @@ POST   /receivables/{rid}/receive                # toggle received/pending; cria
 ### Grupos / Despesas compartilhadas / Acertos
 ```
 GET|POST|PUT|DELETE /groups[/{gid}]              # members vem populado (id, name, email, avatar_color)
-POST   /groups/{gid}/members
-DELETE /groups/{gid}/members/{uid}
+POST   /groups/{gid}/members                     # proprietário ou administrador local
+DELETE /groups/{gid}/members/{uid}               # remove membro e papel administrativo local
+PATCH  /groups/{gid}/members/{uid}/role          # {role: admin|member}
 GET|POST|PUT|DELETE /shared-expenses[/{sid}]     # split: equal | manual | percent
 POST   /shared-expenses/{sid}/settle/{user_id}   # retorna {ok, status, paid_back}
 GET    /settlements                              # rows + summary líquido + transfers (min-cash-flow)
@@ -357,6 +358,7 @@ WS     /api/ws/notifications
 ## Regras de negócio importantes
 
 - **Saldo da carteira** = soma de transações com `status=paid` apenas (parcelas, recorrências e recebíveis seguem mesma regra). **Pendentes nunca afetam o saldo** até serem confirmadas.
+- **Administração de grupo**: o criador é o proprietário protegido. Proprietário e administradores locais podem editar o grupo, adicionar/remover membros e promover/rebaixar administradores. O papel vale somente no grupo e não concede acesso administrativo global.
 - **Roll-over automático**: GET `/transactions?year=Y&month=M` retorna lançamentos com data no mês **+** lançamentos pendentes de meses anteriores (flag `overdue=true`). O filtro `status=paid` exclui overdue; `status=pending` ou sem filtro incluem.
 - **Confirmar pagamento** (`POST /transactions/{tid}/pay`) toggla `paid ↔ pending` (rejeita `cancelled` com 400).
 - **Despesa do mês no Dashboard** = transações `expense` + recorrências materializadas + parcelas com vencimento no mês.
