@@ -125,7 +125,7 @@ Sistema web completo de controle financeiro pessoal e compartilhado em pt-BR. Ca
 ## Onda 4 — Relatórios avançados + Metas (2026-06-24)
 - ✅ /reports/annual estendido com comparação ano a ano (YoY): totals, prev_year, prev_totals, prev_months
 - ✅ /reports/projection: projeção de saldo dos próximos N meses (média dos últimos 6) — exibida no Painel (AreaChart)
-- ✅ /insights: insights automáticos (taxa de poupança, tendência de gastos, maior categoria, contas pendentes) — seção no Painel
+- ✅ Crelith Insights sem IA externa: comparação por período equivalente, previsão determinística do saldo, recorrências próximas, acertos antigos, possível duplicidade e ocultação por ocorrência — seção no Painel
 - ✅ Metas financeiras: goals CRUD + POST /goals/{id}/contribute (valida amount>0) — página /metas com barra de progresso e aporte
 - ✅ Exportação CSV/PDF (client-side jsPDF) em Relatórios; CSV em Lançamentos
 - Testado: iteration_2.json — 9/9 backend Onda 4 + fluxos frontend 100%

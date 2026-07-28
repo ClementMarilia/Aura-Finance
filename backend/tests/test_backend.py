@@ -267,8 +267,11 @@ def test_insights_returns_list(wendy):
     arr = r.json()
     assert isinstance(arr, list) and len(arr) >= 1
     for it in arr:
+        assert "id" in it and "code" in it
         assert "title" in it and "message" in it and "severity" in it
-        assert it["severity"] in ("good", "warning", "info")
+        assert it["severity"] in (
+            "critical", "warning", "opportunity", "good", "info",
+        )
 
 
 # Goals CRUD
