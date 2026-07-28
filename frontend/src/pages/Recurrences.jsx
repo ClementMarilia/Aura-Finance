@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ const FREQ_LABEL = {
 const emptyForm = {
   type: "expense", amount: "", category_id: "", person_id: "", account_id: "", payment_method: "",
   description: "", frequency: "monthly", next_run: new Date().toISOString().slice(0, 10), active: true,
+  currency: "EUR",
 };
 
 export default function Recurrences() {
@@ -37,25 +38,32 @@ export default function Recurrences() {
   const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [expanded, setExpanded] = useState({});
+  const [currencyFilter, setCurrencyFilter] = useState("");
 
-  const load = () => api.get("/recurrences").then(r => setItems(r.data || []));
+  const load = () => api.get("/recurrences", {
+    params: currencyFilter ? { currency: currencyFilter } : {},
+  }).then(r => setItems(r.data || []));
   useEffect(() => {
-    load();
     api.get("/categories").then(r => setCats(r.data));
     api.get("/accounts").then(r => setAccs(r.data || []));
     api.get("/reports/filter-options").then(r => {
       setPeople((r.data?.participants || []).filter(person => !person.self));
     });
   }, []);
+  useEffect(() => {
+    api.get("/recurrences", {
+      params: currencyFilter ? { currency: currencyFilter } : {},
+    }).then(r => setItems(r.data || []));
+  }, [currencyFilter]);
 
   const FACTOR = { weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, semiannual: 1 / 6, yearly: 1 / 12 };
   const monthly = (type) => items
     .filter(r => r.active && r.type === type)
-    .reduce((s, r) => s + r.amount * (FACTOR[r.frequency] || 1), 0);
+    .reduce((s, r) => s + (r.base_amount ?? r.amount) * (FACTOR[r.frequency] || 1), 0);
   const fixedExpense = monthly("expense");
   const fixedIncome = monthly("income");
 
-  const openNew = () => { setEditing(null); setForm(emptyForm); setOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ ...emptyForm, currency: curr }); setOpen(true); };
   const openEdit = (r) => {
     setEditing(r);
     setForm({
@@ -63,6 +71,7 @@ export default function Recurrences() {
       person_id: r.person_id || "", account_id: r.account_id || "",
       payment_method: r.payment_method || "", description: r.description || "",
       frequency: r.frequency, next_run: r.next_run, active: r.active,
+      currency: r.currency || curr,
     });
     setOpen(true);
   };
@@ -76,6 +85,7 @@ export default function Recurrences() {
       payment_method: form.payment_method || null,
       description: form.description, frequency: form.frequency,
       next_run: form.next_run, active: form.active,
+      currency: form.currency,
     };
     try {
       if (editing) { await api.put(`/recurrences/${editing.id}`, payload); toast.success(tr("Recorrência atualizada")); }
@@ -108,6 +118,13 @@ export default function Recurrences() {
         <Button onClick={openNew} data-testid="rec-new-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
           <Plus size={16} className="mr-1" /> {tr("Nova recorrência")}
         </Button>
+      </div>
+      <div className="flex justify-end">
+        <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
+          data-testid="rec-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+          <option value="">{tr("Todas as moedas")}</option>
+          {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
       </div>
 
       {items.some(r => r.active) && (
@@ -219,6 +236,19 @@ export default function Recurrences() {
                 </Select>
               </div>
             </div>
+            <div>
+              <Label>{tr("Moeda")}</Label>
+              <Select value={form.currency} onValueChange={(value) => setForm({
+                ...form, currency: value,
+                account_id: accs.some(account => account.id === form.account_id && (account.currency || curr) === value)
+                  ? form.account_id : "",
+              })}>
+                <SelectTrigger data-testid="rec-currency-select"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{tr("Valor")}</Label>
@@ -242,10 +272,15 @@ export default function Recurrences() {
             </div>
             <div>
               <Label>{tr("Carteira (de onde sai/entra o valor)")}</Label>
-              <Select value={form.account_id} onValueChange={(v) => setForm({ ...form, account_id: v })}>
+              <Select value={form.account_id} onValueChange={(v) => {
+                const account = accs.find(item => item.id === v);
+                setForm({ ...form, account_id: v, currency: account?.currency || form.currency || curr });
+              }}>
                 <SelectTrigger data-testid="rec-account-select"><SelectValue placeholder={tr("Selecione a carteira")} /></SelectTrigger>
                 <SelectContent>
-                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
+                  {accs.filter(a => (a.currency || curr) === form.currency).map(a => (
+                    <SelectItem key={a.id} value={a.id}>{tr(a.name)} ({a.currency || curr})</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,18 +21,26 @@ export default function Installments() {
   const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [expanded, setExpanded] = useState({});
-  const [editForm, setEditForm] = useState({ description: "", category_id: "", payment_method: "", account_id: "" });
+  const [currencyFilter, setCurrencyFilter] = useState("");
+  const [editForm, setEditForm] = useState({ description: "", category_id: "", payment_method: "", account_id: "", currency: curr });
   const [form, setForm] = useState({
     description: "", total_amount: "", installments: 1,
     first_date: new Date().toISOString().slice(0, 10), category_id: "", payment_method: "", account_id: "",
+    currency: curr,
   });
 
-  const load = () => api.get("/installments/purchases").then(r => setList(r.data));
+  const load = () => api.get("/installments/purchases", {
+    params: currencyFilter ? { currency: currencyFilter } : {},
+  }).then(r => setList(r.data));
   useEffect(() => {
-    load();
     api.get("/categories").then(r => setCats(r.data));
     api.get("/accounts").then(r => setAccs(r.data || []));
   }, []);
+  useEffect(() => {
+    api.get("/installments/purchases", {
+      params: currencyFilter ? { currency: currencyFilter } : {},
+    }).then(r => setList(r.data));
+  }, [currencyFilter]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -56,6 +64,7 @@ export default function Installments() {
       category_id: p.category_id || "",
       payment_method: p.payment_method || "",
       account_id: p.account_id || "",
+      currency: p.currency || curr,
     });
   };
 
@@ -113,6 +122,18 @@ export default function Installments() {
                 <div><Label>{tr("Forma de pagamento")}</Label>
                   <Input value={form.payment_method} data-testid="inst-payment-input"
                     onChange={e => setForm({ ...form, payment_method: e.target.value })} /></div>
+                <div className="col-span-2"><Label>{tr("Moeda")}</Label>
+                  <Select value={form.currency} onValueChange={value => setForm({
+                    ...form,
+                    currency: value,
+                    account_id: accs.some(account => account.id === form.account_id && (account.currency || curr) === value)
+                      ? form.account_id : "",
+                  })}>
+                    <SelectTrigger data-testid="inst-currency-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select></div>
                 <div className="col-span-2"><Label>{tr("Categoria")}</Label>
                   <Select value={form.category_id} onValueChange={v => setForm({ ...form, category_id: v })}>
                     <SelectTrigger data-testid="inst-category-select"><SelectValue placeholder={tr("Selecione")} /></SelectTrigger>
@@ -121,10 +142,15 @@ export default function Installments() {
                     </SelectContent>
                   </Select></div>
                 <div className="col-span-2"><Label>{tr("Carteira (pagamento sai daqui ao confirmar a parcela)")}</Label>
-                  <Select value={form.account_id} onValueChange={v => setForm({ ...form, account_id: v })}>
+                  <Select value={form.account_id} onValueChange={v => {
+                    const account = accs.find(item => item.id === v);
+                    setForm({ ...form, account_id: v, currency: account?.currency || form.currency });
+                  }}>
                     <SelectTrigger data-testid="inst-account-select"><SelectValue placeholder={tr("Selecione a carteira")} /></SelectTrigger>
                     <SelectContent>
-                      {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
+                      {accs.filter(a => (a.currency || curr) === form.currency).map(a => (
+                        <SelectItem key={a.id} value={a.id}>{tr(a.name)} ({a.currency || curr})</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select></div>
               </div>
@@ -134,10 +160,18 @@ export default function Installments() {
         </Dialog>
       </div>
 
+      <div className="flex justify-end">
+        <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
+          data-testid="inst-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+          <option value="">{tr("Todas as moedas")}</option>
+          {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </div>
+
       {list.length > 0 && (() => {
         const allParcels = list.flatMap(p => p.installments_list);
-        const pendingTotal = allParcels.filter(i => i.status === "pending").reduce((s, i) => s + i.amount, 0);
-        const paidTotal = allParcels.filter(i => i.status === "paid").reduce((s, i) => s + i.amount, 0);
+        const pendingTotal = allParcels.filter(i => i.status === "pending").reduce((s, i) => s + (i.base_amount ?? i.amount), 0);
+        const paidTotal = allParcels.filter(i => i.status === "paid").reduce((s, i) => s + (i.base_amount ?? i.amount), 0);
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="inst-summary">
             <div className="card-soft">
@@ -241,7 +275,9 @@ export default function Installments() {
               <Select value={editForm.account_id} onValueChange={v => setEditForm({ ...editForm, account_id: v })}>
                 <SelectTrigger data-testid="purchase-edit-account"><SelectValue placeholder={tr("Selecione a carteira")} /></SelectTrigger>
                 <SelectContent>
-                  {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
+                  {accs.filter(a => (a.currency || curr) === editForm.currency).map(a => (
+                    <SelectItem key={a.id} value={a.id}>{tr(a.name)} ({a.currency || curr})</SelectItem>
+                  ))}
                 </SelectContent>
               </Select></div>
             <p className="text-xs text-[#6B7068]">{tr("Para alterar valor total ou número de parcelas, exclua e crie um novo parcelamento.")}</p>

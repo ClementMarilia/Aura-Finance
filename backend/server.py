@@ -807,6 +807,7 @@ class GroupIn(BaseModel):
 
 class PersonIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    email: Optional[EmailStr] = None
     nickname: str = Field(default="", max_length=120)
     relationship: str = Field(default="", max_length=80)
     notes: str = Field(default="", max_length=1000)
@@ -848,6 +849,7 @@ class ReportFiltersIn(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     account_ids: List[str] = Field(default_factory=list)
+    currencies: List[str] = Field(default_factory=list)
 
 
 # ---------- Defaults ----------
@@ -2302,8 +2304,31 @@ async def account_currency_map(user: dict) -> dict:
     return {a["id"]: normalize_currency(a.get("currency"), base) for a in accounts}
 
 
+def currency_for_account(
+    requested_currency: Optional[str],
+    account_id: Optional[str],
+    currencies: dict,
+    base_currency: str,
+) -> str:
+    account_currency = currencies.get(account_id) if account_id else None
+    if account_id and not account_currency:
+        raise HTTPException(404, "Carteira não encontrada")
+    currency = normalize_currency(
+        requested_currency, account_currency or base_currency
+    )
+    if account_currency and currency != account_currency:
+        raise HTTPException(
+            400,
+            "A moeda do lançamento deve ser igual à moeda da carteira",
+        )
+    return currency
+
+
 @api.get("/accounts")
-async def list_accounts(user=Depends(get_current_user)):
+async def list_accounts(
+    currency: Optional[str] = None,
+    user=Depends(get_current_user),
+):
     accounts = await db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
     txs = await db.transactions.find(
         {"user_id": user["id"], "status": "paid"}, {"_id": 0},
@@ -2311,6 +2336,9 @@ async def list_accounts(user=Depends(get_current_user)):
     base_currency = normalize_currency(user.get("currency"))
     for a in accounts:
         a["currency"] = normalize_currency(a.get("currency"), base_currency)
+    if currency:
+        selected_currency = normalize_currency(currency)
+        accounts = [a for a in accounts if a["currency"] == selected_currency]
     bal = {a["id"]: a.get("initial_balance", 0.0) for a in accounts}
     for t in txs:
         if t["type"] == "income" and t.get("account_id") in bal:
@@ -2416,10 +2444,12 @@ async def list_transactions(
     year: Optional[int] = None, month: Optional[int] = None,
     category_id: Optional[str] = None, status: Optional[str] = None,
     type: Optional[str] = None, account_id: Optional[str] = None,
+    currency: Optional[str] = None,
     include_carryover: bool = True,
 ):
     horizon = month_end_date(year, month) if (year and month) else None
     await materialize_recurrences(user["id"], horizon)
+    base_currency = normalize_currency(user.get("currency"))
 
     q = {"user_id": user["id"]}
     start = end = None
@@ -2433,12 +2463,16 @@ async def list_transactions(
         q["status"] = status
     if type:
         q["type"] = type
+    clauses = []
     if account_id:
-        q["$or"] = [
+        clauses.append({"$or": [
             {"account_id": account_id},
             {"from_account_id": account_id},
             {"to_account_id": account_id},
-        ]
+        ]})
+    selected_currency = normalize_currency(currency) if currency else None
+    if clauses:
+        q["$and"] = clauses
     rows = await db.transactions.find(q, {"_id": 0}).to_list(2000)
     for r in rows:
         r["source"] = "recurrence" if r.get("recurrence_id") else "manual"
@@ -2457,12 +2491,15 @@ async def list_transactions(
             overdue_q["category_id"] = category_id
         if type:
             overdue_q["type"] = type
+        overdue_clauses = []
         if account_id:
-            overdue_q["$or"] = [
+            overdue_clauses.append({"$or": [
                 {"account_id": account_id},
                 {"from_account_id": account_id},
                 {"to_account_id": account_id},
-            ]
+            ]})
+        if overdue_clauses:
+            overdue_q["$and"] = overdue_clauses
         overdue_rows = await db.transactions.find(overdue_q, {"_id": 0}).to_list(2000)
         existing_ids = {r["id"] for r in rows}
         for r in overdue_rows:
@@ -2500,6 +2537,11 @@ async def list_transactions(
                     continue
                 if account_id and pur.get("account_id") != account_id:
                     continue
+                purchase_currency = normalize_currency(
+                    pur.get("currency"), base_currency
+                )
+                if currency and purchase_currency != selected_currency:
+                    continue
                 overdue = p["due_date"] < vstart and p["status"] == "pending"
                 rows.append({
                     "id": p["id"], "type": "expense", "date": p["due_date"],
@@ -2511,7 +2553,7 @@ async def list_transactions(
                     "source": "installment", "purchase_id": p["purchase_id"],
                     "installment_number": p["number"], "installment_total": p["total"],
                     "overdue": overdue, "editable": False,
-                    "currency": pur.get("currency"),
+                    "currency": purchase_currency,
                     "exchange_rates": pur.get("exchange_rates"),
                     "base_currency_at_creation": pur.get("base_currency_at_creation"),
                     "exchange_rate_to_base": pur.get("exchange_rate_to_base"),
@@ -2539,7 +2581,6 @@ async def list_transactions(
         })
 
     currencies = await account_currency_map(user)
-    base_currency = normalize_currency(user.get("currency"))
     for row in rows:
         row["person"] = person_map.get(row.get("person_id"))
         if row.get("type") == "transfer":
@@ -2552,6 +2593,12 @@ async def list_transactions(
             row["currency"] = normalize_currency(
                 row.get("currency"), currencies.get(row.get("account_id"), base_currency))
             row["base_amount"] = round(amount_in_currency(row, base_currency), 2)
+    if selected_currency:
+        rows = [
+            row for row in rows
+            if row.get("currency") == selected_currency
+            or row.get("target_currency") == selected_currency
+        ]
     rows.sort(key=lambda x: x.get("date", ""), reverse=True)
     return rows
 
@@ -2589,7 +2636,9 @@ async def transaction_values(payload: TransactionIn, user: dict) -> dict:
             "rate_source": source_label or "manual",
         }
 
-    currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
+    currency = currency_for_account(
+        payload.currency, payload.account_id, currencies, base_currency
+    )
     manual_rate = payload.exchange_rate if payload.rate_source != "automatic" else None
     meta = await monetary_metadata(currency, base_currency, payload.date, manual_rate)
     if payload.rate_source:
@@ -2638,6 +2687,76 @@ async def validate_transaction_person(person_id: Optional[str], user: dict) -> O
     return public_user(related_user)
 
 
+async def notify_pending_receivable_counterparty(
+    transaction: dict,
+    user: dict,
+) -> None:
+    """Notify a registered private contact without disclosing account existence."""
+    if (
+        transaction.get("type") != "income"
+        or transaction.get("status") != "pending"
+        or not transaction.get("person_id")
+    ):
+        return
+    person = await db.people.find_one(
+        {
+            "id": transaction["person_id"],
+            "owner_user_id": user["id"],
+        },
+        {"_id": 0},
+    )
+    email = str((person or {}).get("email") or "").strip().lower()
+    if not email:
+        return
+    recipient = await db.users.find_one(
+        {
+            "email": email,
+            "id": {"$ne": user["id"]},
+            "$or": [
+                {"status": "active"},
+                {"status": {"$exists": False}},
+            ],
+        },
+        {"_id": 0, "password_hash": 0},
+    )
+    if not recipient:
+        return
+    if transaction.get("counterparty_notified_user_id") == recipient["id"]:
+        return
+
+    currency = normalize_currency(
+        transaction.get("currency"), user.get("currency", "EUR")
+    )
+    description = (transaction.get("description") or "").strip()
+    suffix = f": {description}" if description else "."
+    await push_notification(
+        recipient["id"],
+        "pending_receivable_added",
+        "Novo valor pendente",
+        (
+            f"{user['name']} registrou {fmt_eur(transaction.get('amount', 0), currency)} "
+            f"pendentes a receber de você{suffix}"
+        ),
+        "/notificacoes",
+        {
+            "transaction_id": transaction["id"],
+            "creditor_user_id": user["id"],
+            "amount": transaction.get("amount", 0),
+            "currency": currency,
+        },
+    )
+    notified_at = now_iso()
+    await db.transactions.update_one(
+        {"id": transaction["id"], "user_id": user["id"]},
+        {"$set": {
+            "counterparty_notified_user_id": recipient["id"],
+            "counterparty_notified_at": notified_at,
+        }},
+    )
+    transaction["counterparty_notified_user_id"] = recipient["id"]
+    transaction["counterparty_notified_at"] = notified_at
+
+
 @api.post("/transactions")
 async def create_transaction(
     payload: TransactionIn,
@@ -2652,6 +2771,14 @@ async def create_transaction(
                "created_at": now_iso()}
         await db.transactions.insert_one(doc)
         doc.pop("_id", None)
+        try:
+            await notify_pending_receivable_counterparty(doc, user)
+        except Exception as exc:
+            logger.warning(
+                "Pending-receivable notification failed for transaction %s: %s",
+                doc["id"],
+                exc,
+            )
         return doc
 
     return await run_idempotent_create(
@@ -2680,12 +2807,24 @@ async def update_transaction(tid: str, payload: TransactionIn, user=Depends(get_
     await _validate_transfer(payload, user)
     await validate_transaction_person(payload.person_id, user)
     values = await transaction_values(payload, user)
+    current = await db.transactions.find_one(
+        {"id": tid, "user_id": user["id"]}, {"_id": 0}
+    )
+    if not current:
+        raise HTTPException(404, "Não encontrado")
     res = await db.transactions.update_one(
         {"id": tid, "user_id": user["id"]},
         {"$set": values},
     )
-    if not res.matched_count:
-        raise HTTPException(404, "Não encontrado")
+    updated = {**current, **values}
+    try:
+        await notify_pending_receivable_counterparty(updated, user)
+    except Exception as exc:
+        logger.warning(
+            "Pending-receivable notification failed for transaction %s: %s",
+            tid,
+            exc,
+        )
     return {"ok": True}
 
 
@@ -2887,8 +3026,23 @@ class RecurrenceIn(BaseModel):
 
 
 @api.get("/recurrences")
-async def list_recurrences(user=Depends(get_current_user)):
-    return await db.recurrences.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+async def list_recurrences(
+    currency: Optional[str] = None,
+    user=Depends(get_current_user),
+):
+    q = {"user_id": user["id"]}
+    rows = await db.recurrences.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    base_currency = normalize_currency(user.get("currency"))
+    currencies = await account_currency_map(user)
+    for row in rows:
+        row["currency"] = normalize_currency(
+            row.get("currency"), currencies.get(row.get("account_id"), base_currency)
+        )
+        row["base_amount"] = round(amount_in_currency(row, base_currency), 2)
+    if currency:
+        selected_currency = normalize_currency(currency)
+        rows = [row for row in rows if row["currency"] == selected_currency]
+    return rows
 
 
 @api.post("/recurrences")
@@ -2901,7 +3055,9 @@ async def create_recurrence(
         await validate_transaction_person(payload.person_id, user)
         currencies = await account_currency_map(user)
         base_currency = normalize_currency(user.get("currency"))
-        currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
+        currency = currency_for_account(
+            payload.currency, payload.account_id, currencies, base_currency
+        )
         manual_rate = payload.exchange_rate if payload.rate_source != "automatic" else None
         meta = await monetary_metadata(currency, base_currency, payload.next_run, manual_rate)
         if payload.rate_source:
@@ -2924,7 +3080,9 @@ async def update_recurrence(rid: str, payload: RecurrenceIn, user=Depends(get_cu
     await validate_transaction_person(payload.person_id, user)
     currencies = await account_currency_map(user)
     base_currency = normalize_currency(user.get("currency"))
-    currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
+    currency = currency_for_account(
+        payload.currency, payload.account_id, currencies, base_currency
+    )
     manual_rate = payload.exchange_rate if payload.rate_source != "automatic" else None
     meta = await monetary_metadata(currency, base_currency, payload.next_run, manual_rate)
     if payload.rate_source:
@@ -2972,14 +3130,36 @@ async def delete_recurrence(rid: str, user=Depends(get_current_user)):
 
 # ---------- Installments ----------
 @api.get("/installments/purchases")
-async def list_purchases(user=Depends(get_current_user)):
+async def list_purchases(
+    currency: Optional[str] = None,
+    user=Depends(get_current_user),
+):
+    q = {"user_id": user["id"]}
     purchases = await db.installment_purchases.find(
-        {"user_id": user["id"]}, {"_id": 0}
+        q, {"_id": 0}
     ).to_list(500)
+    base_currency = normalize_currency(user.get("currency"))
+    currencies = await account_currency_map(user)
     for p in purchases:
+        p["currency"] = normalize_currency(
+            p.get("currency"), currencies.get(p.get("account_id"), base_currency)
+        )
+        p["base_total_amount"] = round(
+            amount_in_currency({**p, "amount": p.get("total_amount", 0)}, base_currency),
+            2,
+        )
         p["installments_list"] = await db.installments.find(
             {"purchase_id": p["id"]}, {"_id": 0}
         ).sort("number", 1).to_list(200)
+        for installment in p["installments_list"]:
+            installment["currency"] = p["currency"]
+            installment["base_amount"] = round(
+                amount_in_currency({**p, "amount": installment.get("amount", 0)}, base_currency),
+                2,
+            )
+    if currency:
+        selected_currency = normalize_currency(currency)
+        purchases = [p for p in purchases if p["currency"] == selected_currency]
     return purchases
 
 
@@ -2995,7 +3175,9 @@ async def create_purchase(
         base_date = datetime.fromisoformat(payload.first_date)
         currencies = await account_currency_map(user)
         base_currency = normalize_currency(user.get("currency"))
-        currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
+        currency = currency_for_account(
+            payload.currency, payload.account_id, currencies, base_currency
+        )
         meta = await monetary_metadata(currency, base_currency, payload.first_date, payload.exchange_rate)
         values = payload.model_dump(exclude={"currency", "exchange_rate"})
         purchase = {
@@ -3049,6 +3231,24 @@ async def update_purchase(pid: str, payload: InstallmentPurchaseUpdateIn, user=D
     upd = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
     if not upd:
         return {"ok": True}
+    current = await db.installment_purchases.find_one(
+        {"id": pid, "user_id": user["id"]}, {"_id": 0}
+    )
+    if not current:
+        raise HTTPException(404, "Não encontrado")
+    if payload.account_id:
+        currencies = await account_currency_map(user)
+        purchase_currency = normalize_currency(
+            current.get("currency"), user.get("currency", "EUR")
+        )
+        account_currency = currencies.get(payload.account_id)
+        if not account_currency:
+            raise HTTPException(404, "Carteira não encontrada")
+        if account_currency != purchase_currency:
+            raise HTTPException(
+                400,
+                "A carteira deve usar a mesma moeda do parcelamento",
+            )
     res = await db.installment_purchases.update_one(
         {"id": pid, "user_id": user["id"]},
         {"$set": upd},
@@ -3080,8 +3280,23 @@ async def delete_purchase(pid: str, user=Depends(get_current_user)):
 
 # ---------- Receivables ----------
 @api.get("/receivables")
-async def list_receivables(user=Depends(get_current_user)):
-    return await db.receivables.find({"user_id": user["id"]}, {"_id": 0}).sort("due_date", 1).to_list(500)
+async def list_receivables(
+    currency: Optional[str] = None,
+    user=Depends(get_current_user),
+):
+    q = {"user_id": user["id"]}
+    rows = await db.receivables.find(q, {"_id": 0}).sort("due_date", 1).to_list(500)
+    base_currency = normalize_currency(user.get("currency"))
+    currencies = await account_currency_map(user)
+    for row in rows:
+        row["currency"] = normalize_currency(
+            row.get("currency"), currencies.get(row.get("account_id"), base_currency)
+        )
+        row["base_amount"] = round(amount_in_currency(row, base_currency), 2)
+    if currency:
+        selected_currency = normalize_currency(currency)
+        rows = [row for row in rows if row["currency"] == selected_currency]
+    return rows
 
 
 @api.post("/receivables")
@@ -3093,7 +3308,9 @@ async def create_receivable(
     async def create():
         currencies = await account_currency_map(user)
         base_currency = normalize_currency(user.get("currency"))
-        currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
+        currency = currency_for_account(
+            payload.currency, payload.account_id, currencies, base_currency
+        )
         meta = await monetary_metadata(currency, base_currency, payload.due_date, payload.exchange_rate)
         values = payload.model_dump(exclude={"currency", "exchange_rate"})
         doc = {"id": new_id(), "user_id": user["id"], **values, **meta,
@@ -3112,7 +3329,9 @@ async def create_receivable(
 async def update_receivable(rid: str, payload: ReceivableIn, user=Depends(get_current_user)):
     currencies = await account_currency_map(user)
     base_currency = normalize_currency(user.get("currency"))
-    currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
+    currency = currency_for_account(
+        payload.currency, payload.account_id, currencies, base_currency
+    )
     meta = await monetary_metadata(currency, base_currency, payload.due_date, payload.exchange_rate)
     values = payload.model_dump(exclude={"currency", "exchange_rate"})
     res = await db.receivables.update_one(
@@ -3298,6 +3517,7 @@ def private_person_summary(person: dict) -> dict:
     return {
         "id": person["id"],
         "name": person.get("name", ""),
+        "email": person.get("email"),
         "nickname": person.get("nickname", ""),
         "relationship": person.get("relationship", ""),
         "notes": person.get("notes", ""),
@@ -3328,6 +3548,7 @@ async def create_person(
             "id": new_id(),
             "owner_user_id": user["id"],
             "name": name,
+            "email": str(payload.email).strip().lower() if payload.email else None,
             "nickname": payload.nickname.strip(),
             "relationship": payload.relationship.strip(),
             "notes": payload.notes.strip(),
@@ -3358,6 +3579,7 @@ async def update_person(
         {"id": person_id, "owner_user_id": user["id"]},
         {"$set": {
             "name": name,
+            "email": str(payload.email).strip().lower() if payload.email else None,
             "nickname": payload.nickname.strip(),
             "relationship": payload.relationship.strip(),
             "notes": payload.notes.strip(),
@@ -3661,7 +3883,11 @@ async def backfill_shared_settlement_history() -> int:
 
 
 @api.get("/shared-expenses")
-async def list_shared(user=Depends(get_current_user), group_id: Optional[str] = None):
+async def list_shared(
+    user=Depends(get_current_user),
+    group_id: Optional[str] = None,
+    currency: Optional[str] = None,
+):
     q = {
         **visible_shared_query(user["id"]),
         "status": {"$ne": "finalized"},
@@ -3672,6 +3898,13 @@ async def list_shared(user=Depends(get_current_user), group_id: Optional[str] = 
     # Also hide legacy rows whose participants are all paid but whose stored status
     # was never updated by older versions of the application.
     items = [item for item in items if shared_expense_status(item) != "finalized"]
+    base_currency = normalize_currency(user.get("currency"))
+    for item in items:
+        item["currency"] = normalize_currency(item.get("currency"), base_currency)
+        item["base_amount"] = round(amount_in_currency(item, base_currency), 2)
+    if currency:
+        selected_currency = normalize_currency(currency)
+        items = [item for item in items if item["currency"] == selected_currency]
     party_map = await shared_party_map(items, user.get("language", "pt"))
     for it in items:
         it["payer"] = party_map.get(it["payer_id"])
@@ -3784,8 +4017,8 @@ async def create_shared(
                 continue
             is_payer = participant_user_id == payload.payer_id
             msg = (f"{user['name']} adicionou você na despesa '{payload.title}' "
-                   f"({fmt_eur(payload.amount, user.get('currency', 'EUR'))})"
-                   + ("" if is_payer else f". Você deve {fmt_eur(participant['owed'], user.get('currency', 'EUR'))} para {payer_name}."))
+                   f"({fmt_eur(payload.amount, currency)})"
+                   + ("" if is_payer else f". Você deve {fmt_eur(participant['owed'], currency)} para {payer_name}."))
             try:
                 await push_notification(
                     participant_user_id, "shared_expense_added",
@@ -3844,7 +4077,7 @@ async def settle_participant(sid: str, participant_id: str, user=Depends(get_cur
             await push_notification(
                 se["payer_id"], "settlement_paid",
                 "Acerto recebido",
-                f"{debtor['name'] if debtor else 'Alguém'} marcou {fmt_eur(amount)} como pago em '{se['title']}'.",
+                f"{debtor['name'] if debtor else 'Alguém'} marcou {fmt_eur(amount, se.get('currency', 'EUR'))} como pago em '{se['title']}'.",
                 "/acertos", {"expense_id": sid},
             )
     return {
@@ -4099,7 +4332,7 @@ async def nudge_debtor(debtor_id: str, user=Depends(get_current_user)):
         raise HTTPException(400, "Sem dívida pendente")
     await push_notification(
         debtor_id, "nudge", "Lembrete de pagamento",
-        f"{user['name']} está lembrando que você deve {fmt_eur(total)} em despesas compartilhadas.",
+        f"{user['name']} está lembrando que você deve {fmt_eur(total, user.get('currency', 'EUR'))} em despesas compartilhadas.",
         "/acertos", {"from": user["id"]},
     )
     return {"ok": True, "amount": round(total, 2)}
@@ -4114,6 +4347,7 @@ async def settlement_history(
     year: Optional[int] = Query(None, ge=1900, le=2200),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    currency: Optional[str] = None,
     sort: Literal["recent", "oldest", "amount_desc", "amount_asc"] = "recent",
     limit: int = Query(1000, ge=1, le=5000),
 ):
@@ -4210,6 +4444,10 @@ async def settlement_history(
         if start and paid_date < start:
             return False
         if end and paid_date > end:
+            return False
+        if currency and normalize_currency(
+            item.get("currency"), user.get("currency", "EUR")
+        ) != normalize_currency(currency):
             return False
         if search:
             needle = normalized_search_text(search)
@@ -4812,6 +5050,9 @@ def apply_custom_report_filters(
     selected_accounts = set(filters.account_ids)
     selected_statuses = set(filters.statuses)
     selected_types = set(filters.types)
+    selected_currencies = {
+        normalize_currency(currency) for currency in filters.currencies
+    }
 
     def matches(row: dict) -> bool:
         row_date = str(row.get("date") or "")[:10]
@@ -4827,6 +5068,14 @@ def apply_custom_report_filters(
             return False
         if selected_accounts and not selected_accounts.intersection(row.get("account_ids") or []):
             return False
+        if selected_currencies:
+            row_currencies = {
+                normalize_currency(row.get("currency")),
+            }
+            if row.get("target_currency"):
+                row_currencies.add(normalize_currency(row["target_currency"]))
+            if not selected_currencies.intersection(row_currencies):
+                return False
         if selected_categories:
             row_category = normalized_search_text(row.get("category"))
             if row_category not in selected_categories:
@@ -4974,6 +5223,7 @@ async def custom_report_options(user: dict) -> dict:
         "categories": categories,
         "accounts": accounts,
         "participants": participants,
+        "currencies": list(SUPPORTED_CURRENCIES),
     }
 
 
@@ -5053,6 +5303,7 @@ async def filtered_report(
             "status": normalized_status(item.get("status", "paid"), item.get("date", "")),
             "amount": item.get("amount", 0),
             "currency": item.get("currency", base_currency),
+            "target_currency": item.get("target_currency"),
             "base_amount": converted(item),
             "direction": item_type if item_type != "transfer" else "transfer",
             "account": " → ".join(filter(None, account_labels)),
@@ -6033,6 +6284,8 @@ class GoalIn(BaseModel):
     deadline: Optional[str] = None
     color: str = "#1E3F33"
     account_id: Optional[str] = None
+    currency: Optional[str] = None
+    exchange_rate: Optional[float] = None
 
 
 class ContributeIn(BaseModel):
@@ -6041,8 +6294,58 @@ class ContributeIn(BaseModel):
 
 
 @api.get("/goals")
-async def list_goals(user=Depends(get_current_user)):
-    return await db.goals.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+async def list_goals(
+    currency: Optional[str] = None,
+    user=Depends(get_current_user),
+):
+    rows = await db.goals.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(200)
+    base_currency = normalize_currency(user.get("currency"))
+    currencies = await account_currency_map(user)
+    for row in rows:
+        row["currency"] = normalize_currency(
+            row.get("currency"), currencies.get(row.get("account_id"), base_currency)
+        )
+        row["base_target_amount"] = round(
+            amount_in_currency({**row, "amount": row.get("target_amount", 0)}, base_currency),
+            2,
+        )
+        row["base_current_amount"] = round(
+            amount_in_currency({**row, "amount": row.get("current_amount", 0)}, base_currency),
+            2,
+        )
+    if currency:
+        selected_currency = normalize_currency(currency)
+        rows = [row for row in rows if row["currency"] == selected_currency]
+    return rows
+
+
+async def goal_currency_values(payload: GoalIn, user: dict) -> tuple[dict, dict]:
+    if payload.target_amount <= 0:
+        raise HTTPException(400, "O valor alvo deve ser maior que zero")
+    if payload.current_amount < 0:
+        raise HTTPException(400, "O valor guardado não pode ser negativo")
+    currencies = await account_currency_map(user)
+    base_currency = normalize_currency(user.get("currency"))
+    currency = normalize_currency(
+        payload.currency, currencies.get(payload.account_id, base_currency)
+    )
+    if payload.account_id:
+        account_currency = currencies.get(payload.account_id)
+        if not account_currency:
+            raise HTTPException(404, "Conta vinculada não encontrada")
+        if account_currency != currency:
+            raise HTTPException(
+                400,
+                "A moeda da meta deve ser igual à moeda da carteira vinculada",
+            )
+    rate_date = payload.deadline or datetime.now(timezone.utc).date().isoformat()
+    meta = await monetary_metadata(
+        currency, base_currency, rate_date, payload.exchange_rate
+    )
+    values = payload.model_dump(exclude={"currency", "exchange_rate"})
+    return values, meta
 
 
 @api.post("/goals")
@@ -6052,7 +6355,8 @@ async def create_goal(
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
     async def create():
-        doc = {"id": new_id(), "user_id": user["id"], **payload.model_dump(),
+        values, meta = await goal_currency_values(payload, user)
+        doc = {"id": new_id(), "user_id": user["id"], **values, **meta,
                "created_at": now_iso()}
         await db.goals.insert_one(doc)
         doc.pop("_id", None)
@@ -6066,8 +6370,25 @@ async def create_goal(
 
 @api.put("/goals/{gid}")
 async def update_goal(gid: str, payload: GoalIn, user=Depends(get_current_user)):
+    current = await db.goals.find_one(
+        {"id": gid, "user_id": user["id"]}, {"_id": 0}
+    )
+    if not current:
+        raise HTTPException(404, "Meta não encontrada")
+    values, meta = await goal_currency_values(payload, user)
+    current_currency = normalize_currency(
+        current.get("currency"), user.get("currency", "EUR")
+    )
+    if (
+        normalize_currency(meta["currency"]) != current_currency
+        and float(current.get("current_amount") or 0) != 0
+    ):
+        raise HTTPException(
+            400,
+            "Não é possível alterar a moeda de uma meta que já possui saldo",
+        )
     res = await db.goals.update_one(
-        {"id": gid, "user_id": user["id"]}, {"$set": payload.model_dump()})
+        {"id": gid, "user_id": user["id"]}, {"$set": {**values, **meta}})
     if res.matched_count == 0:
         raise HTTPException(404, "Meta não encontrada")
     return await db.goals.find_one({"id": gid}, {"_id": 0})
@@ -6080,12 +6401,20 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
     goal = await db.goals.find_one({"id": gid, "user_id": user["id"]}, {"_id": 0})
     if not goal:
         raise HTTPException(404, "Meta não encontrada")
+    goal_currency = normalize_currency(
+        goal.get("currency"), user.get("currency", "EUR")
+    )
 
     # Optionally create a real transaction so balances stay coherent
     if body.from_account_id:
         src = await db.accounts.find_one({"id": body.from_account_id, "user_id": user["id"]}, {"_id": 0})
         if not src:
             raise HTTPException(404, "Conta de origem não encontrada")
+        if normalize_currency(src.get("currency"), user.get("currency", "EUR")) != goal_currency:
+            raise HTTPException(
+                400,
+                "A carteira do aporte deve usar a mesma moeda da meta",
+            )
         linked = goal.get("account_id")
         if linked and linked != body.from_account_id:
             dest = await db.accounts.find_one({"id": linked, "user_id": user["id"]}, {"_id": 0})
@@ -6098,11 +6427,24 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
         else:
             tx = {"type": "expense", "account_id": body.from_account_id,
                   "from_account_id": None, "to_account_id": None, "category_id": None}
+        meta = await monetary_metadata(
+            goal_currency,
+            user.get("currency", "EUR"),
+            datetime.now(timezone.utc).date().isoformat(),
+        )
+        if tx["type"] == "transfer":
+            meta.update({
+                "target_currency": goal_currency,
+                "target_amount": body.amount,
+                "transfer_exchange_rate": 1.0,
+                "rate_source": "automatic",
+            })
         await db.transactions.insert_one({
             "id": new_id(), "user_id": user["id"], "date": now_iso()[:10],
             "amount": body.amount, "payment_method": None,
             "description": f"Aporte: {goal['title']}", "notes": "(aporte meta)",
-            "status": "paid", "goal_id": gid, "created_at": now_iso(), **tx,
+            "status": "paid", "goal_id": gid, "created_at": now_iso(),
+            **meta, **tx,
         })
 
     new_amt = round(goal.get("current_amount", 0) + body.amount, 2)
@@ -6123,6 +6465,9 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
     goal = await db.goals.find_one({"id": gid, "user_id": user["id"]}, {"_id": 0})
     if not goal:
         raise HTTPException(404, "Meta não encontrada")
+    goal_currency = normalize_currency(
+        goal.get("currency"), user.get("currency", "EUR")
+    )
     current = goal.get("current_amount", 0)
     if body.amount > current:
         raise HTTPException(400, "Valor maior que o saldo da meta")
@@ -6132,6 +6477,11 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
         dest = await db.accounts.find_one({"id": body.to_account_id, "user_id": user["id"]}, {"_id": 0})
         if not dest:
             raise HTTPException(404, "Conta de destino não encontrada")
+        if normalize_currency(dest.get("currency"), user.get("currency", "EUR")) != goal_currency:
+            raise HTTPException(
+                400,
+                "A carteira do resgate deve usar a mesma moeda da meta",
+            )
         linked = goal.get("account_id")
         if linked and linked != body.to_account_id:
             src = await db.accounts.find_one({"id": linked, "user_id": user["id"]}, {"_id": 0})
@@ -6144,11 +6494,24 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
         else:
             tx = {"type": "income", "account_id": body.to_account_id,
                   "from_account_id": None, "to_account_id": None, "category_id": None}
+        meta = await monetary_metadata(
+            goal_currency,
+            user.get("currency", "EUR"),
+            datetime.now(timezone.utc).date().isoformat(),
+        )
+        if tx["type"] == "transfer":
+            meta.update({
+                "target_currency": goal_currency,
+                "target_amount": body.amount,
+                "transfer_exchange_rate": 1.0,
+                "rate_source": "automatic",
+            })
         await db.transactions.insert_one({
             "id": new_id(), "user_id": user["id"], "date": now_iso()[:10],
             "amount": body.amount, "payment_method": None,
             "description": f"Resgate: {goal['title']}", "notes": "(resgate meta)",
-            "status": "paid", "goal_id": gid, "created_at": now_iso(), **tx,
+            "status": "paid", "goal_id": gid, "created_at": now_iso(),
+            **meta, **tx,
         })
 
     new_amt = round(current - body.amount, 2)

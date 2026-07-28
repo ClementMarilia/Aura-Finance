@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import api, { fmtDate, fmtMoney, formatApiError } from "@/lib/api";
+import api, { CURRENCIES, fmtDate, fmtMoney, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { exportCSV, exportPDF } from "@/lib/exporters";
@@ -22,6 +22,7 @@ const emptyFilters = {
   start_date: "",
   end_date: "",
   account_ids: [],
+  currencies: [],
 };
 
 const TYPE_OPTIONS = [
@@ -126,7 +127,7 @@ function ParticipantSummary({ data, currency }) {
 }
 
 export default function CustomReport({ user }) {
-  const [options, setOptions] = useState({ categories: [], accounts: [], participants: [] });
+  const [options, setOptions] = useState({ categories: [], accounts: [], participants: [], currencies: [] });
   const [filters, setFilters] = useState(emptyFilters);
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -168,6 +169,7 @@ export default function CustomReport({ user }) {
     labels.push(...filters.statuses.map(value => tr(STATUS_LABELS[value])));
     labels.push(...filters.types.map(value => tr(TYPE_LABELS[value])));
     labels.push(...filters.account_ids.map(id => options.accounts.find(item => item.id === id)?.name).filter(Boolean));
+    labels.push(...filters.currencies);
     if (filters.period !== "all") labels.push(tr("Período personalizado"));
     return labels;
   }, [filters, options]);
@@ -262,6 +264,13 @@ export default function CustomReport({ user }) {
             values={filters.account_ids}
             onChange={value => update("account_ids", value)}
             testId="report-accounts"
+          />
+          <MultiFilter
+            label={tr("Moedas")}
+            options={CURRENCIES.map(item => ({ value: item.value, label: item.label }))}
+            values={filters.currencies}
+            onChange={value => update("currencies", value)}
+            testId="report-currencies"
           />
           <select
             value={filters.period}

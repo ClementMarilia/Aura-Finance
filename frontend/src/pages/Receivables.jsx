@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api, { fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,20 +18,28 @@ export default function Receivables() {
   const [accs, setAccs] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "" });
+  const [form, setForm] = useState({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "", currency: curr });
   const [confirmDel, setConfirmDel] = useState(null);
+  const [currencyFilter, setCurrencyFilter] = useState("");
 
-  const load = () => api.get("/receivables").then(r => setList(r.data));
-  useEffect(() => { load(); api.get("/accounts").then(r => setAccs(r.data || [])); }, []);
+  const load = () => api.get("/receivables", {
+    params: currencyFilter ? { currency: currencyFilter } : {},
+  }).then(r => setList(r.data));
+  useEffect(() => { api.get("/accounts").then(r => setAccs(r.data || [])); }, []);
+  useEffect(() => {
+    api.get("/receivables", {
+      params: currencyFilter ? { currency: currencyFilter } : {},
+    }).then(r => setList(r.data));
+  }, [currencyFilter]);
 
   const openNew = () => {
     setEditing(null);
-    setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "" });
+    setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "", currency: curr });
     setOpen(true);
   };
   const openEdit = (r) => {
     setEditing(r);
-    setForm({ person: r.person, amount: String(r.amount), due_date: r.due_date, description: r.description || "", account_id: r.account_id || "" });
+    setForm({ person: r.person, amount: String(r.amount), due_date: r.due_date, description: r.description || "", account_id: r.account_id || "", currency: r.currency || curr });
     setOpen(true);
   };
 
@@ -47,7 +55,7 @@ export default function Receivables() {
         toast.success(tr("Conta a receber criada"));
       }
       setOpen(false); setEditing(null);
-      setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "" });
+      setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "", currency: curr });
       load();
     } catch (err) { toast.error(formatApiError(err)); }
   };
@@ -97,11 +105,28 @@ export default function Receivables() {
               <div><Label>{tr("Descrição")}</Label>
                 <Input value={form.description} data-testid="rec-description-input"
                   onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+              <div><Label>{tr("Moeda")}</Label>
+                <Select value={form.currency} onValueChange={value => setForm({
+                  ...form,
+                  currency: value,
+                  account_id: accs.some(account => account.id === form.account_id && (account.currency || curr) === value)
+                    ? form.account_id : "",
+                })}>
+                  <SelectTrigger data-testid="rec-currency-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                  </SelectContent>
+                </Select></div>
               <div><Label>{tr("Carteira (onde o valor será creditado ao receber)")}</Label>
-                <Select value={form.account_id} onValueChange={v => setForm({ ...form, account_id: v })}>
+                <Select value={form.account_id} onValueChange={v => {
+                  const account = accs.find(item => item.id === v);
+                  setForm({ ...form, account_id: v, currency: account?.currency || form.currency });
+                }}>
                   <SelectTrigger data-testid="rec-account-select"><SelectValue placeholder={tr("Selecione a carteira")} /></SelectTrigger>
                   <SelectContent>
-                    {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)}</SelectItem>)}
+                    {accs.filter(a => (a.currency || curr) === form.currency).map(a => (
+                      <SelectItem key={a.id} value={a.id}>{tr(a.name)} ({a.currency || curr})</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select></div>
               <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="rec-submit-button">
@@ -110,6 +135,14 @@ export default function Receivables() {
             </form>
           </DialogContent>
         </Dialog>
+      </div>
+
+      <div className="flex justify-end">
+        <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
+          data-testid="receivable-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+          <option value="">{tr("Todas as moedas")}</option>
+          {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
       </div>
 
       <div className="card-soft overflow-x-auto p-0">

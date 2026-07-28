@@ -704,4 +704,11 @@ export default {
   "Anomalias": "Anomalies",
   "Possíveis duplicidades e comportamentos incomuns.": "Possible duplicates and unusual behavior.",
   "Escolha quais tipos de análises e recomendações deseja receber.": "Choose which types of analyses and recommendations you want to receive.",
+  "Todas as moedas": "All currencies",
+  "Moedas": "Currencies",
+  "E-mail (opcional)": "Email (optional)",
+  "Cadastre referências privadas para organizar despesas, valores pendentes e relatórios.": "Add private contacts to organize expenses, pending amounts, and reports.",
+  "O e-mail é opcional. Se já pertencer a uma conta ativa, a pessoa poderá receber notificações sobre valores pendentes vinculados a ela.": "Email is optional. If it belongs to an active account, the person may receive notifications about pending amounts linked to them.",
+  "Se o e-mail tiver uma conta ativa, ela poderá ser avisada sobre valores pendentes.": "If the email has an active account, that person may be notified about pending amounts.",
+  "A moeda não pode ser alterada depois do primeiro aporte.": "The currency cannot be changed after the first contribution.",
 };
