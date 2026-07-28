@@ -126,11 +126,11 @@ export default function Dashboard() {
           <div className="text-sm uppercase tracking-wide opacity-80">{tr("Saldo atual")}</div>
           <ChevronRight size={18} className="opacity-70" />
         </div>
-        <div className="text-5xl font-semibold tracking-tight mt-2" style={{ fontFamily: "Outfit" }}
+        <div className="money-value text-[clamp(2rem,7vw,3rem)] font-semibold tracking-tight mt-2" style={{ fontFamily: "Outfit" }}
           data-testid="dashboard-balance">
           {fmtMoney(data.balance, curr)}
         </div>
-        <div className="mt-3 flex gap-6 text-sm">
+        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <span>{tr("Receita:")} <strong>{fmtMoney(data.income, curr)}</strong></span>
           <span>{tr("Despesa:")} <strong>{fmtMoney(data.expense, curr)}</strong></span>
         </div>
@@ -150,7 +150,7 @@ export default function Dashboard() {
               <s.icon size={18} />
             </div>
             <div className="stat-label">{s.label}</div>
-            <div className={`stat-value mt-1 ${s.accent}`}>{fmtMoney(s.value, curr)}</div>
+            <div className={`money-value stat-value mt-1 ${s.accent}`}>{fmtMoney(s.value, curr)}</div>
             {s.hint && <div className="text-xs text-[#6B7068] mt-1.5">{s.hint}</div>}
           </Link>
         ))}
@@ -169,7 +169,7 @@ export default function Dashboard() {
                 <div className="flex items-center gap-1.5 text-sm opacity-80"><PiggyBank size={16} /> {tr("Patrimônio")}</div>
                 <ChevronRight size={16} className="opacity-70" />
               </div>
-              <div className="text-2xl font-semibold mt-1" style={{ fontFamily: "Outfit" }} data-testid="patrimonio-value">
+              <div className="money-value text-2xl font-semibold mt-1" style={{ fontFamily: "Outfit" }} data-testid="patrimonio-value">
                 {fmtMoney(patrimonio, curr)}
               </div>
               <div className="text-xs opacity-70 mt-1">{tr("Soma do saldo atual de todas as carteiras")}</div>
@@ -183,7 +183,7 @@ export default function Dashboard() {
               >
                 <ChevronRight size={14} className="absolute top-4 right-4 text-[#A8ABA0]" />
                 <div className="text-sm text-[#6B7068]">{tr(a.name)}</div>
-                <div className={`text-xl font-semibold mt-1 ${a.balance >= 0 ? "text-[#061B4A]" : "text-rose-600"}`}
+                <div className={`money-value text-xl font-semibold mt-1 ${a.balance >= 0 ? "text-[#061B4A]" : "text-rose-600"}`}
                   style={{ fontFamily: "Outfit" }}>
                   {fmtMoney(a.balance, a.currency || curr)}
                 </div>
@@ -304,15 +304,15 @@ export default function Dashboard() {
 
       {/* Budget */}
       <div className="card-soft">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-4">
           <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Orçamento 50/20/10/10/10")}</h3>
           <div className="text-sm text-[#6B7068]">Base: {fmtMoney(data.budget.income, curr)}</div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-4">
           {data.budget.rules.map((r, i) => (
-            <div key={i} className="border border-[#E5E4E0] rounded-xl p-4">
+            <div key={i} className="min-w-0 border border-[#E5E4E0] rounded-xl p-4">
               <div className="text-xs text-[#6B7068]">{r.label}</div>
-              <div className="text-xl font-semibold mt-1" style={{ fontFamily: "Outfit" }}>{fmtMoney(r.amount, curr)}</div>
+              <div className="money-value text-xl font-semibold mt-1" style={{ fontFamily: "Outfit" }}>{fmtMoney(r.amount, curr)}</div>
               <div className="mt-2 h-2 bg-[#F1EFE7] rounded-full overflow-hidden">
                 <div className="h-full rounded-full"
                   style={{ width: `${r.percent}%`, backgroundColor: ["#061B4A","#D96C5B","#E5A83B","#7EA193","#C7BCA1"][i] }} />

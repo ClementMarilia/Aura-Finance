@@ -182,3 +182,51 @@ def test_selected_person_summary_shows_what_they_paid_received_and_owe():
         "paid": 5,
         "balance": 25,
     }
+
+
+def test_direct_transactions_participate_in_person_summary():
+    rows = [
+        {
+            **row(id="income-pending", type="income", status="pending", base_amount=30),
+            "participants": [{"id": "mother", "name": "Minha mãe", "role": "debtor"}],
+        },
+        {
+            **row(id="income-paid", type="income", status="paid", base_amount=20),
+            "participants": [{"id": "mother", "name": "Minha mãe", "role": "debtor"}],
+        },
+        {
+            **row(id="expense-pending", type="expense", status="overdue", base_amount=15),
+            "participants": [{"id": "mother", "name": "Minha mãe", "role": "creditor"}],
+        },
+        {
+            **row(id="expense-paid", type="expense", status="paid", base_amount=5),
+            "participants": [{"id": "mother", "name": "Minha mãe", "role": "creditor"}],
+        },
+    ]
+
+    assert server.summarize_report_participant(rows, "mother") == {
+        "id": "mother",
+        "name": "Minha mãe",
+        "to_receive": 15,
+        "to_pay": 30,
+        "received": 5,
+        "paid": 20,
+        "balance": -15,
+    }
+
+
+def test_person_filter_finds_a_direct_recurring_transaction():
+    direct = row(
+        id="recurrence-person",
+        type="expense",
+        participant_ids=["mother"],
+        participant_names=["Minha mãe"],
+        source="recurrence",
+    )
+    filters = server.ReportFiltersIn(participant_ids=["mother"])
+
+    assert server.apply_custom_report_filters(
+        [row(id="unrelated"), direct],
+        filters,
+        {},
+    ) == [direct]

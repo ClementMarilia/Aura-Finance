@@ -125,6 +125,13 @@ html.dark {
     @apply text-3xl font-medium tracking-tight tabular-nums;
     font-family: 'Outfit', sans-serif;
   }
+  .money-value {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+  }
   .stat-label {
     @apply text-xs uppercase font-medium;
     letter-spacing: 0.06em;

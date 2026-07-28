@@ -28,6 +28,7 @@ export default function Transactions() {
   const [items, setItems] = useState([]);
   const [cats, setCats] = useState([]);
   const [accs, setAccs] = useState([]);
+  const [people, setPeople] = useState([]);
   const now = new Date();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState(() => {
@@ -60,6 +61,7 @@ export default function Transactions() {
       date: new Date().toISOString().slice(0, 10),
       amount: "",
       category_id: "",
+      person_id: "",
       account_id: "",
       from_account_id: "",
       to_account_id: "",
@@ -86,6 +88,9 @@ export default function Transactions() {
   useEffect(() => {
     api.get("/categories").then(r => setCats(r.data));
     api.get("/accounts").then(r => setAccs(r.data));
+    api.get("/reports/filter-options").then(r => {
+      setPeople((r.data?.participants || []).filter(person => !person.self));
+    });
   }, []);
 
   const sourceAccount = form.type === "transfer"
@@ -198,7 +203,8 @@ export default function Transactions() {
     setEditing(t);
     setForm({
       type: t.type, date: t.date, amount: String(t.amount),
-      category_id: t.category_id || "", account_id: t.account_id || "",
+      category_id: t.category_id || "", person_id: t.person_id || "",
+      account_id: t.account_id || "",
       from_account_id: t.from_account_id || "", to_account_id: t.to_account_id || "",
       payment_method: t.payment_method || "", description: t.description || "",
       notes: t.notes || "", status: t.status,
@@ -243,6 +249,7 @@ export default function Transactions() {
           type: form.type,
           amount: parseFloat(form.amount) || 0,
           category_id: form.category_id || null,
+          person_id: form.person_id || null,
           account_id: form.account_id || null,
           payment_method: form.payment_method || null,
           description: form.description,
@@ -261,6 +268,7 @@ export default function Transactions() {
         ...form,
         amount: parseFloat(form.amount),
         category_id: form.category_id || null,
+        person_id: form.type === "transfer" ? null : (form.person_id || null),
         account_id: form.account_id || null,
         from_account_id: form.type === "transfer" ? (form.from_account_id || null) : null,
         to_account_id: form.type === "transfer" ? (form.to_account_id || null) : null,
@@ -353,10 +361,10 @@ export default function Transactions() {
     if (items.length === 0) { toast.error(tr("Nada para exportar")); return; }
     exportCSV(
       `lancamentos_${new Date().toISOString().slice(0, 10)}.csv`,
-      [tr("Data"), tr("Descrição"), tr("Categoria"), tr("Tipo"), tr("Status"), "Valor original", tr("Moeda"), "Valor na moeda-base", tr("Moeda-base")],
+      [tr("Data"), tr("Descrição"), tr("Categoria"), tr("Pessoa"), tr("Tipo"), tr("Status"), "Valor original", tr("Moeda"), "Valor na moeda-base", tr("Moeda-base")],
       items.map(t => [
         t.date, t.description || "", cats.find(c => c.id === t.category_id)?.name || "",
-        TYPE_LABEL[t.type], STATUS_LABEL[t.status], t.amount, t.currency || curr,
+        t.person?.name || "", TYPE_LABEL[t.type], STATUS_LABEL[t.status], t.amount, t.currency || curr,
         t.type === "transfer" ? "" : (t.base_amount ?? t.amount), t.type === "transfer" ? "" : curr,
       ]),
     );
@@ -385,7 +393,11 @@ export default function Transactions() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>{tr("Tipo")}</Label>
-                  <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+                  <Select value={form.type} onValueChange={(v) => setForm({
+                    ...form,
+                    type: v,
+                    person_id: v === "transfer" ? "" : form.person_id,
+                  })}>
                     <SelectTrigger data-testid="tx-type-select"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="income">{tr("Receita")}</SelectItem>
@@ -480,6 +492,33 @@ export default function Transactions() {
                       {accs.map(a => <SelectItem key={a.id} value={a.id}>{tr(a.name)} ({a.currency || curr})</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+                )}
+                {form.type !== "transfer" && (
+                <div className="col-span-2">
+                  <Label>{tr("Pessoa (opcional)")}</Label>
+                  <Select
+                    value={form.person_id || "__none"}
+                    onValueChange={(value) => setForm({
+                      ...form,
+                      person_id: value === "__none" ? "" : value,
+                    })}
+                  >
+                    <SelectTrigger data-testid="tx-person-select">
+                      <SelectValue placeholder={tr("Nenhuma pessoa")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">{tr("Nenhuma pessoa")}</SelectItem>
+                      {people.map(person => (
+                        <SelectItem key={person.id} value={person.id}>
+                          {person.name}{person.external ? ` · ${tr("externa")}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-[#6B7068] mt-1">
+                    {tr("Use para filtrar pagamentos e recebimentos relacionados a alguém.")}
+                  </p>
                 </div>
                 )}
                 {form.type === "transfer" && (
@@ -694,6 +733,7 @@ export default function Transactions() {
               <th className="text-left py-3 px-4">{tr("Data")}</th>
               <th className="text-left py-3 px-4">{tr("Descrição")}</th>
               <th className="text-left py-3 px-4">{tr("Categoria")}</th>
+              <th className="text-left py-3 px-4">{tr("Pessoa")}</th>
               <th className="text-left py-3 px-4">{tr("Tipo")}</th>
               <th className="text-left py-3 px-4">{tr("Status")}</th>
               <th className="text-right py-3 px-4">{tr("Valor")}</th>
@@ -702,7 +742,7 @@ export default function Transactions() {
           </thead>
           <tbody>
             {items.length === 0 && (
-              <tr><td colSpan={8} className="text-center py-12 text-[#6B7068]">{tr("Nenhum lançamento")}</td></tr>
+              <tr><td colSpan={9} className="text-center py-12 text-[#6B7068]">{tr("Nenhum lançamento")}</td></tr>
             )}
             {items.map(t => {
               const cat = cats.find(c => c.id === t.category_id);
@@ -743,6 +783,7 @@ export default function Transactions() {
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{tr(cat.name)}
                     </span> : "—"}
                   </td>
+                  <td className="py-3 px-4 whitespace-nowrap">{t.person?.name || "—"}</td>
                   <td className="py-3 px-4">{TYPE_LABEL[t.type]}</td>
                   <td className="py-3 px-4">
                     <span className={`pill pill-${t.status}`}>{STATUS_LABEL[t.status]}</span>

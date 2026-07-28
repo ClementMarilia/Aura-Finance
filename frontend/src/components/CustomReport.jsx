@@ -88,11 +88,11 @@ function Summary({ data, currency }) {
     ["Saldo filtrado", data.balance, data.balance < 0 ? "text-rose-600" : "text-[#061B4A]"],
   ];
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-3">
       {cards.map(([label, value, tone]) => (
-        <div key={label} className="card-soft p-4">
+        <div key={label} className="card-soft min-w-0 p-4">
           <div className="text-xs text-[#6B7068]">{tr(label)}</div>
-          <div className={`font-semibold mt-1 tabular-nums ${tone}`}>{fmtMoney(value, currency)}</div>
+          <div className={`money-value font-semibold mt-1 ${tone}`}>{fmtMoney(value, currency)}</div>
         </div>
       ))}
     </div>
@@ -117,7 +117,7 @@ function ParticipantSummary({ data, currency }) {
         {cards.map(([label, value, tone]) => (
           <div key={label} className="rounded-xl bg-[#F8F6EE] p-3">
             <div className="text-xs text-[#6B7068]">{tr(label)}</div>
-            <div className={`font-semibold mt-1 ${tone}`}>{fmtMoney(value, currency)}</div>
+            <div className={`money-value font-semibold mt-1 ${tone}`}>{fmtMoney(value, currency)}</div>
           </div>
         ))}
       </div>

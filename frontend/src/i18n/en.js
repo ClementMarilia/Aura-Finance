@@ -613,4 +613,11 @@ export default {
   "Uma das pessoas externas não foi encontrada": "One of the external people was not found",
   "Apenas quem cadastrou a pessoa externa pode confirmar o acerto": "Only the person who added the external person can confirm the settlement",
   "Pessoas externas não recebem notificações": "External people do not receive notifications",
+  "Pessoa": "Person",
+  "Pessoa (opcional)": "Person (optional)",
+  "Nenhuma pessoa": "No person",
+  "Use para filtrar pagamentos e recebimentos relacionados a alguém.": "Use this to filter payments and receipts related to someone.",
+  "A pessoa será vinculada a cada lançamento gerado.": "The person will be linked to every generated entry.",
+  "Selecione outra pessoa": "Select another person",
+  "Transferências entre carteiras não possuem pessoa vinculada": "Transfers between accounts cannot have a linked person",
 };

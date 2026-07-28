@@ -43,7 +43,7 @@ export default function Budget() {
       <>
       <div className="card-soft">
         <div className="text-sm text-[#6B7068]">{tr("Receita de")} {MONTHS[period.month - 1]}/{period.year}</div>
-        <div className="text-4xl font-semibold mt-1" style={{ fontFamily: "Outfit" }} data-testid="budget-income">
+        <div className="money-value text-[clamp(1.75rem,6vw,2.25rem)] font-semibold mt-1" style={{ fontFamily: "Outfit" }} data-testid="budget-income">
           {fmtMoney(b.income, curr)}
         </div>
         {b.income === 0 && (
@@ -53,16 +53,16 @@ export default function Budget() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-4">
         {b.rules.map((r, i) => (
-          <div key={i} className="card-soft" data-testid={`budget-rule-${i}`}>
+          <div key={i} className="card-soft min-w-0" data-testid={`budget-rule-${i}`}>
             <div className="flex items-center justify-between">
               <div className="text-sm text-[#6B7068]">{r.label}</div>
               <div className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: COLORS[i] }}>
                 {r.percent}%
               </div>
             </div>
-            <div className="text-2xl font-semibold mt-3" style={{ fontFamily: "Outfit" }}>
+            <div className="money-value text-2xl font-semibold mt-3" style={{ fontFamily: "Outfit" }}>
               {fmtMoney(r.amount, curr)}
             </div>
             <div className="mt-3 h-2 bg-[#F1EFE7] rounded-full overflow-hidden">

@@ -763,6 +763,7 @@ class TransactionIn(BaseModel):
     date: str  # ISO date
     amount: float
     category_id: Optional[str] = None
+    person_id: Optional[str] = None
     account_id: Optional[str] = None
     from_account_id: Optional[str] = None
     to_account_id: Optional[str] = None
@@ -2512,9 +2513,31 @@ async def list_transactions(
                     "exchange_rate_to_base": pur.get("exchange_rate_to_base"),
                 })
 
+    person_ids = {row.get("person_id") for row in rows if row.get("person_id")}
+    person_map = {}
+    if person_ids:
+        private_people, registered_people = await asyncio.gather(
+            db.people.find({
+                "id": {"$in": list(person_ids)},
+                "owner_user_id": user["id"],
+            }, {"_id": 0}).to_list(1000),
+            db.users.find({
+                "id": {"$in": list(person_ids)},
+            }, {"_id": 0, "password_hash": 0}).to_list(1000),
+        )
+        person_map.update({
+            item["id"]: private_person_summary(item)
+            for item in private_people
+        })
+        person_map.update({
+            item["id"]: public_user(item)
+            for item in registered_people
+        })
+
     currencies = await account_currency_map(user)
     base_currency = normalize_currency(user.get("currency"))
     for row in rows:
+        row["person"] = person_map.get(row.get("person_id"))
         if row.get("type") == "transfer":
             row["currency"] = normalize_currency(
                 row.get("currency"), currencies.get(row.get("from_account_id"), base_currency))
@@ -2574,6 +2597,43 @@ async def transaction_values(payload: TransactionIn, user: dict) -> dict:
     }
 
 
+async def validate_transaction_person(person_id: Optional[str], user: dict) -> Optional[dict]:
+    """Resolve a counterparty without trusting a client-provided reference."""
+    if not person_id:
+        return None
+    if person_id == user["id"]:
+        raise HTTPException(400, "Selecione outra pessoa")
+
+    person = await db.people.find_one(
+        {"id": person_id, "owner_user_id": user["id"]},
+        {"_id": 0},
+    )
+    if person:
+        return private_person_summary(person)
+
+    related_expense = await db.shared_expenses.find_one({
+        "$and": [
+            visible_shared_query(user["id"]),
+            {
+                "$or": [
+                    {"payer_id": person_id},
+                    {"participants.user_id": person_id},
+                ],
+            },
+        ],
+    }, {"_id": 0})
+    related_user = (
+        await db.users.find_one(
+            {"id": person_id},
+            {"_id": 0, "password_hash": 0},
+        )
+        if related_expense else None
+    )
+    if not related_user:
+        raise HTTPException(404, "Pessoa não encontrada")
+    return public_user(related_user)
+
+
 @api.post("/transactions")
 async def create_transaction(
     payload: TransactionIn,
@@ -2582,6 +2642,7 @@ async def create_transaction(
 ):
     async def create():
         await _validate_transfer(payload, user)
+        await validate_transaction_person(payload.person_id, user)
         values = await transaction_values(payload, user)
         doc = {"id": new_id(), "user_id": user["id"], **values,
                "created_at": now_iso()}
@@ -2598,6 +2659,8 @@ async def create_transaction(
 async def _validate_transfer(payload: TransactionIn, user):
     if payload.type != "transfer":
         return
+    if payload.person_id:
+        raise HTTPException(400, "Transferências entre carteiras não possuem pessoa vinculada")
     if not payload.from_account_id or not payload.to_account_id:
         raise HTTPException(400, "Selecione as contas de origem e destino")
     if payload.from_account_id == payload.to_account_id:
@@ -2611,6 +2674,7 @@ async def _validate_transfer(payload: TransactionIn, user):
 @api.put("/transactions/{tid}")
 async def update_transaction(tid: str, payload: TransactionIn, user=Depends(get_current_user)):
     await _validate_transfer(payload, user)
+    await validate_transaction_person(payload.person_id, user)
     values = await transaction_values(payload, user)
     res = await db.transactions.update_one(
         {"id": tid, "user_id": user["id"]},
@@ -2782,7 +2846,8 @@ async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
                 await db.transactions.insert_one({
                     "id": new_id(), "user_id": user_id, "type": r["type"],
                     "date": nxt.isoformat(), "amount": r["amount"],
-                    "category_id": r.get("category_id"), "account_id": r.get("account_id"),
+                    "category_id": r.get("category_id"), "person_id": r.get("person_id"),
+                    "account_id": r.get("account_id"),
                     "from_account_id": None, "to_account_id": None,
                     "payment_method": r.get("payment_method"),
                     "description": r.get("description", ""), "notes": "(recorrente)",
@@ -2805,6 +2870,7 @@ class RecurrenceIn(BaseModel):
     type: Literal["income", "expense"] = "expense"
     amount: float
     category_id: Optional[str] = None
+    person_id: Optional[str] = None
     account_id: Optional[str] = None
     payment_method: Optional[str] = None
     description: str = ""
@@ -2828,6 +2894,7 @@ async def create_recurrence(
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
     async def create():
+        await validate_transaction_person(payload.person_id, user)
         currencies = await account_currency_map(user)
         base_currency = normalize_currency(user.get("currency"))
         currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
@@ -2850,6 +2917,7 @@ async def create_recurrence(
 
 @api.put("/recurrences/{rid}")
 async def update_recurrence(rid: str, payload: RecurrenceIn, user=Depends(get_current_user)):
+    await validate_transaction_person(payload.person_id, user)
     currencies = await account_currency_map(user)
     base_currency = normalize_currency(user.get("currency"))
     currency = normalize_currency(payload.currency, currencies.get(payload.account_id, base_currency))
@@ -2869,7 +2937,8 @@ async def update_recurrence(rid: str, payload: RecurrenceIn, user=Depends(get_cu
         {"user_id": user["id"], "recurrence_id": rid, "status": "pending"},
         {"$set": {
             "type": payload.type, "amount": payload.amount,
-            "category_id": payload.category_id, "account_id": payload.account_id,
+            "category_id": payload.category_id, "person_id": payload.person_id,
+            "account_id": payload.account_id,
             "payment_method": payload.payment_method, "description": payload.description,
             **meta,
         }},
@@ -3303,14 +3372,24 @@ async def delete_person(person_id: str, user=Depends(get_current_user)):
     )
     if not person:
         raise HTTPException(404, "Pessoa não encontrada")
-    in_use = await db.shared_expenses.count_documents({
-        "creator_id": user["id"],
-        "$or": [
-            {"payer_id": person_id},
-            {"participants.person_id": person_id},
-        ],
-    })
-    if in_use:
+    shared_in_use, transactions_in_use, recurrences_in_use = await asyncio.gather(
+        db.shared_expenses.count_documents({
+            "creator_id": user["id"],
+            "$or": [
+                {"payer_id": person_id},
+                {"participants.person_id": person_id},
+            ],
+        }),
+        db.transactions.count_documents({
+            "user_id": user["id"],
+            "person_id": person_id,
+        }),
+        db.recurrences.count_documents({
+            "user_id": user["id"],
+            "person_id": person_id,
+        }),
+    )
+    if shared_in_use or transactions_in_use or recurrences_in_use:
         raise HTTPException(
             409,
             "Esta pessoa possui histórico financeiro e não pode ser excluída. Edite o cadastro para preservar os registros.",
@@ -4807,16 +4886,29 @@ def summarize_report_participant(
             continue
         participant_name = participant_name or party.get("name", "")
         amount = float(row.get("base_amount") or 0)
-        if row.get("type") == "shared_expense" and row.get("status") in ("pending", "overdue"):
+        row_type = row.get("type")
+        row_status = row.get("status")
+        if row_type == "shared_expense" and row_status in ("pending", "overdue"):
             if party.get("role") == "creditor":
                 totals["to_receive"] += amount
             elif party.get("role") == "debtor":
                 totals["to_pay"] += amount
-        elif row.get("type") == "settlement":
+        elif row_type == "settlement":
             if party.get("role") == "creditor":
                 totals["received"] += amount
             elif party.get("role") == "debtor":
                 totals["paid"] += amount
+        elif row_type in ("income", "expense"):
+            if row_status in ("pending", "overdue"):
+                if party.get("role") == "creditor":
+                    totals["to_receive"] += amount
+                elif party.get("role") == "debtor":
+                    totals["to_pay"] += amount
+            elif row_status in ("paid", "completed"):
+                if party.get("role") == "creditor":
+                    totals["received"] += amount
+                elif party.get("role") == "debtor":
+                    totals["paid"] += amount
     return {
         "id": participant_id,
         "name": participant_name,
@@ -4892,9 +4984,10 @@ async def filtered_report(
     user=Depends(get_current_user),
 ):
     base_currency = normalize_currency(user.get("currency"))
-    categories, accounts, transactions, installments, purchases, shared = await asyncio.gather(
+    categories, accounts, people, transactions, installments, purchases, shared = await asyncio.gather(
         db.categories.find({"user_id": user["id"]}, {"_id": 0}).to_list(1000),
         db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(1000),
+        db.people.find({"owner_user_id": user["id"]}, {"_id": 0}).to_list(1000),
         db.transactions.find({"user_id": user["id"]}, {"_id": 0}).to_list(20000),
         db.installments.find({"user_id": user["id"]}, {"_id": 0}).to_list(10000),
         db.installment_purchases.find({"user_id": user["id"]}, {"_id": 0}).to_list(5000),
@@ -4907,6 +5000,10 @@ async def filtered_report(
     purchase_map = {item["id"]: item for item in purchases}
     party_map = await shared_party_map(shared, user.get("language", "pt"))
     party_map[user["id"]] = public_user(user)
+    party_map.update({
+        item["id"]: private_person_summary(item)
+        for item in people
+    })
     today = datetime.now(timezone.utc).date().isoformat()
     rows = []
 
@@ -4938,6 +5035,9 @@ async def filtered_report(
             account_map.get(account_id, {}).get("name", "")
             for account_id in account_ids
         ]
+        person_id = item.get("person_id")
+        person = party_map.get(person_id, {"name": "Pessoa"}) if person_id else None
+        person_role = "debtor" if item_type == "income" else "creditor"
         rows.append({
             "id": item["id"],
             "type": item_type,
@@ -4953,9 +5053,15 @@ async def filtered_report(
             "direction": item_type if item_type != "transfer" else "transfer",
             "account": " → ".join(filter(None, account_labels)),
             "account_ids": account_ids,
-            "participants": [],
-            "participant_ids": [],
-            "participant_names": [],
+            "participants": [{
+                "id": person_id,
+                "name": person.get("name", "Pessoa"),
+                "role": person_role,
+                "external": person.get("external", False),
+            }] if person_id else [],
+            "participant_ids": [person_id] if person_id else [],
+            "participant_names": [person.get("name", "Pessoa")] if person_id else [],
+            "source": "recurrence" if item.get("recurrence_id") else "manual",
         })
 
     for item in installments:
@@ -5380,6 +5486,8 @@ async def startup():
         expireAfterSeconds=0,
     )
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
+    await db.transactions.create_index([("user_id", 1), ("person_id", 1)])
+    await db.recurrences.create_index([("user_id", 1), ("person_id", 1)])
     await db.people.create_index([("owner_user_id", 1), ("name", 1)])
     await db.shared_expenses.create_index("participant_ids")
     await db.shared_expenses.create_index([("creator_id", 1), ("status", 1), ("date", -1)])

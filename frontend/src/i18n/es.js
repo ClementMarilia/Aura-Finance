@@ -613,4 +613,11 @@ export default {
   "Uma das pessoas externas não foi encontrada": "No se encontró una de las personas externas",
   "Apenas quem cadastrou a pessoa externa pode confirmar o acerto": "Solo quien añadió a la persona externa puede confirmar el ajuste",
   "Pessoas externas não recebem notificações": "Las personas externas no reciben notificaciones",
+  "Pessoa": "Persona",
+  "Pessoa (opcional)": "Persona (opcional)",
+  "Nenhuma pessoa": "Ninguna persona",
+  "Use para filtrar pagamentos e recebimentos relacionados a alguém.": "Úsalo para filtrar pagos y cobros relacionados con alguien.",
+  "A pessoa será vinculada a cada lançamento gerado.": "La persona quedará vinculada a cada movimiento generado.",
+  "Selecione outra pessoa": "Selecciona otra persona",
+  "Transferências entre carteiras não possuem pessoa vinculada": "Las transferencias entre cuentas no pueden tener una persona vinculada",
 };
