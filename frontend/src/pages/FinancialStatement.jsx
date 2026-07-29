@@ -199,10 +199,6 @@ export default function FinancialStatement() {
     : filterStatementEntries(pendingEntries, filters)
       .filter(entry => !filters.status || entry.status === filters.status);
   const totals = statementTotals(paidRows);
-  const pendingTotal = nonPaidRows.reduce(
-    (sum, entry) => sum + Math.abs(Number(entry.base_amount || 0)),
-    0,
-  );
   const hasFilters = Object.values(filters).some(Boolean);
 
   if (loading) {
@@ -245,7 +241,7 @@ export default function FinancialStatement() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="card-soft p-4 sm:p-5">
           <p className="text-sm text-[#6B7068]">{tr("Saldo atual")}</p>
           <p className={`money-value mt-1 text-xl font-semibold sm:text-2xl ${currentBalance < 0 ? "text-rose-600" : "text-[#061B4A]"}`}>
@@ -262,12 +258,6 @@ export default function FinancialStatement() {
           <p className="text-sm text-[#6B7068]">{tr("Saídas no período")}</p>
           <p className="money-value mt-1 text-xl font-semibold text-rose-600 sm:text-2xl">
             {fmtMoney(totals.expense, baseCurrency)}
-          </p>
-        </div>
-        <div className="card-soft p-4 sm:p-5">
-          <p className="text-sm text-[#6B7068]">{tr("Pendentes filtrados")}</p>
-          <p className="money-value mt-1 text-xl font-semibold text-amber-700 sm:text-2xl">
-            {fmtMoney(pendingTotal, baseCurrency)}
           </p>
         </div>
       </div>

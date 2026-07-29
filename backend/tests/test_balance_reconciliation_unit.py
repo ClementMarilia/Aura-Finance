@@ -109,10 +109,12 @@ def test_balance_breakdown_explains_every_source_without_mixing_income():
     assert expense["status"] == "paid"
 
 
-def reconciliation_db(*, transactions=None, adjustments=None):
+def reconciliation_db(*, transactions=None, adjustments=None, selected_adjustment=None):
     account_adjustments = SimpleNamespace(
         find=lambda *_args, **_kwargs: AsyncListCursor(adjustments),
+        find_one=AsyncMock(return_value=selected_adjustment),
         insert_one=AsyncMock(),
+        update_one=AsyncMock(),
     )
     return SimpleNamespace(
         accounts=SimpleNamespace(
@@ -213,6 +215,78 @@ def test_reconciliation_does_not_create_a_zero_adjustment(monkeypatch):
         "currency": "EUR",
     }
     fake_db.account_adjustments.insert_one.assert_not_awaited()
+
+
+def test_reconciliation_can_be_edited_and_keeps_previous_version(monkeypatch):
+    fake_db = reconciliation_db(selected_adjustment={
+        "id": "adjustment-1",
+        "user_id": "user-1",
+        "account_id": "wallet-1",
+        "currency": "EUR",
+        "previous_balance": 23.40,
+        "actual_balance": 0,
+        "amount": -23.40,
+        "note": "Valor incorreto",
+    })
+    monkeypatch.setattr(server, "db", fake_db)
+
+    result = asyncio.run(server.update_account_reconciliation(
+        "wallet-1",
+        "adjustment-1",
+        server.AccountReconciliationUpdateIn(
+            actual_balance=10,
+            note="  Conferido novamente  ",
+        ),
+        user={"id": "user-1", "currency": "EUR"},
+    ))
+
+    assert result["difference"] == -13.40
+    assert result["actual_balance"] == 10
+    update = fake_db.account_adjustments.update_one.await_args.args[1]
+    assert update["$set"]["amount"] == -13.40
+    assert update["$set"]["actual_balance"] == 10
+    assert update["$set"]["note"] == "Conferido novamente"
+    assert update["$push"]["edit_history"]["amount"] == -23.40
+    assert update["$push"]["edit_history"]["actual_balance"] == 0
+
+
+def test_reconciliation_delete_is_soft_for_audit(monkeypatch):
+    fake_db = reconciliation_db(selected_adjustment={
+        "id": "adjustment-1",
+        "user_id": "user-1",
+        "account_id": "wallet-1",
+        "amount": -23.40,
+    })
+    monkeypatch.setattr(server, "db", fake_db)
+
+    result = asyncio.run(server.delete_account_reconciliation(
+        "wallet-1",
+        "adjustment-1",
+        user={"id": "user-1", "currency": "EUR"},
+    ))
+
+    assert result == {"ok": True}
+    query, update = fake_db.account_adjustments.update_one.await_args.args
+    assert query["user_id"] == "user-1"
+    assert query["account_id"] == "wallet-1"
+    assert query["deleted_at"] == {"$exists": False}
+    assert update["$set"]["deleted_at"]
+
+
+def test_reconciliation_edit_rejects_another_users_adjustment(monkeypatch):
+    fake_db = reconciliation_db(selected_adjustment=None)
+    monkeypatch.setattr(server, "db", fake_db)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(server.update_account_reconciliation(
+            "wallet-1",
+            "adjustment-1",
+            server.AccountReconciliationUpdateIn(actual_balance=0),
+            user={"id": "user-2", "currency": "EUR"},
+        ))
+
+    assert exc.value.status_code == 404
+    fake_db.account_adjustments.update_one.assert_not_awaited()
 
 
 def test_opening_balance_cannot_be_rewritten_after_creation(monkeypatch):
