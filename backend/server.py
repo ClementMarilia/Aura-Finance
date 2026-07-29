@@ -2369,6 +2369,9 @@ def account_balance_breakdown(
         "description": "Saldo inicial",
         "amount": components["initial_balance"],
         "currency": currency,
+        "account_id": account["id"],
+        "category_id": None,
+        "status": "paid",
         "source": "account",
     }]
 
@@ -2409,6 +2412,9 @@ def account_balance_breakdown(
                 ),
                 "amount": entry_amount,
                 "currency": currency,
+                "account_id": account["id"],
+                "category_id": transaction.get("category_id"),
+                "status": transaction.get("status", "paid"),
                 "source": "transaction",
             })
 
@@ -2422,6 +2428,9 @@ def account_balance_breakdown(
             "description": installment.get("description") or "Parcela paga",
             "amount": -amount,
             "currency": currency,
+            "account_id": account["id"],
+            "category_id": installment.get("category_id"),
+            "status": installment.get("status", "paid"),
             "source": "installment",
         })
 
@@ -2435,6 +2444,9 @@ def account_balance_breakdown(
             "description": adjustment.get("note") or "Conciliação de saldo",
             "amount": amount,
             "currency": currency,
+            "account_id": account["id"],
+            "category_id": None,
+            "status": "paid",
             "source": "reconciliation",
         })
 
@@ -2516,6 +2528,7 @@ async def load_account_balance_breakdowns(
                 continue
             installments_by_account[purchase["account_id"]].append({
                 **installment,
+                "category_id": purchase.get("category_id"),
                 "description": (
                     f"{purchase.get('description', 'Parcela')} "
                     f"({installment.get('number', '?')}/{installment.get('total', '?')})"
