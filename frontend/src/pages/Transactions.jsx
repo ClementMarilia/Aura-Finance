@@ -12,11 +12,6 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat, CreditCard, Check, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
-import {
-  PENDING_DIRECTION,
-  pendingDirectionFromType,
-  transactionTypeFromPendingDirection,
-} from "@/lib/pendingDirection";
 
 import { getMonthNames, translate as tr } from "@/i18n";
 const STATUS_LABEL = { paid: tr("Pago"), pending: tr("Pendente"), cancelled: tr("Cancelado") };
@@ -113,27 +108,6 @@ export default function Transactions() {
   const convertedAmount = numericAmount > 0 && numericRate > 0
     ? numericAmount * numericRate
     : null;
-  const selectedPerson = people.find(person => person.id === form.person_id);
-  const pendingDirection = pendingDirectionFromType(form.type);
-  const pendingSummary = form.status === "pending" && form.type !== "transfer" && numericAmount > 0
-    ? selectedPerson
-      ? pendingDirection === PENDING_DIRECTION.RECEIVE
-        ? tr("Você tem {amount} a receber de {name}.", {
-            amount: fmtMoney(numericAmount, sourceCurrency),
-            name: selectedPerson.name,
-          })
-        : tr("Você tem {amount} a pagar para {name}.", {
-            amount: fmtMoney(numericAmount, sourceCurrency),
-            name: selectedPerson.name,
-          })
-      : pendingDirection === PENDING_DIRECTION.RECEIVE
-        ? tr("Você registrará {amount} como valor pendente a receber.", {
-            amount: fmtMoney(numericAmount, sourceCurrency),
-          })
-        : tr("Você registrará {amount} como valor pendente a pagar.", {
-            amount: fmtMoney(numericAmount, sourceCurrency),
-          })
-    : "";
   const rateContext = `${form.type}|${form.currency}|${form.account_id}|${form.from_account_id}|${form.to_account_id}|${form.date}`;
   const editingRateContext = editing
     ? `${editing.type}|${editing.currency || curr}|${editing.account_id || ""}|${editing.from_account_id || ""}|${editing.to_account_id || ""}|${editing.date}`
@@ -445,29 +419,6 @@ export default function Transactions() {
                     </SelectContent>
                   </Select>
                 </div>
-                {form.status === "pending" && form.type !== "transfer" && (
-                <div className="col-span-2">
-                  <Label>{tr("Natureza da pendência")}</Label>
-                  <Select
-                    value={pendingDirection}
-                    onValueChange={(value) => setForm({
-                      ...form,
-                      type: transactionTypeFromPendingDirection(value),
-                      status: "pending",
-                      category_id: "",
-                    })}
-                  >
-                    <SelectTrigger data-testid="tx-pending-direction-select"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={PENDING_DIRECTION.PAY}>{tr("Tenho a pagar")}</SelectItem>
-                      <SelectItem value={PENDING_DIRECTION.RECEIVE}>{tr("Tenho a receber")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-[#6B7068] mt-1">
-                    {tr("Esta escolha define automaticamente o tipo como despesa ou receita.")}
-                  </p>
-                </div>
-                )}
                 <div>
                   <Label>{tr("Data")}</Label>
                   <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required data-testid="tx-date-input" />
@@ -570,14 +521,6 @@ export default function Transactions() {
                   <p className="text-xs text-[#6B7068] mt-1">
                     {tr("Use para filtrar pagamentos e recebimentos relacionados a alguém.")}
                   </p>
-                </div>
-                )}
-                {pendingSummary && (
-                <div
-                  className="col-span-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-[#6B4700]"
-                  data-testid="tx-pending-summary"
-                >
-                  {pendingSummary}
                 </div>
                 )}
                 {form.type === "transfer" && (
