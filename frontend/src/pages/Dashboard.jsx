@@ -8,7 +8,7 @@ import { getMonthNames, translate as tr } from "@/i18n";
 import {
   TrendingUp, TrendingDown, Wallet, Clock, HandCoins, CreditCard,
   Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat, PiggyBank, ChevronRight,
-  ChevronDown, X, ThumbsUp
+  ChevronDown, X, ThumbsUp, History
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -24,6 +24,8 @@ export default function Dashboard() {
   const [projection, setProjection] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [expandedInsight, setExpandedInsight] = useState(null);
+  const [showInsightHistory, setShowInsightHistory] = useState(false);
+  const [insightHistory, setInsightHistory] = useState(null);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
     try {
@@ -66,6 +68,9 @@ export default function Dashboard() {
     setInsights((items) => (items || []).filter((item) => item.id !== insightId));
     try {
       await api.post(`/insights/${encodeURIComponent(insightId)}/dismiss`);
+      setInsightHistory((items) => items?.map((entry) => (
+        entry.insight_id === insightId ? { ...entry, status: "dismissed" } : entry
+      )) ?? items);
     } catch (_) {
       setInsights(previous);
     }
@@ -78,8 +83,26 @@ export default function Dashboard() {
     )));
     try {
       await api.put(`/insights/${encodeURIComponent(insightId)}/feedback`, { useful });
+      setInsightHistory((items) => items?.map((entry) => (
+        entry.insight_id === insightId
+          ? { ...entry, status: useful ? "useful" : "not_useful" }
+          : entry
+      )) ?? items);
     } catch (_) {
       setInsights(previous);
+    }
+  };
+
+  const toggleInsightHistory = async () => {
+    const next = !showInsightHistory;
+    setShowInsightHistory(next);
+    if (next && insightHistory === null) {
+      try {
+        const response = await api.get("/insights/history", { params: { limit: 50 } });
+        setInsightHistory(response.data || []);
+      } catch (_) {
+        setInsightHistory([]);
+      }
     }
   };
 
@@ -282,13 +305,24 @@ export default function Dashboard() {
       {/* Insights + Projection */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-soft" data-testid="insights-section">
-          <div className="mb-4">
-            <h3 className="text-lg font-semibold flex items-center gap-2" style={{ fontFamily: "Outfit" }}>
-              <Lightbulb size={18} className="text-[#E5A83B]" /> {tr("Crelith Insights")}
-            </h3>
-            <p className="text-xs text-[#6B7068] mt-1">
-              {tr("Análises automáticas baseadas nos seus próprios lançamentos.")}
-            </p>
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold flex items-center gap-2" style={{ fontFamily: "Outfit" }}>
+                <Lightbulb size={18} className="text-[#E5A83B]" /> {tr("Crelith Insights")}
+              </h3>
+              <p className="text-xs text-[#6B7068] mt-1">
+                {tr("Análises automáticas baseadas nos seus próprios lançamentos.")}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleInsightHistory}
+              className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"
+              aria-expanded={showInsightHistory}
+              data-testid="insight-history-toggle"
+            >
+              <History size={14} /> {tr("Histórico")}
+            </button>
           </div>
           <div className="space-y-3">
             {insights === null && <div className="text-sm text-[#6B7068]">{tr("Calculando insights...")}</div>}
@@ -407,6 +441,44 @@ export default function Dashboard() {
                 </div>
               );
             })}
+            {showInsightHistory && (
+              <div className="mt-4 border-t border-[#E5E4E0] pt-4" data-testid="insight-history">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#6B7068]">
+                  {tr("Insights apresentados e dispensados")}
+                </div>
+                {insightHistory === null && (
+                  <div className="text-sm text-[#6B7068]">{tr("Carregando histórico...")}</div>
+                )}
+                {insightHistory?.length === 0 && (
+                  <div className="text-sm text-[#6B7068]">{tr("O histórico ainda está vazio.")}</div>
+                )}
+                <div className="space-y-2">
+                  {insightHistory?.map((entry) => {
+                    const snapshot = entry.snapshot || {};
+                    const content = formatInsight(snapshot, curr);
+                    const statusLabel = {
+                      presented: tr("Apresentado"),
+                      useful: tr("Útil"),
+                      not_useful: tr("Não útil"),
+                      dismissed: tr("Dispensado"),
+                    }[entry.status] || tr("Apresentado");
+                    return (
+                      <div key={entry.id || entry.insight_id} className="rounded-xl border border-[#E5E4E0] p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-medium text-[#1A1C1A]">{content.title}</div>
+                            <div className="mt-0.5 text-xs text-[#6B7068]">{content.message}</div>
+                          </div>
+                          <span className="rounded-full bg-[#F1EFE7] px-2 py-0.5 text-[10px] font-semibold text-[#6B7068]">
+                            {statusLabel}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

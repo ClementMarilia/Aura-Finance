@@ -190,6 +190,31 @@ export default function Goals() {
                   </button>
                 </div>
               </div>
+              {!done && (
+                <div className={`mt-3 rounded-lg px-3 py-2 text-xs ${
+                  g.behind_schedule ? "bg-amber-50 text-amber-800" : "bg-[#F8F7F3] text-[#6B7068]"
+                }`}>
+                  {g.forecast_date ? (
+                    <>
+                      <div>
+                        {tr("Previsão de conclusão: {date}", {
+                          date: fmtDate(g.forecast_date),
+                        })}
+                      </div>
+                      <div className="mt-0.5">
+                        {tr("Ritmo médio: {amount} por mês", {
+                          amount: fmtMoney(g.monthly_pace || 0, g.currency || curr),
+                        })}
+                      </div>
+                      {g.behind_schedule && (
+                        <div className="mt-1 font-medium">{tr("A previsão atual ultrapassa o prazo da meta.")}</div>
+                      )}
+                    </>
+                  ) : (
+                    <div>{tr("Faça pelo menos dois aportes para gerar uma previsão.")}</div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

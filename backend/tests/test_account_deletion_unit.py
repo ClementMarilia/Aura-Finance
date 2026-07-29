@@ -42,7 +42,9 @@ def account_deletion_db(shared_items=None, shared_count=0):
     return SimpleNamespace(
         transactions=collection(),
         accounts=collection(),
+        account_adjustments=collection(),
         goals=collection(),
+        goal_events=collection(),
         shared_expenses=collection(shared_count, shared_items),
         recurrences=collection(),
         installments=collection(),
@@ -54,6 +56,7 @@ def account_deletion_db(shared_items=None, shared_count=0):
         notifications=collection(),
         insight_dismissals=collection(),
         insight_feedback=collection(),
+        insight_history=collection(),
         files=collection(),
         websocket_tickets=collection(),
         settlement_history=collection(),
