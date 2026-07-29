@@ -766,6 +766,11 @@ class AccountReconciliationIn(BaseModel):
     note: str = Field(default="", max_length=500)
 
 
+class AccountReconciliationUpdateIn(BaseModel):
+    actual_balance: float
+    note: str = Field(default="", max_length=500)
+
+
 class TransactionIn(BaseModel):
     type: Literal["income", "expense", "transfer"]
     date: str  # ISO date
@@ -2443,6 +2448,8 @@ def account_balance_breakdown(
             "date": adjustment.get("date", ""),
             "description": adjustment.get("note") or "Conciliação de saldo",
             "amount": amount,
+            "previous_balance": adjustment.get("previous_balance"),
+            "actual_balance": adjustment.get("actual_balance"),
             "currency": currency,
             "account_id": account["id"],
             "category_id": None,
@@ -2506,6 +2513,7 @@ async def load_account_balance_breakdowns(
         db.account_adjustments.find({
             "user_id": user["id"],
             "account_id": {"$in": account_ids},
+            "deleted_at": {"$exists": False},
         }, {"_id": 0}).to_list(5000),
     )
 
@@ -2688,6 +2696,93 @@ async def reconcile_account_balance(
         {"account_id": aid, **payload.model_dump()},
         reconcile,
     )
+
+
+@api.put("/accounts/{aid}/reconciliations/{rid}")
+async def update_account_reconciliation(
+    aid: str,
+    rid: str,
+    payload: AccountReconciliationUpdateIn,
+    user=Depends(get_current_user),
+):
+    adjustment = await db.account_adjustments.find_one(
+        {
+            "id": rid,
+            "account_id": aid,
+            "user_id": user["id"],
+            "deleted_at": {"$exists": False},
+        },
+        {"_id": 0},
+    )
+    if not adjustment:
+        raise HTTPException(404, "Conciliação não encontrada")
+    if not math.isfinite(payload.actual_balance):
+        raise HTTPException(400, "Informe um saldo válido")
+
+    previous_balance = float(adjustment.get("previous_balance") or 0)
+    actual_balance = round(payload.actual_balance, 2)
+    amount = round(actual_balance - previous_balance, 2)
+    note = " ".join(payload.note.split())
+    changed_at = now_iso()
+    previous_version = {
+        "amount": round(float(adjustment.get("amount") or 0), 2),
+        "actual_balance": round(float(adjustment.get("actual_balance") or 0), 2),
+        "note": adjustment.get("note", ""),
+        "changed_at": changed_at,
+    }
+    await db.account_adjustments.update_one(
+        {
+            "id": rid,
+            "account_id": aid,
+            "user_id": user["id"],
+            "deleted_at": {"$exists": False},
+        },
+        {
+            "$set": {
+                "amount": amount,
+                "actual_balance": actual_balance,
+                "note": note,
+                "updated_at": changed_at,
+            },
+            "$push": {"edit_history": previous_version},
+        },
+    )
+    return {
+        "ok": True,
+        "adjustment_id": rid,
+        "difference": amount,
+        "actual_balance": actual_balance,
+        "currency": adjustment.get("currency", "EUR"),
+    }
+
+
+@api.delete("/accounts/{aid}/reconciliations/{rid}")
+async def delete_account_reconciliation(
+    aid: str,
+    rid: str,
+    user=Depends(get_current_user),
+):
+    adjustment = await db.account_adjustments.find_one(
+        {
+            "id": rid,
+            "account_id": aid,
+            "user_id": user["id"],
+            "deleted_at": {"$exists": False},
+        },
+        {"_id": 0},
+    )
+    if not adjustment:
+        raise HTTPException(404, "Conciliação não encontrada")
+    await db.account_adjustments.update_one(
+        {
+            "id": rid,
+            "account_id": aid,
+            "user_id": user["id"],
+            "deleted_at": {"$exists": False},
+        },
+        {"$set": {"deleted_at": now_iso()}},
+    )
+    return {"ok": True}
 
 
 @api.post("/accounts")
@@ -7057,7 +7152,11 @@ async def insights(user=Depends(get_current_user)):
             {"user_id": user["id"], "status": "paid"}, {"_id": 0},
         ).to_list(20000),
         db.account_adjustments.find(
-            {"user_id": user["id"]}, {"_id": 0},
+            {
+                "user_id": user["id"],
+                "deleted_at": {"$exists": False},
+            },
+            {"_id": 0},
         ).to_list(5000),
         db.categories.find({"user_id": user["id"]}, {"_id": 0}).to_list(500),
         db.shared_expenses.find(

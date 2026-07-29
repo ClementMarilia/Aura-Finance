@@ -52,6 +52,8 @@ export default function Wallets() {
   const [breakdown, setBreakdown] = useState(null);
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [reconcileForm, setReconcileForm] = useState({ actual_balance: "", note: "" });
+  const [editingReconciliation, setEditingReconciliation] = useState(null);
+  const [confirmReconciliationDelete, setConfirmReconciliationDelete] = useState(null);
 
   const fromAccount = list.find(a => a.id === transfer.from_account_id);
   const toAccount = list.find(a => a.id === transfer.to_account_id);
@@ -214,6 +216,7 @@ export default function Wallets() {
 
   const openReconciliation = () => {
     if (!breakdown) return;
+    setEditingReconciliation(null);
     setReconcileForm({
       actual_balance: String(breakdown.current_balance ?? ""),
       note: "",
@@ -221,9 +224,21 @@ export default function Wallets() {
     setReconcileOpen(true);
   };
 
+  const openReconciliationEdit = (entry) => {
+    setEditingReconciliation(entry);
+    setReconcileForm({
+      actual_balance: String(entry.actual_balance ?? ""),
+      note: entry.description === "Conciliação de saldo" ? "" : entry.description,
+    });
+    setReconcileOpen(true);
+  };
+
+  const reconciliationBaseBalance = editingReconciliation
+    ? editingReconciliation.previous_balance
+    : breakdown?.current_balance;
   const reconcileDifference = reconciliationDifference(
     reconcileForm.actual_balance,
-    breakdown?.current_balance,
+    reconciliationBaseBalance,
   );
 
   const reconcileBalance = async (event) => {
@@ -233,20 +248,49 @@ export default function Wallets() {
       return;
     }
     try {
-      const response = await postCreate(
-        `/accounts/${breakdown.account_id}/reconcile`,
-        {
-          actual_balance: Number(reconcileForm.actual_balance),
-          expected_balance: Number(breakdown.current_balance),
-          note: reconcileForm.note,
-        },
-      );
-      if (response.data.adjusted) {
+      const response = editingReconciliation
+        ? await api.put(
+          `/accounts/${breakdown.account_id}/reconciliations/${editingReconciliation.id}`,
+          {
+            actual_balance: Number(reconcileForm.actual_balance),
+            note: reconcileForm.note,
+          },
+        )
+        : await postCreate(
+          `/accounts/${breakdown.account_id}/reconcile`,
+          {
+            actual_balance: Number(reconcileForm.actual_balance),
+            expected_balance: Number(breakdown.current_balance),
+            note: reconcileForm.note,
+          },
+        );
+      if (editingReconciliation) {
+        toast.success(tr("Conciliação atualizada"));
+      } else if (response.data.adjusted) {
         toast.success(tr("Saldo conciliado com sucesso"));
       } else {
         toast.success(tr("O saldo já estava correto"));
       }
       setReconcileOpen(false);
+      setEditingReconciliation(null);
+      await load();
+      const refreshed = await api.get(
+        `/accounts/${breakdown.account_id}/balance-breakdown`,
+      );
+      setBreakdown(refreshed.data);
+    } catch (err) {
+      toast.error(formatApiError(err));
+    }
+  };
+
+  const deleteReconciliation = async () => {
+    if (!breakdown || !confirmReconciliationDelete) return;
+    try {
+      await api.delete(
+        `/accounts/${breakdown.account_id}/reconciliations/${confirmReconciliationDelete.id}`,
+      );
+      setConfirmReconciliationDelete(null);
+      toast.success(tr("Conciliação excluída"));
       await load();
       const refreshed = await api.get(
         `/accounts/${breakdown.account_id}/balance-breakdown`,
@@ -428,9 +472,35 @@ export default function Wallets() {
                           {entry.date ? ` · ${fmtDate(entry.date)}` : ""}
                         </p>
                       </div>
-                      <span className={`shrink-0 font-medium ${entry.amount < 0 ? "text-rose-600" : "text-[#061B4A]"}`}>
-                        {entry.amount > 0 ? "+" : ""}{fmtMoney(entry.amount, breakdown.currency)}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <span className={`mr-1 font-medium ${entry.amount < 0 ? "text-rose-600" : "text-[#061B4A]"}`}>
+                          {entry.amount > 0 ? "+" : ""}{fmtMoney(entry.amount, breakdown.currency)}
+                        </span>
+                        {entry.kind === "adjustment" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openReconciliationEdit(entry)}
+                              aria-label={tr("Editar conciliação")}
+                              title={tr("Editar conciliação")}
+                              data-testid={`wallet-reconciliation-edit-${entry.id}`}
+                              className="rounded-lg p-1.5 text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmReconciliationDelete(entry)}
+                              aria-label={tr("Excluir conciliação")}
+                              title={tr("Excluir conciliação")}
+                              data-testid={`wallet-reconciliation-delete-${entry.id}`}
+                              className="rounded-lg p-1.5 text-[#6B7068] hover:bg-rose-50 hover:text-[#D9453B]"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -452,17 +522,27 @@ export default function Wallets() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={reconcileOpen} onOpenChange={setReconcileOpen}>
+      <Dialog
+        open={reconcileOpen}
+        onOpenChange={(value) => {
+          setReconcileOpen(value);
+          if (!value) setEditingReconciliation(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "Outfit" }}>{tr("Conciliar saldo")}</DialogTitle>
+            <DialogTitle style={{ fontFamily: "Outfit" }}>
+              {tr(editingReconciliation ? "Editar conciliação" : "Conciliar saldo")}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={reconcileBalance} className="space-y-4">
             <div className="grid grid-cols-2 gap-3 rounded-xl bg-[#F1EFE7] p-3 text-sm">
               <div>
-                <p className="text-[#6B7068]">{tr("Saldo calculado")}</p>
+                <p className="text-[#6B7068]">
+                  {tr(editingReconciliation ? "Saldo anterior à conciliação" : "Saldo calculado")}
+                </p>
                 <p className="font-semibold">
-                  {fmtMoney(breakdown?.current_balance, breakdown?.currency || curr)}
+                  {fmtMoney(reconciliationBaseBalance, breakdown?.currency || curr)}
                 </p>
               </div>
               <div>
@@ -510,7 +590,7 @@ export default function Wallets() {
                 data-testid="wallet-reconcile-save"
                 className="rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
               >
-                {tr("Confirmar conciliação")}
+                {tr(editingReconciliation ? "Salvar alteração" : "Confirmar conciliação")}
               </Button>
             </DialogFooter>
           </form>
@@ -608,6 +688,15 @@ export default function Wallets() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!confirmReconciliationDelete}
+        onOpenChange={(value) => !value && setConfirmReconciliationDelete(null)}
+        title={tr("Excluir conciliação?")}
+        description={tr("A conciliação será removida e o saldo da carteira será recalculado.")}
+        onConfirm={deleteReconciliation}
+        testId="wallet-reconciliation-confirm-delete"
+      />
 
       <ConfirmDialog
         open={!!confirmDel}
