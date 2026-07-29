@@ -7,8 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Pencil, Trash2, Wallet, PiggyBank, Banknote, CreditCard, TrendingUp, ArrowLeftRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Wallet, PiggyBank, Banknote, CreditCard, TrendingUp, ArrowLeftRight, Calculator, Scale } from "lucide-react";
 import { toast } from "sonner";
+import {
+  BALANCE_COMPONENTS,
+  BALANCE_ENTRY_LABELS,
+  reconciliationDifference,
+} from "@/lib/accountBalance";
 
 import { translate as tr } from "@/i18n";
 const TYPES = [
@@ -42,6 +47,11 @@ export default function Wallets() {
   const [rateLoading, setRateLoading] = useState(false);
   const [rateError, setRateError] = useState("");
   const [currencyFilter, setCurrencyFilter] = useState("");
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [breakdown, setBreakdown] = useState(null);
+  const [reconcileOpen, setReconcileOpen] = useState(false);
+  const [reconcileForm, setReconcileForm] = useState({ actual_balance: "", note: "" });
 
   const fromAccount = list.find(a => a.id === transfer.from_account_id);
   const toAccount = list.find(a => a.id === transfer.to_account_id);
@@ -187,6 +197,66 @@ export default function Wallets() {
     load();
   };
 
+  const showBalanceBreakdown = async (account) => {
+    setBreakdownOpen(true);
+    setBreakdownLoading(true);
+    setBreakdown(null);
+    try {
+      const response = await api.get(`/accounts/${account.id}/balance-breakdown`);
+      setBreakdown(response.data);
+    } catch (err) {
+      toast.error(formatApiError(err));
+      setBreakdownOpen(false);
+    } finally {
+      setBreakdownLoading(false);
+    }
+  };
+
+  const openReconciliation = () => {
+    if (!breakdown) return;
+    setReconcileForm({
+      actual_balance: String(breakdown.current_balance ?? ""),
+      note: "",
+    });
+    setReconcileOpen(true);
+  };
+
+  const reconcileDifference = reconciliationDifference(
+    reconcileForm.actual_balance,
+    breakdown?.current_balance,
+  );
+
+  const reconcileBalance = async (event) => {
+    event.preventDefault();
+    if (!breakdown || reconcileDifference === null) {
+      toast.error(tr("Informe o saldo real da carteira"));
+      return;
+    }
+    try {
+      const response = await postCreate(
+        `/accounts/${breakdown.account_id}/reconcile`,
+        {
+          actual_balance: Number(reconcileForm.actual_balance),
+          expected_balance: Number(breakdown.current_balance),
+          note: reconcileForm.note,
+        },
+      );
+      if (response.data.adjusted) {
+        toast.success(tr("Saldo conciliado com sucesso"));
+      } else {
+        toast.success(tr("O saldo já estava correto"));
+      }
+      setReconcileOpen(false);
+      await load();
+      const refreshed = await api.get(
+        `/accounts/${breakdown.account_id}/balance-breakdown`,
+      );
+      setBreakdown(refreshed.data);
+    } catch (err) {
+      toast.error(formatApiError(err));
+    }
+  };
+
   return (
     <div className="space-y-6" data-testid="wallets-page">
       <div className="flex items-end justify-between flex-wrap gap-3">
@@ -247,6 +317,16 @@ export default function Wallets() {
                   <div className="text-xs text-[#6B7068] mt-1">≈ {fmtMoney(a.balance_base || 0, curr)} na moeda-base</div>
                 )}
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => showBalanceBreakdown(a)}
+                data-testid={`wallet-breakdown-${a.id}`}
+                className="mt-4 w-full rounded-xl border-[#D8D7D2] text-[#061B4A]"
+              >
+                <Calculator size={15} className="mr-1.5" />
+                {tr("Ver cálculo do saldo")}
+              </Button>
             </div>
           );
         })}
@@ -282,13 +362,156 @@ export default function Wallets() {
               </div>
               <div>
                 <Label>{tr("Saldo")} {editing ? "" : tr("inicial")}</Label>
-                <Input type="number" step="0.01" value={form.initial_balance} data-testid="wallet-balance-input"
+                <Input type="number" step="0.01" value={form.initial_balance} disabled={!!editing} data-testid="wallet-balance-input"
                   onChange={e => setForm({ ...form, initial_balance: e.target.value })} />
               </div>
             </div>
-            <p className="text-xs text-[#6B7068]">{tr("Atualize aqui o valor guardado/investido. Pagamentos e transferências ajustam o saldo automaticamente.")}</p>
+            <p className="text-xs text-[#6B7068]">
+              {editing
+                ? tr("O saldo inicial preserva o histórico. Para corrigir o saldo atual, use a conciliação.")
+                : tr("Informe o saldo existente no momento em que esta carteira começa a ser controlada.")}
+            </p>
             <DialogFooter>
               <Button type="submit" data-testid="wallet-save-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">{tr("Salvar")}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={breakdownOpen} onOpenChange={setBreakdownOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "Outfit" }}>
+              {tr("Cálculo do saldo")}
+              {breakdown ? ` — ${tr(breakdown.account_name)}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {breakdownLoading ? (
+            <p className="py-8 text-center text-sm text-[#6B7068]">
+              {tr("Carregando cálculo...")}
+            </p>
+          ) : breakdown ? (
+            <div className="space-y-5">
+              <div className="rounded-xl bg-[#F1EFE7] p-4">
+                <p className="text-xs uppercase tracking-wide text-[#6B7068]">
+                  {tr("Saldo calculado")}
+                </p>
+                <p className={`mt-1 text-3xl font-semibold ${breakdown.current_balance >= 0 ? "text-[#061B4A]" : "text-rose-600"}`}>
+                  {fmtMoney(breakdown.current_balance, breakdown.currency)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                {BALANCE_COMPONENTS.map(component => {
+                  const raw = Number(breakdown.components?.[component.key] || 0);
+                  const signed = component.sign * raw;
+                  return (
+                    <div key={component.key} className="flex items-center justify-between gap-4 text-sm">
+                      <span className="text-[#4F554D]">{tr(component.label)}</span>
+                      <span className={signed < 0 ? "text-rose-600" : "text-[#061B4A]"}>
+                        {signed > 0 ? "+" : ""}{fmtMoney(signed, breakdown.currency)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div>
+                <h3 className="font-semibold">{tr("Movimentos que formam o saldo")}</h3>
+                <div className="mt-2 divide-y divide-[#E5E4E0] rounded-xl border border-[#E5E4E0]">
+                  {breakdown.entries.map(entry => (
+                    <div key={`${entry.source}-${entry.id}`} className="flex items-center justify-between gap-3 p-3 text-sm">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{tr(entry.description)}</p>
+                        <p className="text-xs text-[#6B7068]">
+                          {tr(BALANCE_ENTRY_LABELS[entry.kind] || entry.kind)}
+                          {entry.date ? ` · ${fmtDate(entry.date)}` : ""}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 font-medium ${entry.amount < 0 ? "text-rose-600" : "text-[#061B4A]"}`}>
+                        {entry.amount > 0 ? "+" : ""}{fmtMoney(entry.amount, breakdown.currency)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  onClick={openReconciliation}
+                  data-testid="wallet-reconcile-open"
+                  className="rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
+                >
+                  <Scale size={16} className="mr-1.5" />
+                  {tr("Conciliar saldo")}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reconcileOpen} onOpenChange={setReconcileOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "Outfit" }}>{tr("Conciliar saldo")}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={reconcileBalance} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 rounded-xl bg-[#F1EFE7] p-3 text-sm">
+              <div>
+                <p className="text-[#6B7068]">{tr("Saldo calculado")}</p>
+                <p className="font-semibold">
+                  {fmtMoney(breakdown?.current_balance, breakdown?.currency || curr)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[#6B7068]">{tr("Ajuste necessário")}</p>
+                <p className={`font-semibold ${reconcileDifference < 0 ? "text-rose-600" : "text-[#061B4A]"}`}>
+                  {reconcileDifference === null
+                    ? "—"
+                    : `${reconcileDifference > 0 ? "+" : ""}${fmtMoney(reconcileDifference, breakdown?.currency || curr)}`}
+                </p>
+              </div>
+            </div>
+            <div>
+              <Label>{tr("Saldo real da carteira")}</Label>
+              <Input
+                type="number"
+                step="0.01"
+                required
+                value={reconcileForm.actual_balance}
+                onChange={event => setReconcileForm({
+                  ...reconcileForm,
+                  actual_balance: event.target.value,
+                })}
+                data-testid="wallet-actual-balance-input"
+              />
+            </div>
+            <div>
+              <Label>{tr("Observação (opcional)")}</Label>
+              <Input
+                maxLength={500}
+                value={reconcileForm.note}
+                onChange={event => setReconcileForm({
+                  ...reconcileForm,
+                  note: event.target.value,
+                })}
+                placeholder={tr("Ex: conferência com o extrato bancário")}
+                data-testid="wallet-reconcile-note"
+              />
+            </div>
+            <p className="text-xs text-[#6B7068]">
+              {tr("A conciliação cria um ajuste auditável. Ela não altera o saldo inicial nem conta como receita ou despesa.")}
+            </p>
+            <DialogFooter>
+              <Button
+                type="submit"
+                data-testid="wallet-reconcile-save"
+                className="rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
+              >
+                {tr("Confirmar conciliação")}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

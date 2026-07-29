@@ -218,10 +218,15 @@ def test_respects_preferences_and_returns_saved_feedback():
 def test_saves_preferences_and_useful_feedback(monkeypatch):
     users = SimpleNamespace(update_one=AsyncMock())
     insight_feedback = SimpleNamespace(update_one=AsyncMock())
+    insight_history = SimpleNamespace(update_one=AsyncMock())
     monkeypatch.setattr(
         server,
         "db",
-        SimpleNamespace(users=users, insight_feedback=insight_feedback),
+        SimpleNamespace(
+            users=users,
+            insight_feedback=insight_feedback,
+            insight_history=insight_history,
+        ),
     )
     user = {"id": "user-1"}
 
@@ -243,6 +248,7 @@ def test_saves_preferences_and_useful_feedback(monkeypatch):
     )
     users.update_one.assert_awaited_once()
     insight_feedback.update_one.assert_awaited_once()
+    insight_history.update_one.assert_awaited_once()
     assert result == {"ok": True, "useful": True}
 
 
@@ -264,3 +270,164 @@ def test_normalizes_comparison_when_previous_month_has_fewer_days():
     # treated as growth merely because it has three extra calendar days.
     assert all(row["code"] != "category_growth" for row in insights)
     assert all(row["code"] != "savings_opportunity" for row in insights)
+
+
+def month(period, amounts, *, days=30, category_id="food"):
+    return {
+        "period": period,
+        "days": days,
+        "items": [
+            {
+                **item(
+                    f"{period}-{index}",
+                    "expense",
+                    amount,
+                    f"{period}-{index + 1:02d}",
+                    category_id=category_id,
+                ),
+                "status": "paid",
+            }
+            for index, amount in enumerate(amounts)
+        ],
+    }
+
+
+def test_detects_consecutive_account_growth_and_wealth_evolution():
+    insights = build(
+        account_trends=[{
+            "account_id": "savings",
+            "name": "Reserva",
+            "currency": "EUR",
+            "values": [100, 140, 180, 240],
+        }],
+        wealth_history=[
+            {"period": "2026-04", "value": 100},
+            {"period": "2026-05", "value": 140},
+            {"period": "2026-06", "value": 180},
+            {"period": "2026-07", "value": 240},
+        ],
+    )
+
+    streak = next(row for row in insights if row["code"] == "account_growth_streak")
+    wealth = next(row for row in insights if row["code"] == "wealth_evolution")
+    assert streak["data"]["months"] == 3
+    assert streak["data"]["growth"] == 140
+    assert wealth["data"]["delta"] == 140
+
+
+def test_detects_accelerating_category_across_completed_months():
+    insights = build(historical_months=[
+        month("2026-04", [50, 50]),
+        month("2026-05", [60, 60]),
+        month("2026-06", [90, 90]),
+        month("2026-07", []),
+    ])
+
+    accelerated = next(
+        row for row in insights if row["code"] == "category_acceleration"
+    )
+    assert accelerated["data"]["values"] == [100, 120, 180]
+    assert accelerated["data"]["latest_percent"] == 50
+
+
+def test_detects_robust_category_outlier_and_high_daily_average():
+    historical = [
+        month("2026-04", [10, 11], days=30),
+        month("2026-05", [9, 10], days=31),
+        month("2026-06", [10, 12], days=30),
+        month("2026-07", [], days=28),
+    ]
+    current = [
+        {
+            **item("outlier", "expense", 80, "2026-07-20", category_id="food"),
+            "status": "paid",
+        },
+        {
+            **item("other", "expense", 40, "2026-07-21", category_id="food"),
+            "status": "paid",
+        },
+    ]
+    insights = build(
+        today=date(2026, 7, 28),
+        current_items=current,
+        historical_months=historical,
+    )
+
+    outlier = next(row for row in insights if row["code"] == "unusual_expense")
+    daily = next(
+        row for row in insights if row["code"] == "daily_spending_above_normal"
+    )
+    assert outlier["data"]["amount"] == 80
+    assert outlier["data"]["sample_size"] == 6
+    assert daily["data"]["current_daily"] > daily["data"]["normal_daily"]
+
+
+def test_reports_income_commitment_goal_forecast_and_recurring_candidate():
+    insights = build(
+        recurring_burden={
+            "average_income": 2000,
+            "fixed_total": 900,
+            "largest_id": "rent",
+            "largest_name": "Aluguel",
+            "largest_amount": 700,
+        },
+        goals=[{
+            "id": "goal-1",
+            "title": "Reserva",
+            "target_amount": 1200,
+            "current_amount": 600,
+            "progress_percent": 50,
+            "monthly_pace": 200,
+            "forecast_date": "2026-11-01",
+            "deadline": "2026-10-01",
+            "behind_schedule": True,
+        }],
+        recurring_candidates=[{
+            "key": "netflix",
+            "description": "Netflix",
+            "amount": 12.9,
+            "occurrences": 4,
+            "interval_days": 30,
+            "cadence": "monthly",
+        }],
+    )
+    codes = {row["code"] for row in insights}
+
+    assert {
+        "income_commitment",
+        "goal_progress",
+        "recurring_charge_detected",
+    } <= codes
+    goal = next(row for row in insights if row["code"] == "goal_progress")
+    assert goal["data"]["forecast_date"] == "2026-11-01"
+    assert goal["severity"] == "warning"
+
+
+def test_recurring_detection_requires_stable_amount_and_interval():
+    stable = [
+        {
+            **item(f"n-{index}", "expense", amount, day, description="Netflix"),
+            "status": "paid",
+        }
+        for index, (amount, day) in enumerate([
+            (12.9, "2026-04-01"),
+            (12.9, "2026-05-01"),
+            (13.2, "2026-05-31"),
+        ])
+    ]
+    unstable = [
+        {
+            **item(f"x-{index}", "expense", amount, day, description="Compras"),
+            "status": "paid",
+        }
+        for index, (amount, day) in enumerate([
+            (10, "2026-04-01"),
+            (80, "2026-05-01"),
+            (20, "2026-06-01"),
+        ])
+    ]
+
+    candidates = server._detect_recurring_charges(stable + unstable)
+    assert len(candidates) == 1
+    assert candidates[0]["description"] == "Netflix"
+    assert candidates[0]["cadence"] == "monthly"

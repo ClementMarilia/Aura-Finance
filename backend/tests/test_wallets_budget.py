@@ -72,9 +72,9 @@ class TestWalletsCRUD:
         for a in accounts:
             assert "_id" not in a
 
-    def test_edit_wallet_balance_and_type_investment(self, session, created):
+    def test_edit_wallet_name_and_type_preserves_opening_balance(self, session, created):
         aid = created["accounts"][0]
-        payload = {"name": "TEST_Investimento", "type": "investment", "initial_balance": 5200.0}
+        payload = {"name": "TEST_Investimento", "type": "investment", "initial_balance": 5000.0}
         r = session.put(f"{API}/accounts/{aid}", json=payload)
         assert r.status_code == 200, r.text
         # GET to verify persistence
@@ -82,7 +82,7 @@ class TestWalletsCRUD:
         a = next(x for x in r.json() if x["id"] == aid)
         assert a["name"] == "TEST_Investimento"
         assert a["type"] == "investment"
-        assert a["balance"] == 5200.0
+        assert a["balance"] == 5000.0
 
     def test_wallet_used_to_pay_expense_decreases_balance(self, session, created):
         aid = created["accounts"][0]
@@ -94,10 +94,10 @@ class TestWalletsCRUD:
         assert r.status_code == 200, r.text
         tid = r.json()["id"]
         created["transactions"].append(tid)
-        # 5200 - 200 = 5000
+        # 5000 - 200 = 4800
         r = session.get(f"{API}/accounts")
         a = next(x for x in r.json() if x["id"] == aid)
-        assert a["balance"] == 5000.0, f"expected 5000 got {a['balance']}"
+        assert a["balance"] == 4800.0, f"expected 4800 got {a['balance']}"
 
     def test_income_increases_balance(self, session, created):
         aid = created["accounts"][0]
@@ -110,7 +110,7 @@ class TestWalletsCRUD:
         created["transactions"].append(r.json()["id"])
         r = session.get(f"{API}/accounts")
         a = next(x for x in r.json() if x["id"] == aid)
-        assert a["balance"] == 5050.0
+        assert a["balance"] == 4850.0
 
     def test_delete_wallet(self, session, created):
         # Create a temp wallet to delete cleanly

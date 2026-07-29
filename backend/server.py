@@ -15,6 +15,8 @@ import requests
 import bcrypt
 import jwt
 import unicodedata
+import statistics
+import math
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Literal
 from fastapi import (
@@ -758,6 +760,12 @@ class AccountIn(BaseModel):
     currency: Optional[str] = None
 
 
+class AccountReconciliationIn(BaseModel):
+    actual_balance: float
+    expected_balance: float
+    note: str = Field(default="", max_length=500)
+
+
 class TransactionIn(BaseModel):
     type: Literal["income", "expense", "transfer"]
     date: str  # ISO date
@@ -1408,6 +1416,7 @@ FINANCIAL_DELETION_BLOCKERS = (
     "expenses",
     "transfers",
     "wallets",
+    "balance_adjustments",
     "goals",
     "shared_expenses",
     "pending_settlements",
@@ -1431,6 +1440,7 @@ async def user_financial_impact(user_id: str) -> dict[str, int]:
         expenses,
         transfers,
         wallets,
+        balance_adjustments,
         goals,
         shared_expenses,
         recurrences,
@@ -1449,6 +1459,7 @@ async def user_financial_impact(user_id: str) -> dict[str, int]:
                 {"initial_balance": {"$lt": 0}},
             ],
         }),
+        db.account_adjustments.count_documents({"user_id": user_id}),
         db.goals.count_documents({"user_id": user_id}),
         db.shared_expenses.count_documents(shared_query),
         db.recurrences.count_documents({"user_id": user_id}),
@@ -1475,6 +1486,7 @@ async def user_financial_impact(user_id: str) -> dict[str, int]:
         "expenses": expenses,
         "transfers": transfers,
         "wallets": wallets,
+        "balance_adjustments": balance_adjustments,
         "goals": goals,
         "shared_expenses": shared_expenses,
         "pending_settlements": pending_settlements,
@@ -1691,8 +1703,10 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.people.delete_many({"owner_user_id": user_id})
     await db.categories.delete_many({"user_id": user_id})
     await db.accounts.delete_many({"user_id": user_id})
+    await db.account_adjustments.delete_many({"user_id": user_id})
     await db.transactions.delete_many({"user_id": user_id})
     await db.goals.delete_many({"user_id": user_id})
+    await db.goal_events.delete_many({"user_id": user_id})
     await db.recurrences.delete_many({"user_id": user_id})
     await db.installments.delete_many({"user_id": user_id})
     await db.installment_purchases.delete_many({"user_id": user_id})
@@ -1700,6 +1714,7 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.notifications.delete_many({"user_id": user_id})
     await db.insight_dismissals.delete_many({"user_id": user_id})
     await db.insight_feedback.delete_many({"user_id": user_id})
+    await db.insight_history.delete_many({"user_id": user_id})
     await db.files.delete_many({"user_id": user_id})
     await db.websocket_tickets.delete_many({"user_id": user_id})
     await db.password_reset_tokens.delete_many({"user_id": user_id})
@@ -2035,9 +2050,11 @@ async def delete_admin_user(
         # and history are never cascade-deleted by this administrative action.
         await db.categories.delete_many({"user_id": user_id})
         await db.accounts.delete_many({"user_id": user_id})
+        await db.account_adjustments.delete_many({"user_id": user_id})
         await db.notifications.delete_many({"user_id": user_id})
         await db.insight_dismissals.delete_many({"user_id": user_id})
         await db.insight_feedback.delete_many({"user_id": user_id})
+        await db.insight_history.delete_many({"user_id": user_id})
         await db.files.delete_many({"user_id": user_id})
         await db.websocket_tickets.delete_many({"user_id": user_id})
         await db.password_reset_tokens.delete_many({"user_id": user_id})
@@ -2328,49 +2345,233 @@ def currency_for_account(
     return currency
 
 
+def account_balance_breakdown(
+    account: dict,
+    transactions: List[dict],
+    installments: List[dict],
+    adjustments: List[dict],
+) -> dict:
+    """Explain an account balance without classifying reconciliation as income."""
+    currency = account.get("currency", "EUR")
+    components = {
+        "initial_balance": round(float(account.get("initial_balance") or 0), 2),
+        "income": 0.0,
+        "expense": 0.0,
+        "transfers_in": 0.0,
+        "transfers_out": 0.0,
+        "installments": 0.0,
+        "adjustments": 0.0,
+    }
+    entries = [{
+        "id": f"initial:{account['id']}",
+        "kind": "initial_balance",
+        "date": account.get("created_at", "")[:10],
+        "description": "Saldo inicial",
+        "amount": components["initial_balance"],
+        "currency": currency,
+        "source": "account",
+    }]
+
+    for transaction in transactions:
+        transaction_type = transaction.get("type")
+        amount = round(float(transaction.get("amount") or 0), 2)
+        entry_amount = 0.0
+        kind = None
+        if transaction_type == "income" and transaction.get("account_id") == account["id"]:
+            components["income"] += amount
+            entry_amount = amount
+            kind = "income"
+        elif transaction_type == "expense" and transaction.get("account_id") == account["id"]:
+            components["expense"] += amount
+            entry_amount = -amount
+            kind = "expense"
+        elif transaction_type == "transfer":
+            if transaction.get("from_account_id") == account["id"]:
+                components["transfers_out"] += amount
+                entry_amount = -amount
+                kind = "transfer_out"
+            elif transaction.get("to_account_id") == account["id"]:
+                received = round(
+                    float(transaction.get("target_amount", amount) or 0),
+                    2,
+                )
+                components["transfers_in"] += received
+                entry_amount = received
+                kind = "transfer_in"
+        if kind:
+            entries.append({
+                "id": transaction.get("id"),
+                "kind": kind,
+                "date": transaction.get("date", ""),
+                "description": (
+                    transaction.get("description")
+                    or "Lançamento sem descrição"
+                ),
+                "amount": entry_amount,
+                "currency": currency,
+                "source": "transaction",
+            })
+
+    for installment in installments:
+        amount = round(float(installment.get("amount") or 0), 2)
+        components["installments"] += amount
+        entries.append({
+            "id": installment.get("id"),
+            "kind": "installment",
+            "date": installment.get("due_date", ""),
+            "description": installment.get("description") or "Parcela paga",
+            "amount": -amount,
+            "currency": currency,
+            "source": "installment",
+        })
+
+    for adjustment in adjustments:
+        amount = round(float(adjustment.get("amount") or 0), 2)
+        components["adjustments"] += amount
+        entries.append({
+            "id": adjustment.get("id"),
+            "kind": "adjustment",
+            "date": adjustment.get("date", ""),
+            "description": adjustment.get("note") or "Conciliação de saldo",
+            "amount": amount,
+            "currency": currency,
+            "source": "reconciliation",
+        })
+
+    components = {
+        key: round(value, 2)
+        for key, value in components.items()
+    }
+    current_balance = round(
+        components["initial_balance"]
+        + components["income"]
+        - components["expense"]
+        + components["transfers_in"]
+        - components["transfers_out"]
+        - components["installments"]
+        + components["adjustments"],
+        2,
+    )
+    entries.sort(
+        key=lambda item: (
+            item.get("date", ""),
+            item["kind"] != "initial_balance",
+        ),
+        reverse=True,
+    )
+    return {
+        "account_id": account["id"],
+        "account_name": account.get("name", "Carteira"),
+        "currency": currency,
+        "components": components,
+        "entries": entries,
+        "current_balance": current_balance,
+    }
+
+
+async def load_account_balance_breakdowns(
+    accounts: List[dict],
+    user: dict,
+) -> List[dict]:
+    if not accounts:
+        return []
+    account_ids = [account["id"] for account in accounts]
+    account_id_set = set(account_ids)
+    transactions, paid_installments, adjustments = await asyncio.gather(
+        db.transactions.find({
+            "user_id": user["id"],
+            "status": "paid",
+            "$or": [
+                {"account_id": {"$in": account_ids}},
+                {"from_account_id": {"$in": account_ids}},
+                {"to_account_id": {"$in": account_ids}},
+            ],
+        }, {"_id": 0}).to_list(20000),
+        db.installments.find({
+            "user_id": user["id"],
+            "status": "paid",
+        }, {"_id": 0}).to_list(5000),
+        db.account_adjustments.find({
+            "user_id": user["id"],
+            "account_id": {"$in": account_ids},
+        }, {"_id": 0}).to_list(5000),
+    )
+
+    installments_by_account = defaultdict(list)
+    if paid_installments:
+        purchase_ids = list({
+            item["purchase_id"]
+            for item in paid_installments
+            if item.get("purchase_id")
+        })
+        purchases = await db.installment_purchases.find({
+            "id": {"$in": purchase_ids},
+            "user_id": user["id"],
+            "account_id": {"$in": account_ids},
+        }, {"_id": 0}).to_list(500)
+        purchases_by_id = {item["id"]: item for item in purchases}
+        for installment in paid_installments:
+            purchase = purchases_by_id.get(installment.get("purchase_id"))
+            if not purchase:
+                continue
+            installments_by_account[purchase["account_id"]].append({
+                **installment,
+                "description": (
+                    f"{purchase.get('description', 'Parcela')} "
+                    f"({installment.get('number', '?')}/{installment.get('total', '?')})"
+                ),
+            })
+
+    transactions_by_account = defaultdict(list)
+    seen_transactions = defaultdict(set)
+    for index, transaction in enumerate(transactions):
+        transaction_token = transaction.get("id") or f"row:{index}"
+        for account_field in ("account_id", "from_account_id", "to_account_id"):
+            account_id = transaction.get(account_field)
+            if (
+                account_id in account_id_set
+                and transaction_token not in seen_transactions[account_id]
+            ):
+                transactions_by_account[account_id].append(transaction)
+                seen_transactions[account_id].add(transaction_token)
+    adjustments_by_account = defaultdict(list)
+    for adjustment in adjustments:
+        adjustments_by_account[adjustment.get("account_id")].append(adjustment)
+
+    return [
+        account_balance_breakdown(
+            account,
+            transactions_by_account[account["id"]],
+            installments_by_account[account["id"]],
+            adjustments_by_account[account["id"]],
+        )
+        for account in accounts
+    ]
+
+
+async def load_account_balance_breakdown(account: dict, user: dict) -> dict:
+    return (await load_account_balance_breakdowns([account], user))[0]
+
+
 @api.get("/accounts")
 async def list_accounts(
     currency: Optional[str] = None,
     user=Depends(get_current_user),
 ):
     accounts = await db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
-    txs = await db.transactions.find(
-        {"user_id": user["id"], "status": "paid"}, {"_id": 0},
-    ).to_list(20000)
     base_currency = normalize_currency(user.get("currency"))
     for a in accounts:
         a["currency"] = normalize_currency(a.get("currency"), base_currency)
     if currency:
         selected_currency = normalize_currency(currency)
         accounts = [a for a in accounts if a["currency"] == selected_currency]
-    bal = {a["id"]: a.get("initial_balance", 0.0) for a in accounts}
-    for t in txs:
-        if t["type"] == "income" and t.get("account_id") in bal:
-            bal[t["account_id"]] += t["amount"]
-        elif t["type"] == "expense" and t.get("account_id") in bal:
-            bal[t["account_id"]] -= t["amount"]
-        elif t["type"] == "transfer":
-            if t.get("from_account_id") in bal:
-                bal[t["from_account_id"]] -= t["amount"]
-            if t.get("to_account_id") in bal:
-                bal[t["to_account_id"]] += t.get("target_amount", t["amount"])
-    # Paid installments reduce the linked wallet balance (payment confirmed).
-    # Pending parcels do NOT affect balance until marked as paid.
-    paid_inst = await db.installments.find(
-        {"user_id": user["id"], "status": "paid"},
-        {"_id": 0, "purchase_id": 1, "amount": 1},
-    ).to_list(5000)
-    if paid_inst:
-        pur_ids = list({i["purchase_id"] for i in paid_inst})
-        purchases = await db.installment_purchases.find(
-            {"id": {"$in": pur_ids}}, {"_id": 0, "id": 1, "account_id": 1}).to_list(500)
-        acc_by_pur = {p["id"]: p.get("account_id") for p in purchases}
-        for i in paid_inst:
-            aid = acc_by_pur.get(i["purchase_id"])
-            if aid in bal:
-                bal[aid] -= i["amount"]
+    breakdowns = await load_account_balance_breakdowns(accounts, user)
+    breakdown_by_account = {
+        item["account_id"]: item
+        for item in breakdowns
+    }
     for a in accounts:
-        a["balance"] = round(bal.get(a["id"], 0.0), 2)
+        a["balance"] = breakdown_by_account[a["id"]]["current_balance"]
         if a["currency"] == base_currency:
             a["balance_base"] = a["balance"]
         else:
@@ -2385,6 +2586,95 @@ async def list_accounts(
                 a["balance_base_unavailable"] = True
         a["base_currency"] = base_currency
     return accounts
+
+
+@api.get("/accounts/{aid}/balance-breakdown")
+async def get_account_balance_breakdown(
+    aid: str,
+    user=Depends(get_current_user),
+):
+    account = await db.accounts.find_one(
+        {"id": aid, "user_id": user["id"]},
+        {"_id": 0},
+    )
+    if not account:
+        raise HTTPException(404, "Carteira não encontrada")
+    account["currency"] = normalize_currency(
+        account.get("currency"),
+        user.get("currency", "EUR"),
+    )
+    return await load_account_balance_breakdown(account, user)
+
+
+@api.post("/accounts/{aid}/reconcile")
+async def reconcile_account_balance(
+    aid: str,
+    payload: AccountReconciliationIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def reconcile():
+        account = await db.accounts.find_one(
+            {"id": aid, "user_id": user["id"]},
+            {"_id": 0},
+        )
+        if not account:
+            raise HTTPException(404, "Carteira não encontrada")
+        if not all(math.isfinite(value) for value in (
+            payload.actual_balance,
+            payload.expected_balance,
+        )):
+            raise HTTPException(400, "Informe um saldo válido")
+        account["currency"] = normalize_currency(
+            account.get("currency"),
+            user.get("currency", "EUR"),
+        )
+        breakdown = await load_account_balance_breakdown(account, user)
+        current_balance = breakdown["current_balance"]
+        if abs(current_balance - payload.expected_balance) >= 0.01:
+            raise HTTPException(
+                409,
+                "O saldo mudou enquanto a conciliação estava aberta. Revise o cálculo e tente novamente.",
+            )
+        difference = round(payload.actual_balance - current_balance, 2)
+        if abs(difference) < 0.01:
+            return {
+                "ok": True,
+                "adjusted": False,
+                "difference": 0.0,
+                "current_balance": current_balance,
+                "currency": account["currency"],
+            }
+        adjustment = {
+            "id": new_id(),
+            "user_id": user["id"],
+            "account_id": aid,
+            "date": now_iso()[:10],
+            "amount": difference,
+            "currency": account["currency"],
+            "previous_balance": current_balance,
+            "actual_balance": round(payload.actual_balance, 2),
+            "note": " ".join(payload.note.split()),
+            "created_at": now_iso(),
+        }
+        await db.account_adjustments.insert_one(adjustment)
+        return {
+            "ok": True,
+            "adjusted": True,
+            "adjustment_id": adjustment["id"],
+            "difference": difference,
+            "previous_balance": current_balance,
+            "current_balance": adjustment["actual_balance"],
+            "currency": account["currency"],
+        }
+
+    return await run_idempotent_create(
+        "reconcile_account",
+        user["id"],
+        idempotency_key,
+        {"account_id": aid, **payload.model_dump()},
+        reconcile,
+    )
 
 
 @api.post("/accounts")
@@ -2416,6 +2706,14 @@ async def update_account(aid: str, payload: AccountIn, user=Depends(get_current_
         raise HTTPException(404, "Carteira não encontrada")
     current_currency = normalize_currency(current.get("currency"), user.get("currency", "EUR"))
     new_currency = normalize_currency(payload.currency, current_currency)
+    if round(payload.initial_balance, 2) != round(
+        float(current.get("initial_balance") or 0),
+        2,
+    ):
+        raise HTTPException(
+            400,
+            "O saldo inicial não pode ser alterado depois da criação. Use a conciliação de saldo.",
+        )
     if new_currency != current_currency:
         has_activity = await db.transactions.count_documents({
             "user_id": user["id"],
@@ -5631,6 +5929,12 @@ def build_crelith_insights(
     preferences: Optional[dict] = None,
     feedback: Optional[dict] = None,
     comparable_days: Optional[int] = None,
+    historical_months: Optional[List[dict]] = None,
+    account_trends: Optional[List[dict]] = None,
+    wealth_history: Optional[List[dict]] = None,
+    goals: Optional[List[dict]] = None,
+    recurring_candidates: Optional[List[dict]] = None,
+    recurring_burden: Optional[dict] = None,
 ) -> List[dict]:
     """Build deterministic, auditable insights without external AI services."""
     hidden_ids = hidden_ids or set()
@@ -5643,6 +5947,12 @@ def build_crelith_insights(
     days_in_month = calendar.monthrange(today.year, today.month)[1]
     days_remaining = max(days_in_month - today.day + 1, 1)
     previous_period_days = max(comparable_days or today.day, 1)
+    historical_months = historical_months or []
+    account_trends = account_trends or []
+    wealth_history = wealth_history or []
+    goals = goals or []
+    recurring_candidates = recurring_candidates or []
+    recurring_burden = recurring_burden or {}
 
     def add(
         code: str,
@@ -5994,6 +6304,312 @@ def build_crelith_insights(
             action_path=f"/lancamentos?type=expense&year={today.year}&month={today.month}",
         )
 
+    # Phase 3: repeated trends require at least three valid historical periods.
+    for account in account_trends:
+        values = [round(float(value), 2) for value in account.get("values", [])]
+        if len(values) < 4:
+            continue
+        deltas = [round(values[index] - values[index - 1], 2)
+                  for index in range(1, len(values))]
+        streak = 0
+        for delta in reversed(deltas):
+            if delta > 0:
+                streak += 1
+            else:
+                break
+        if streak < 3:
+            continue
+        growth = round(values[-1] - values[-streak - 1], 2)
+        if growth < 10:
+            continue
+        add(
+            "account_growth_streak",
+            "balance",
+            "good",
+            "Conta crescendo",
+            "O saldo desta conta cresceu por vários meses consecutivos.",
+            discriminator=str(account.get("account_id") or ""),
+            data={
+                "account_id": account.get("account_id"),
+                "account": account.get("name") or "Conta",
+                "months": streak,
+                "growth": growth,
+                "currency": account.get("currency", currency),
+                "values": values[-(streak + 1):],
+            },
+            evidence=[
+                {"key": "consecutive_months", "value": streak, "format": "months"},
+                {"key": "account_growth", "value": growth, "format": "money"},
+                {"key": "starting_balance", "value": values[-streak - 1], "format": "money"},
+                {"key": "ending_balance", "value": values[-1], "format": "money"},
+            ],
+            action_path="/carteiras",
+        )
+
+    # Accelerating categories grow in two consecutive month-over-month steps,
+    # and the latest percentage increase must be stronger than the previous one.
+    category_months = defaultdict(list)
+    for month in historical_months[:-1][-3:]:
+        totals = defaultdict(float)
+        counts = defaultdict(int)
+        for row in month.get("items", []):
+            if (
+                row.get("type") == "expense"
+                and row.get("status") != "pending"
+                and row.get("category_id")
+            ):
+                totals[row["category_id"]] += float(row.get("base_amount") or 0)
+                counts[row["category_id"]] += 1
+        for category_id in set(totals) | set(category_months):
+            category_months[category_id].append(
+                (round(totals.get(category_id, 0), 2), counts.get(category_id, 0))
+            )
+    accelerated = []
+    for category_id, points in category_months.items():
+        if len(points) < 3:
+            continue
+        (first, first_count), (second, second_count), (latest, latest_count) = points[-3:]
+        if min(first, second) < 20 or min(first_count, second_count, latest_count) < 1:
+            continue
+        first_rate = ((second - first) / first) * 100
+        latest_rate = ((latest - second) / second) * 100
+        if first_rate >= 10 and latest_rate >= 20 and latest_rate > first_rate + 5 and latest - second >= 10:
+            accelerated.append((latest_rate, category_id, first, second, latest, first_rate))
+    if accelerated:
+        latest_rate, category_id, first, second, latest, first_rate = max(accelerated)
+        category_name = category_map.get(category_id, "Outros")
+        add(
+            "category_acceleration",
+            "spending",
+            "warning",
+            "Categoria acelerando",
+            "Esta categoria aumentou em meses consecutivos e ganhou velocidade.",
+            discriminator=category_id,
+            data={
+                "category_id": category_id,
+                "category": category_name,
+                "previous_percent": round(first_rate, 1),
+                "latest_percent": round(latest_rate, 1),
+                "values": [first, second, latest],
+            },
+            evidence=[
+                {"key": "three_month_values", "value": [first, second, latest], "format": "money_list"},
+                {"key": "previous_growth", "value": round(first_rate, 1), "format": "percent"},
+                {"key": "latest_growth", "value": round(latest_rate, 1), "format": "percent"},
+            ],
+            action_path=f"/lancamentos?type=expense&category_id={category_id}",
+        )
+
+    # Outliers use the median absolute deviation of the same category. This is
+    # intentionally robust against one old extreme expense skewing the baseline.
+    history_by_category = defaultdict(list)
+    for month in historical_months[:-1]:
+        for row in month.get("items", []):
+            if (
+                row.get("type") == "expense"
+                and row.get("status") != "pending"
+                and row.get("category_id")
+            ):
+                history_by_category[row["category_id"]].append(
+                    float(row.get("base_amount") or 0)
+                )
+    unusual = []
+    for row in current_items:
+        category_id = row.get("category_id")
+        sample = history_by_category.get(category_id, [])
+        amount_value = float(row.get("base_amount") or 0)
+        if row.get("type") != "expense" or row.get("status") == "pending" or len(sample) < 5:
+            continue
+        median = statistics.median(sample)
+        deviations = [abs(value - median) for value in sample]
+        mad = statistics.median(deviations)
+        threshold = max(median * 2, median + 3 * mad, median + 20)
+        if amount_value >= threshold:
+            unusual.append((amount_value - median, row, median, threshold))
+    if unusual:
+        _, row, median, threshold = max(unusual)
+        category_name = category_map.get(row.get("category_id"), "Outros")
+        add(
+            "unusual_expense",
+            "anomalies",
+            "warning",
+            "Gasto fora do habitual",
+            "Um lançamento ficou bem acima do padrão desta categoria.",
+            discriminator=str(row.get("id") or ""),
+            data={
+                "transaction_id": row.get("id"),
+                "category": category_name,
+                "description": row.get("description") or category_name,
+                "amount": round(float(row.get("base_amount") or 0), 2),
+                "median": round(median, 2),
+                "threshold": round(threshold, 2),
+                "sample_size": len(history_by_category[row.get("category_id")]),
+            },
+            evidence=[
+                {"key": "transaction_amount", "value": round(float(row.get("base_amount") or 0), 2), "format": "money"},
+                {"key": "category_median", "value": round(median, 2), "format": "money"},
+                {"key": "historical_entries", "value": len(history_by_category[row.get("category_id")]), "format": "number"},
+            ],
+            action_path=f"/lancamentos?year={today.year}&month={today.month}",
+        )
+
+    full_previous_months = [
+        month for month in historical_months[:-1]
+        if month.get("days", 0) >= 28
+    ][-3:]
+    previous_daily_values = []
+    for month in full_previous_months:
+        expense = sum(
+            float(row.get("base_amount") or 0)
+            for row in month.get("items", [])
+            if row.get("type") == "expense" and row.get("status") != "pending"
+        )
+        previous_daily_values.append(expense / max(int(month.get("days") or 1), 1))
+    current_daily = current_expense / max(today.day, 1)
+    if len(previous_daily_values) >= 3:
+        normal_daily = statistics.median(previous_daily_values)
+        change = ((current_daily - normal_daily) / normal_daily * 100) if normal_daily > 0 else 0
+        if change >= 20 and current_daily - normal_daily >= 2:
+            add(
+                "daily_spending_above_normal",
+                "spending",
+                "warning",
+                "Média diária acima do normal",
+                "Seu ritmo diário de despesas está acima dos últimos meses.",
+                data={
+                    "current_daily": round(current_daily, 2),
+                    "normal_daily": round(normal_daily, 2),
+                    "percent": round(change, 1),
+                    "months": len(previous_daily_values),
+                },
+                evidence=[
+                    {"key": "current_daily_average", "value": round(current_daily, 2), "format": "money"},
+                    {"key": "historical_daily_average", "value": round(normal_daily, 2), "format": "money"},
+                    {"key": "variation", "value": round(change, 1), "format": "percent"},
+                    {"key": "months_analyzed", "value": len(previous_daily_values), "format": "months"},
+                ],
+                action_path=f"/lancamentos?type=expense&year={today.year}&month={today.month}",
+            )
+
+    average_income = float(recurring_burden.get("average_income") or 0)
+    fixed_total = float(recurring_burden.get("fixed_total") or 0)
+    largest_fixed = float(recurring_burden.get("largest_amount") or 0)
+    if average_income > 0 and fixed_total > 0:
+        fixed_share = round(fixed_total / average_income * 100, 1)
+        largest_share = round(largest_fixed / average_income * 100, 1)
+        severity = "warning" if fixed_share >= 50 or largest_share >= 35 else "info"
+        if fixed_share >= 30 or largest_share >= 25:
+            add(
+                "income_commitment",
+                "spending",
+                severity,
+                "Renda comprometida",
+                "Uma parte relevante da sua renda média está comprometida com despesas recorrentes.",
+                discriminator=str(recurring_burden.get("largest_id") or ""),
+                data={
+                    "average_income": round(average_income, 2),
+                    "fixed_total": round(fixed_total, 2),
+                    "fixed_share": fixed_share,
+                    "largest_name": recurring_burden.get("largest_name") or "Maior despesa",
+                    "largest_amount": round(largest_fixed, 2),
+                    "largest_share": largest_share,
+                },
+                evidence=[
+                    {"key": "average_monthly_income", "value": round(average_income, 2), "format": "money"},
+                    {"key": "recurring_expenses", "value": round(fixed_total, 2), "format": "money"},
+                    {"key": "income_committed", "value": fixed_share, "format": "percent"},
+                ],
+                action_path="/recorrencias",
+            )
+
+    if len(wealth_history) >= 4:
+        start_wealth = float(wealth_history[-4].get("value") or 0)
+        end_wealth = float(wealth_history[-1].get("value") or 0)
+        delta = round(end_wealth - start_wealth, 2)
+        if abs(delta) >= 20:
+            add(
+                "wealth_evolution",
+                "balance",
+                "good" if delta > 0 else "warning",
+                "Evolução patrimonial",
+                "Seu patrimônio consolidado mudou nos últimos três meses.",
+                data={
+                    "start": round(start_wealth, 2),
+                    "current": round(end_wealth, 2),
+                    "delta": delta,
+                    "direction": "up" if delta > 0 else "down",
+                    "series": wealth_history[-6:],
+                },
+                evidence=[
+                    {"key": "starting_wealth", "value": round(start_wealth, 2), "format": "money"},
+                    {"key": "current_wealth", "value": round(end_wealth, 2), "format": "money"},
+                    {"key": "wealth_change", "value": delta, "format": "money"},
+                ],
+                action_path="/carteiras",
+            )
+
+    incomplete_goals = [
+        goal for goal in goals
+        if float(goal.get("target_amount") or 0) > float(goal.get("current_amount") or 0)
+    ]
+    if incomplete_goals:
+        ranked_goals = sorted(
+            incomplete_goals,
+            key=lambda goal: (
+                goal.get("deadline") or "9999-12-31",
+                -float(goal.get("progress_percent") or 0),
+            ),
+        )
+        goal = ranked_goals[0]
+        forecast_date = goal.get("forecast_date")
+        add(
+            "goal_progress",
+            "economy",
+            "warning" if goal.get("behind_schedule") else "info",
+            "Acompanhamento de meta",
+            "A meta prioritária ganhou uma nova projeção de progresso.",
+            discriminator=str(goal.get("id") or ""),
+            data={
+                "goal_id": goal.get("id"),
+                "title": goal.get("title") or "Meta",
+                "current_amount": round(float(goal.get("current_amount") or 0), 2),
+                "target_amount": round(float(goal.get("target_amount") or 0), 2),
+                "progress_percent": round(float(goal.get("progress_percent") or 0), 1),
+                "deadline": goal.get("deadline"),
+                "forecast_date": forecast_date,
+                "monthly_pace": round(float(goal.get("monthly_pace") or 0), 2),
+                "behind_schedule": bool(goal.get("behind_schedule")),
+            },
+            evidence=[
+                {"key": "goal_progress", "value": round(float(goal.get("progress_percent") or 0), 1), "format": "percent"},
+                {"key": "amount_remaining", "value": round(float(goal.get("target_amount") or 0) - float(goal.get("current_amount") or 0), 2), "format": "money"},
+                {"key": "monthly_contribution_pace", "value": round(float(goal.get("monthly_pace") or 0), 2), "format": "money"},
+                *([{"key": "forecast_completion", "value": forecast_date, "format": "date"}] if forecast_date else []),
+            ],
+            action_path="/metas",
+        )
+
+    if recurring_candidates:
+        candidate = max(
+            recurring_candidates,
+            key=lambda row: (int(row.get("occurrences") or 0), float(row.get("amount") or 0)),
+        )
+        add(
+            "recurring_charge_detected",
+            "recurring",
+            "info",
+            "Possível cobrança recorrente",
+            "Encontramos uma cobrança repetida que ainda não está cadastrada como recorrência.",
+            discriminator=str(candidate.get("key") or ""),
+            data=candidate,
+            evidence=[
+                {"key": "occurrences", "value": candidate.get("occurrences"), "format": "number"},
+                {"key": "typical_amount", "value": candidate.get("amount"), "format": "money"},
+                {"key": "average_interval", "value": candidate.get("interval_days"), "format": "days"},
+            ],
+            action_path="/recorrencias",
+        )
+
     realized_items = [
         item for item in current_items if item.get("status") != "pending"
     ]
@@ -6054,7 +6670,7 @@ def build_crelith_insights(
         INSIGHT_PRIORITY.get(item["severity"], 99),
         item["id"],
     ))
-    return insights[:6]
+    return insights[:10]
 
 
 async def _insight_installment_items(
@@ -6099,6 +6715,7 @@ async def _insight_account_balance(
     user: dict,
     accounts: List[dict],
     paid_transactions: List[dict],
+    adjustments: List[dict],
     currencies: dict,
 ) -> float:
     base_currency = normalize_currency(user.get("currency"))
@@ -6118,6 +6735,22 @@ async def _insight_account_balance(
             doc["currency"] = currencies.get(doc.get("account_id"), base_currency)
         amount = amount_in_currency(doc, base_currency)
         total += amount if doc["type"] == "income" else -amount
+    accounts_by_id = {account["id"]: account for account in accounts}
+    for adjustment in adjustments:
+        account = accounts_by_id.get(adjustment.get("account_id"))
+        if not account:
+            continue
+        total += amount_in_currency(
+            {
+                **account,
+                "currency": normalize_currency(
+                    account.get("currency"),
+                    base_currency,
+                ),
+                "amount": adjustment.get("amount", 0),
+            },
+            base_currency,
+        )
     paid_installments = await _insight_installment_items(
         user, "1900-01-01", "2201-01-01", currencies,
     )
@@ -6155,6 +6788,224 @@ def _overdue_settlement_count(
     return count
 
 
+def _month_shift(value: date, offset: int) -> date:
+    absolute = value.year * 12 + value.month - 1 + offset
+    return date(absolute // 12, absolute % 12 + 1, 1)
+
+
+def _month_periods(today: date, count: int = 7) -> List[dict]:
+    periods = []
+    for offset in range(-(count - 1), 1):
+        start = _month_shift(date(today.year, today.month, 1), offset)
+        next_start = _month_shift(start, 1)
+        is_current = start.year == today.year and start.month == today.month
+        end = today + timedelta(days=1) if is_current else next_start
+        periods.append({
+            "period": start.strftime("%Y-%m"),
+            "start": start,
+            "end": end,
+            "days": today.day if is_current else (next_start - start).days,
+        })
+    return periods
+
+
+def _build_historical_months(
+    periods: List[dict],
+    items: List[dict],
+) -> List[dict]:
+    grouped = defaultdict(list)
+    for item in items:
+        item_date = str(item.get("date") or "")[:10]
+        if len(item_date) >= 7:
+            grouped[item_date[:7]].append(item)
+    return [
+        {
+            "period": period["period"],
+            "days": period["days"],
+            "items": grouped.get(period["period"], []),
+        }
+        for period in periods
+    ]
+
+
+def _build_account_and_wealth_trends(
+    *,
+    periods: List[dict],
+    accounts: List[dict],
+    transactions: List[dict],
+    installments: List[dict],
+    adjustments: List[dict],
+    base_currency: str,
+) -> tuple[List[dict], List[dict]]:
+    trends = []
+    wealth = [{"period": period["period"], "value": 0.0} for period in periods]
+    for account in accounts:
+        account_id = account["id"]
+        account_currency = normalize_currency(account.get("currency"), base_currency)
+        values = []
+        for index, period in enumerate(periods):
+            end = period["end"].isoformat()
+            balance = float(account.get("initial_balance") or 0)
+            for row in transactions:
+                if row.get("status") != "paid" or str(row.get("date") or "")[:10] >= end:
+                    continue
+                amount = float(row.get("amount") or 0)
+                if row.get("type") == "income" and row.get("account_id") == account_id:
+                    balance += amount
+                elif row.get("type") == "expense" and row.get("account_id") == account_id:
+                    balance -= amount
+                elif row.get("type") == "transfer":
+                    if row.get("from_account_id") == account_id:
+                        balance -= amount
+                    if row.get("to_account_id") == account_id:
+                        balance += float(row.get("target_amount") or amount)
+            for installment in installments:
+                if (
+                    installment.get("status") == "paid"
+                    and installment.get("account_id") == account_id
+                    and str(installment.get("date") or "")[:10] < end
+                ):
+                    balance -= float(installment.get("amount") or 0)
+            for adjustment in adjustments:
+                if (
+                    adjustment.get("account_id") == account_id
+                    and str(adjustment.get("date") or "")[:10] < end
+                ):
+                    balance += float(adjustment.get("amount") or 0)
+            balance = round(balance, 2)
+            values.append(balance)
+            wealth[index]["value"] += amount_in_currency(
+                {**account, "currency": account_currency, "amount": balance},
+                base_currency,
+            )
+        trends.append({
+            "account_id": account_id,
+            "name": account.get("name") or "Conta",
+            "currency": account_currency,
+            "values": values,
+        })
+    for point in wealth:
+        point["value"] = round(point["value"], 2)
+    return trends, wealth
+
+
+def _detect_recurring_charges(items: List[dict]) -> List[dict]:
+    groups = defaultdict(list)
+    for item in items:
+        if (
+            item.get("type") != "expense"
+            or item.get("status") != "paid"
+            or item.get("recurrence_id")
+        ):
+            continue
+        description = normalized_search_text(item.get("description"))
+        if len(description) < 3:
+            continue
+        key = (description, item.get("category_id"), item.get("account_id"))
+        groups[key].append(item)
+    candidates = []
+    for (description, category_id, account_id), rows in groups.items():
+        if len(rows) < 3:
+            continue
+        rows.sort(key=lambda row: row.get("date", ""))
+        dates = []
+        for row in rows:
+            try:
+                dates.append(date.fromisoformat(str(row.get("date"))[:10]))
+            except ValueError:
+                pass
+        if len(dates) < 3:
+            continue
+        gaps = [(dates[index] - dates[index - 1]).days for index in range(1, len(dates))]
+        interval = statistics.median(gaps)
+        cadence = next((
+            label for label, minimum, maximum in (
+                ("weekly", 5, 9),
+                ("monthly", 25, 35),
+                ("yearly", 350, 380),
+            )
+            if minimum <= interval <= maximum
+        ), None)
+        if not cadence:
+            continue
+        tolerated_gap = 4 if cadence == "weekly" else (7 if cadence == "monthly" else 30)
+        if sum(abs(gap - interval) <= tolerated_gap for gap in gaps) < len(gaps) - 1:
+            continue
+        amounts = [float(row.get("base_amount") or 0) for row in rows]
+        typical = statistics.median(amounts)
+        if typical <= 0 or max(abs(value - typical) / typical for value in amounts) > 0.15:
+            continue
+        candidates.append({
+            "key": hashlib.sha256(
+                f"{description}:{category_id}:{account_id}".encode()
+            ).hexdigest()[:16],
+            "description": rows[-1].get("description") or description,
+            "amount": round(typical, 2),
+            "occurrences": len(rows),
+            "interval_days": round(interval),
+            "cadence": cadence,
+            "last_date": dates[-1].isoformat(),
+        })
+    return candidates
+
+
+def _goal_insight_rows(
+    goals: List[dict],
+    events: List[dict],
+    today: date,
+) -> List[dict]:
+    by_goal = defaultdict(list)
+    for event in events:
+        by_goal[event.get("goal_id")].append(event)
+    rows = []
+    for goal in goals:
+        target = float(goal.get("target_amount") or 0)
+        current = float(goal.get("current_amount") or 0)
+        progress = (current / target * 100) if target > 0 else 0
+        positive_events = [
+            event for event in by_goal.get(goal.get("id"), [])
+            if event.get("type") in ("initial", "contribution", "adjustment")
+            and float(event.get("amount") or 0) > 0
+        ]
+        cutoff = today - timedelta(days=183)
+        recent = []
+        for event in positive_events:
+            try:
+                event_date = date.fromisoformat(str(event.get("date"))[:10])
+            except ValueError:
+                continue
+            if event_date >= cutoff:
+                recent.append((event_date, float(event.get("amount") or 0)))
+        monthly_pace = round(sum(value for _, value in recent) / 6, 2) if len(recent) >= 2 else 0
+        forecast_date = None
+        remaining = max(target - current, 0)
+        if monthly_pace > 0 and remaining > 0:
+            months_needed = max(1, int((remaining / monthly_pace) + 0.999999))
+            forecast_date = _month_shift(date(today.year, today.month, 1), months_needed).isoformat()
+        behind_schedule = False
+        deadline_value = goal.get("deadline")
+        if deadline_value and target > 0:
+            try:
+                deadline = date.fromisoformat(str(deadline_value)[:10])
+                created = date.fromisoformat(str(goal.get("created_at") or today.isoformat())[:10])
+                total_days = max((deadline - created).days, 1)
+                elapsed = min(max((today - created).days, 0), total_days)
+                expected_progress = elapsed / total_days * 100
+                behind_schedule = deadline >= today and progress + 5 < expected_progress
+                if forecast_date:
+                    behind_schedule = behind_schedule or date.fromisoformat(forecast_date) > deadline
+            except ValueError:
+                pass
+        rows.append({
+            **goal,
+            "progress_percent": round(progress, 1),
+            "monthly_pace": monthly_pace,
+            "forecast_date": forecast_date,
+            "behind_schedule": behind_schedule,
+        })
+    return rows
+
+
 @api.get("/insights")
 async def insights(user=Depends(get_current_user)):
     now = datetime.now(timezone.utc)
@@ -6168,6 +7019,8 @@ async def insights(user=Depends(get_current_user)):
         previous_month_end.year, previous_month_end.month, comparable_day,
     ) + timedelta(days=1)
     current_end = today + timedelta(days=1)
+    historical_periods = _month_periods(today, 7)
+    history_start = historical_periods[0]["start"].isoformat()
 
     await materialize_recurrences(user["id"], month_end)
     current_query = {
@@ -6183,13 +7036,16 @@ async def insights(user=Depends(get_current_user)):
         },
         "status": {"$ne": "cancelled"},
     }
-    accounts, current_transactions, previous_transactions, paid_transactions, categories, shared, hidden, stored_feedback = await asyncio.gather(
+    accounts, current_transactions, previous_transactions, paid_transactions, account_adjustments, categories, shared, hidden, stored_feedback, goals, goal_events, recurrences = await asyncio.gather(
         db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(500),
         db.transactions.find(current_query, {"_id": 0}).to_list(5000),
         db.transactions.find(previous_query, {"_id": 0}).to_list(5000),
         db.transactions.find(
             {"user_id": user["id"], "status": "paid"}, {"_id": 0},
         ).to_list(20000),
+        db.account_adjustments.find(
+            {"user_id": user["id"]}, {"_id": 0},
+        ).to_list(5000),
         db.categories.find({"user_id": user["id"]}, {"_id": 0}).to_list(500),
         db.shared_expenses.find(
             visible_shared_query(user["id"]), {"_id": 0},
@@ -6201,6 +7057,14 @@ async def insights(user=Depends(get_current_user)):
             {"user_id": user["id"]},
             {"_id": 0, "insight_id": 1, "useful": 1},
         ).to_list(1000),
+        db.goals.find({"user_id": user["id"]}, {"_id": 0}).to_list(500),
+        db.goal_events.find(
+            {"user_id": user["id"], "date": {"$gte": history_start}},
+            {"_id": 0},
+        ).to_list(5000),
+        db.recurrences.find(
+            {"user_id": user["id"], "active": True}, {"_id": 0},
+        ).to_list(500),
     )
     base_currency = normalize_currency(user.get("currency"))
     currencies = {
@@ -6222,7 +7086,7 @@ async def insights(user=Depends(get_current_user)):
             })
         return rows
 
-    current_installments, previous_installments, future_installments, current_balance = await asyncio.gather(
+    current_installments, previous_installments, future_installments, historical_installments, current_balance = await asyncio.gather(
         _insight_installment_items(
             user, month_start.isoformat(), current_end.isoformat(), currencies,
         ),
@@ -6234,7 +7098,16 @@ async def insights(user=Depends(get_current_user)):
             user, month_start.isoformat(),
             (month_end + timedelta(days=1)).isoformat(), currencies,
         ),
-        _insight_account_balance(user, accounts, paid_transactions, currencies),
+        _insight_installment_items(
+            user, "1900-01-01", current_end.isoformat(), currencies,
+        ),
+        _insight_account_balance(
+            user,
+            accounts,
+            paid_transactions,
+            account_adjustments,
+            currencies,
+        ),
     )
     current_items = normalize_items(current_transactions) + current_installments
     previous_items = normalize_items(previous_transactions) + previous_installments
@@ -6283,7 +7156,58 @@ async def insights(user=Depends(get_current_user)):
                     "source": "shared_expense",
                 })
 
-    return build_crelith_insights(
+    historical_paid = [
+        row for row in normalize_items(paid_transactions)
+        if history_start <= str(row.get("date") or "")[:10] < current_end.isoformat()
+    ]
+    historical_items = historical_paid + [
+        row for row in historical_installments
+        if row.get("status") == "paid"
+        and history_start <= str(row.get("date") or "")[:10] < current_end.isoformat()
+    ]
+    historical_months = _build_historical_months(
+        historical_periods, historical_items,
+    )
+    account_trends, wealth_history = _build_account_and_wealth_trends(
+        periods=historical_periods,
+        accounts=accounts,
+        transactions=paid_transactions,
+        installments=historical_installments,
+        adjustments=account_adjustments,
+        base_currency=base_currency,
+    )
+    recurring_candidates = _detect_recurring_charges(historical_paid)
+    completed_months = historical_months[:-1][-3:]
+    monthly_income = [
+        sum(
+            float(row.get("base_amount") or 0)
+            for row in month["items"]
+            if row.get("type") == "income" and row.get("status") != "pending"
+        )
+        for month in completed_months
+    ]
+    frequency_factor = {
+        "weekly": 52 / 12,
+        "monthly": 1.0,
+        "quarterly": 1 / 3,
+        "semiannual": 1 / 6,
+        "yearly": 1 / 12,
+    }
+    recurring_expenses = []
+    for recurrence in recurrences:
+        if recurrence.get("type") != "expense":
+            continue
+        doc = dict(recurrence)
+        if not doc.get("currency"):
+            doc["currency"] = currencies.get(doc.get("account_id"), base_currency)
+        monthly_amount = amount_in_currency(doc, base_currency) * frequency_factor.get(
+            recurrence.get("frequency"), 1.0,
+        )
+        recurring_expenses.append((monthly_amount, recurrence))
+    largest_recurring = max(recurring_expenses, default=(0, {}), key=lambda item: item[0])
+    goal_rows = _goal_insight_rows(goals, goal_events, today)
+
+    generated = build_crelith_insights(
         today=today,
         currency=base_currency,
         current_items=current_items,
@@ -6301,7 +7225,44 @@ async def insights(user=Depends(get_current_user)):
             for item in stored_feedback
         },
         comparable_days=comparable_day,
+        historical_months=historical_months,
+        account_trends=account_trends,
+        wealth_history=wealth_history,
+        goals=goal_rows,
+        recurring_candidates=recurring_candidates,
+        recurring_burden={
+            "average_income": round(statistics.mean(monthly_income), 2)
+            if len(monthly_income) == 3 else 0,
+            "fixed_total": round(sum(item[0] for item in recurring_expenses), 2),
+            "largest_id": largest_recurring[1].get("id"),
+            "largest_name": largest_recurring[1].get("description") or "Maior despesa",
+            "largest_amount": round(largest_recurring[0], 2),
+        },
     )
+    timestamp = now_iso()
+    for item in generated:
+        await db.insight_history.update_one(
+            {"user_id": user["id"], "insight_id": item["id"]},
+            {
+                "$set": {
+                    "snapshot": item,
+                    "last_presented_at": timestamp,
+                    "status": (
+                        "useful" if item.get("useful") is True
+                        else "not_useful" if item.get("useful") is False
+                        else "presented"
+                    ),
+                },
+                "$setOnInsert": {
+                    "id": new_id(),
+                    "user_id": user["id"],
+                    "insight_id": item["id"],
+                    "first_presented_at": timestamp,
+                },
+            },
+            upsert=True,
+        )
+    return generated
 
 
 class InsightPreferencesIn(BaseModel):
@@ -6330,6 +7291,21 @@ async def set_insight_preferences(
     return clean
 
 
+@api.get("/insights/history")
+async def get_insight_history(
+    status: Optional[Literal["presented", "useful", "not_useful", "dismissed"]] = None,
+    limit: int = Query(50, ge=1, le=200),
+    user=Depends(get_current_user),
+):
+    query = {"user_id": user["id"]}
+    if status:
+        query["status"] = status
+    rows = await db.insight_history.find(
+        query, {"_id": 0},
+    ).sort("last_presented_at", -1).to_list(limit)
+    return rows
+
+
 @api.put("/insights/{insight_id}/feedback")
 async def set_insight_feedback(
     insight_id: str,
@@ -6349,6 +7325,15 @@ async def set_insight_feedback(
         },
         upsert=True,
     )
+    await db.insight_history.update_one(
+        {"user_id": user["id"], "insight_id": insight_id},
+        {
+            "$set": {
+                "status": "useful" if body.useful else "not_useful",
+                "feedback_updated_at": now_iso(),
+            },
+        },
+    )
     return {"ok": True, "useful": body.useful}
 
 
@@ -6365,6 +7350,15 @@ async def dismiss_insight(insight_id: str, user=Depends(get_current_user)):
             },
         },
         upsert=True,
+    )
+    await db.insight_history.update_one(
+        {"user_id": user["id"], "insight_id": insight_id},
+        {
+            "$set": {
+                "status": "dismissed",
+                "dismissed_at": now_iso(),
+            },
+        },
     )
     return {"ok": True}
 
@@ -6394,6 +7388,9 @@ async def list_goals(
     rows = await db.goals.find(
         {"user_id": user["id"]}, {"_id": 0}
     ).sort("created_at", -1).to_list(200)
+    events = await db.goal_events.find(
+        {"user_id": user["id"]}, {"_id": 0},
+    ).to_list(5000)
     base_currency = normalize_currency(user.get("currency"))
     currencies = await account_currency_map(user)
     for row in rows:
@@ -6408,6 +7405,9 @@ async def list_goals(
             amount_in_currency({**row, "amount": row.get("current_amount", 0)}, base_currency),
             2,
         )
+    rows = _goal_insight_rows(
+        rows, events, datetime.now(timezone.utc).date(),
+    )
     if currency:
         selected_currency = normalize_currency(currency)
         rows = [row for row in rows if row["currency"] == selected_currency]
@@ -6452,6 +7452,16 @@ async def create_goal(
         doc = {"id": new_id(), "user_id": user["id"], **values, **meta,
                "created_at": now_iso()}
         await db.goals.insert_one(doc)
+        if float(doc.get("current_amount") or 0) > 0:
+            await db.goal_events.insert_one({
+                "id": new_id(),
+                "user_id": user["id"],
+                "goal_id": doc["id"],
+                "type": "initial",
+                "amount": round(float(doc["current_amount"]), 2),
+                "date": now_iso()[:10],
+                "created_at": now_iso(),
+            })
         doc.pop("_id", None)
         return doc
 
@@ -6484,6 +7494,21 @@ async def update_goal(gid: str, payload: GoalIn, user=Depends(get_current_user))
         {"id": gid, "user_id": user["id"]}, {"$set": {**values, **meta}})
     if res.matched_count == 0:
         raise HTTPException(404, "Meta não encontrada")
+    adjustment = round(
+        float(values.get("current_amount") or 0)
+        - float(current.get("current_amount") or 0),
+        2,
+    )
+    if adjustment:
+        await db.goal_events.insert_one({
+            "id": new_id(),
+            "user_id": user["id"],
+            "goal_id": gid,
+            "type": "adjustment",
+            "amount": adjustment,
+            "date": now_iso()[:10],
+            "created_at": now_iso(),
+        })
     return await db.goals.find_one({"id": gid}, {"_id": 0})
 
 
@@ -6542,6 +7567,15 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
 
     new_amt = round(goal.get("current_amount", 0) + body.amount, 2)
     await db.goals.update_one({"id": gid}, {"$set": {"current_amount": new_amt}})
+    await db.goal_events.insert_one({
+        "id": new_id(),
+        "user_id": user["id"],
+        "goal_id": gid,
+        "type": "contribution",
+        "amount": round(body.amount, 2),
+        "date": now_iso()[:10],
+        "created_at": now_iso(),
+    })
     goal["current_amount"] = new_amt
     return goal
 
@@ -6609,6 +7643,15 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
 
     new_amt = round(current - body.amount, 2)
     await db.goals.update_one({"id": gid}, {"$set": {"current_amount": new_amt}})
+    await db.goal_events.insert_one({
+        "id": new_id(),
+        "user_id": user["id"],
+        "goal_id": gid,
+        "type": "withdrawal",
+        "amount": round(-body.amount, 2),
+        "date": now_iso()[:10],
+        "created_at": now_iso(),
+    })
     goal["current_amount"] = new_amt
     return goal
 
@@ -6616,6 +7659,7 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
 @api.delete("/goals/{gid}")
 async def delete_goal(gid: str, user=Depends(get_current_user)):
     await db.goals.delete_one({"id": gid, "user_id": user["id"]})
+    await db.goal_events.delete_many({"goal_id": gid, "user_id": user["id"]})
     return {"ok": True}
 
 
@@ -6634,7 +7678,7 @@ async def startup():
     for collection_name in (
         "users", "people", "categories", "accounts", "transactions", "recurrences",
         "installment_purchases", "installments", "receivables", "groups",
-        "shared_expenses", "notifications", "goals",
+        "shared_expenses", "notifications", "goals", "account_adjustments",
     ):
         await db[collection_name].create_index("id")
     # Existing categories are intentionally left untouched. The partial index
@@ -6655,6 +7699,9 @@ async def startup():
     )
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
     await db.transactions.create_index([("user_id", 1), ("person_id", 1)])
+    await db.account_adjustments.create_index(
+        [("user_id", 1), ("account_id", 1), ("date", -1)]
+    )
     await db.recurrences.create_index([("user_id", 1), ("person_id", 1)])
     await db.people.create_index([("owner_user_id", 1), ("name", 1)])
     await db.shared_expenses.create_index("participant_ids")

@@ -3,7 +3,9 @@ import { translate as tr } from "@/i18n";
 
 export function formatInsight(insight, currency) {
   const data = insight?.data || {};
-  const amount = (value) => fmtMoney(Number(value || 0), currency);
+  const amount = (value, selectedCurrency = currency) => (
+    fmtMoney(Number(value || 0), selectedCurrency)
+  );
   const fallback = {
     title: tr(insight?.title || ""),
     message: tr(insight?.message || ""),
@@ -121,6 +123,91 @@ export function formatInsight(insight, currency) {
         days: data.days_remaining,
       }),
     },
+    account_growth_streak: {
+      title: tr("Conta crescendo"),
+      message: tr("{account} cresceu por {months} meses consecutivos, acumulando {amount}.", {
+        account: data.account,
+        months: data.months,
+        amount: amount(data.growth, data.currency),
+      }),
+    },
+    category_acceleration: {
+      title: tr("Categoria acelerando"),
+      message: tr("Os gastos com {category} cresceram novamente: agora {percent}% sobre o mês anterior.", {
+        category: data.category,
+        percent: data.latest_percent,
+      }),
+      recommendation: tr("Revise os lançamentos desta categoria antes que o novo ritmo vire padrão."),
+    },
+    unusual_expense: {
+      title: tr("Gasto fora do habitual"),
+      message: tr("{description} foi de {amount}; a mediana histórica desta categoria é {median}.", {
+        description: data.description,
+        amount: amount(data.amount),
+        median: amount(data.median),
+      }),
+    },
+    daily_spending_above_normal: {
+      title: tr("Média diária acima do normal"),
+      message: tr("Você está gastando {amount} por dia, {percent}% acima do padrão recente.", {
+        amount: amount(data.current_daily),
+        percent: data.percent,
+      }),
+      recommendation: tr("Use {amount} por dia como referência para retomar seu ritmo habitual.", {
+        amount: amount(data.normal_daily),
+      }),
+    },
+    income_commitment: {
+      title: tr("Renda comprometida"),
+      message: tr("As despesas recorrentes consomem {percent}% da sua renda média.", {
+        percent: data.fixed_share,
+      }),
+      recommendation: tr("{name} representa {percent}% da renda: {amount} por mês.", {
+        name: data.largest_name,
+        percent: data.largest_share,
+        amount: amount(data.largest_amount),
+      }),
+    },
+    wealth_evolution: {
+      title: tr("Evolução patrimonial"),
+      message: data.direction === "up"
+        ? tr("Seu patrimônio aumentou {amount} nos últimos três meses.", {
+            amount: amount(Math.abs(data.delta)),
+          })
+        : tr("Seu patrimônio diminuiu {amount} nos últimos três meses.", {
+            amount: amount(Math.abs(data.delta)),
+          }),
+    },
+    goal_progress: {
+      title: tr("Acompanhamento de meta"),
+      message: tr("{title} está em {percent}%: faltam {amount}.", {
+        title: data.title,
+        percent: data.progress_percent,
+        amount: amount(Number(data.target_amount || 0) - Number(data.current_amount || 0)),
+      }),
+      recommendation: data.forecast_date
+        ? tr("Mantendo o ritmo de {amount} por mês, a conclusão está prevista para {date}.", {
+            amount: amount(data.monthly_pace),
+            date: new Intl.DateTimeFormat(undefined, {
+              month: "long",
+              year: "numeric",
+              timeZone: "UTC",
+            }).format(new Date(`${data.forecast_date}T00:00:00Z`)),
+          })
+        : tr("Registre pelo menos dois aportes para calcular a previsão de conclusão."),
+      impact: data.behind_schedule
+        ? tr("No ritmo atual, esta meta pode ultrapassar o prazo definido.")
+        : null,
+    },
+    recurring_charge_detected: {
+      title: tr("Possível cobrança recorrente"),
+      message: tr("{description} apareceu {count} vezes, aproximadamente a cada {days} dias.", {
+        description: data.description,
+        count: data.occurrences,
+        days: data.interval_days,
+      }),
+      recommendation: tr("Confirme se é uma assinatura ou conta fixa e cadastre-a em Recorrências."),
+    },
   };
 
   return templates[insight?.code] || fallback;
@@ -151,14 +238,44 @@ const EVIDENCE_LABELS = {
   pending_income: "Receitas pendentes",
   pending_expense: "Despesas pendentes",
   days_remaining: "Dias restantes",
+  consecutive_months: "Meses consecutivos",
+  account_growth: "Crescimento acumulado",
+  starting_balance: "Saldo no início",
+  ending_balance: "Saldo atual",
+  three_month_values: "Valores dos três meses",
+  previous_growth: "Crescimento anterior",
+  latest_growth: "Crescimento mais recente",
+  transaction_amount: "Valor do lançamento",
+  category_median: "Mediana histórica da categoria",
+  historical_entries: "Lançamentos históricos analisados",
+  current_daily_average: "Média diária atual",
+  historical_daily_average: "Média diária histórica",
+  months_analyzed: "Meses analisados",
+  average_monthly_income: "Renda média mensal",
+  recurring_expenses: "Despesas recorrentes mensais",
+  income_committed: "Renda comprometida",
+  starting_wealth: "Patrimônio inicial",
+  current_wealth: "Patrimônio atual",
+  wealth_change: "Variação patrimonial",
+  goal_progress: "Progresso da meta",
+  amount_remaining: "Valor restante",
+  monthly_contribution_pace: "Ritmo mensal de aportes",
+  forecast_completion: "Previsão de conclusão",
+  occurrences: "Ocorrências encontradas",
+  typical_amount: "Valor típico",
+  average_interval: "Intervalo médio",
 };
 
 export function formatInsightEvidence(insight, currency) {
   return (insight?.evidence || []).map((entry) => {
     let value = entry.value;
     if (entry.format === "money") value = fmtMoney(Number(value || 0), currency);
+    if (entry.format === "money_list") {
+      value = (value || []).map((item) => fmtMoney(Number(item || 0), currency)).join(" · ");
+    }
     if (entry.format === "percent") value = `${Number(value || 0)}%`;
     if (entry.format === "days") value = tr("{count} dias", { count: Number(value || 0) });
+    if (entry.format === "months") value = tr("{count} meses", { count: Number(value || 0) });
     return {
       label: tr(EVIDENCE_LABELS[entry.key] || entry.key),
       value,

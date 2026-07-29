@@ -41,6 +41,7 @@ def financial_db(**counts):
     return SimpleNamespace(
         transactions=collection(),
         accounts=collection(counts.get("wallets", 0)),
+        account_adjustments=collection(counts.get("balance_adjustments", 0)),
         goals=collection(counts.get("goals", 0)),
         shared_expenses=collection(
             counts.get("shared_expenses", 0),
@@ -176,6 +177,7 @@ def test_admin_deletion_removes_only_housekeeping_and_identity(monkeypatch):
     fake_db.notifications = collection()
     fake_db.insight_dismissals = collection()
     fake_db.insight_feedback = collection()
+    fake_db.insight_history = collection()
     fake_db.files = collection()
     fake_db.websocket_tickets = collection()
     fake_db.settlement_history = collection()
