@@ -24,6 +24,7 @@ import Recurrences from "@/pages/Recurrences";
 import Wallets from "@/pages/Wallets";
 import AdminUsers from "@/pages/AdminUsers";
 import People from "@/pages/People";
+import FinancialStatement from "@/pages/FinancialStatement";
 import InstallPrompt from "@/components/InstallPrompt";
 import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
 import { translate as tr } from "@/i18n";
@@ -78,6 +79,7 @@ function App() {
             <Route path="metas" element={<Goals />} />
             <Route path="recorrencias" element={<Recurrences />} />
             <Route path="carteiras" element={<Wallets />} />
+            <Route path="extrato-financeiro" element={<FinancialStatement />} />
             <Route path="admin/usuarios" element={<AdminOnly><AdminUsers /></AdminOnly>} />
           </Route>
         </Routes>

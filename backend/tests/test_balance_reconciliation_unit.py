@@ -53,6 +53,8 @@ def test_balance_breakdown_explains_every_source_without_mixing_income():
                 "amount": 20,
                 "date": "2026-07-02",
                 "description": "Mercado",
+                "category_id": "food",
+                "status": "paid",
             },
             {
                 "id": "transfer-in",
@@ -99,6 +101,12 @@ def test_balance_breakdown_explains_every_source_without_mixing_income():
     assert next(
         item for item in result["entries"] if item["kind"] == "adjustment"
     )["amount"] == -5
+    expense = next(
+        item for item in result["entries"] if item["kind"] == "expense"
+    )
+    assert expense["account_id"] == "wallet-1"
+    assert expense["category_id"] == "food"
+    assert expense["status"] == "paid"
 
 
 def reconciliation_db(*, transactions=None, adjustments=None):

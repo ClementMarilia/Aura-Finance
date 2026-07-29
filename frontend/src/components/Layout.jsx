@@ -4,6 +4,7 @@ import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
   Users, FolderOpen, Scale, FileBarChart, Wallet, Bell, Target, Repeat, Settings,
   Menu, UserCircle, LogOut, ShieldCheck,
+  ReceiptText,
 } from "lucide-react";
 import NotificationsBell from "@/components/NotificationsBell";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -22,6 +23,7 @@ const nav = [
   { to: "/contas-a-receber", icon: HandCoins, label: tr("Contas a Receber") },
   { to: "/orcamento", icon: PiggyBank, label: tr("Orçamento") },
   { to: "/carteiras", icon: Wallet, label: tr("Carteiras") },
+  { to: "/extrato-financeiro", icon: ReceiptText, label: tr("Extrato financeiro") },
   { to: "/metas", icon: Target, label: tr("Metas") },
   { to: "/despesas-compartilhadas", icon: Users, label: tr("Despesas Compartilhadas") },
   { to: "/pessoas", icon: UserCircle, label: tr("Pessoas") },

@@ -126,7 +126,7 @@ export default function Dashboard() {
     {
       label: tr("Saldo atual"), value: data.balance, icon: Wallet,
       accent: "text-[#061B4A]", bg: "bg-[#F1EFE7]",
-      to: `/carteiras`,
+      to: `/extrato-financeiro`,
     },
     {
       label: tr("Contas pendentes"), value: data.pending_payable, icon: Clock,
@@ -180,7 +180,7 @@ export default function Dashboard() {
 
       {/* Hero balance */}
       <Link
-        to={`/carteiras`}
+        to={`/extrato-financeiro`}
         data-testid="hero-balance-link"
         className="card-soft bg-gradient-to-br from-[#061B4A] to-[#1268F4] text-white border-transparent block hover:brightness-110 transition cursor-pointer"
       >
