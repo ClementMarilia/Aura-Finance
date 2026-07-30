@@ -5,11 +5,13 @@ import {
   ArrowLeftRight,
   ArrowUpRight,
   CalendarDays,
+  ChevronDown,
   CircleDollarSign,
   Filter,
   RefreshCw,
   SlidersHorizontal,
   Wallet,
+  X,
 } from "lucide-react";
 import api, { CURRENCIES, fmtDate, fmtMoney, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -21,6 +23,7 @@ import {
   filterStatementEntries,
   statementTotals,
 } from "@/lib/financialStatement";
+import { periodDateRange } from "@/lib/statementPeriod";
 import { translate as tr } from "@/i18n";
 
 const EMPTY_FILTERS = {
@@ -32,6 +35,16 @@ const EMPTY_FILTERS = {
   status: "",
   currency: "",
 };
+
+const PERIOD_PRESETS = [
+  { value: "all", label: "Todo período" },
+  { value: "today", label: "Hoje" },
+  { value: "this_month", label: "Este mês" },
+  { value: "last_30_days", label: "30 dias" },
+  { value: "last_6_months", label: "6 meses" },
+  { value: "this_year", label: "Este ano" },
+  { value: "custom", label: "Personalizado" },
+];
 
 const DIRECTION_LABELS = {
   income: "Entrada",
@@ -46,6 +59,19 @@ const STATUS_LABELS = {
   pending: "Pendente",
   cancelled: "Cancelado",
 };
+
+function FilterChip({ children, onRemove }) {
+  return (
+    <button
+      type="button"
+      onClick={onRemove}
+      className="inline-flex items-center gap-1.5 rounded-full border border-[#D8E5FF] bg-[#EEF4FF] px-3 py-1.5 text-xs font-medium text-[#0D5DD7] transition hover:border-[#1268F4]"
+    >
+      {children}
+      <X size={13} aria-hidden="true" />
+    </button>
+  );
+}
 
 function DirectionIcon({ direction }) {
   if (direction === "income") return <ArrowUpRight size={17} />;
@@ -142,6 +168,8 @@ export default function FinancialStatement() {
   const [entries, setEntries] = useState([]);
   const [pendingEntries, setPendingEntries] = useState([]);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [periodPreset, setPeriodPreset] = useState("all");
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -200,6 +228,33 @@ export default function FinancialStatement() {
       .filter(entry => !filters.status || entry.status === filters.status);
   const totals = statementTotals(paidRows);
   const hasFilters = Object.values(filters).some(Boolean);
+  const advancedFilterCount = [
+    filters.account_id,
+    filters.direction,
+    filters.category_id,
+    filters.status,
+    filters.currency,
+  ].filter(Boolean).length;
+  const periodLabel = PERIOD_PRESETS.find(preset => preset.value === periodPreset)?.label;
+  const selectedAccount = accounts.find(account => account.id === filters.account_id);
+  const selectedCategory = categories.find(category => category.id === filters.category_id);
+
+  const selectPeriod = preset => {
+    setPeriodPreset(preset);
+    if (preset !== "custom") {
+      setFilters(current => ({ ...current, ...periodDateRange(preset) }));
+    }
+  };
+
+  const setFilter = (name, value) => {
+    setFilters(current => ({ ...current, [name]: value }));
+  };
+
+  const clearFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    setPeriodPreset("all");
+    setShowMoreFilters(false);
+  };
 
   if (loading) {
     return <div className="text-[#6B7068]">{tr("Carregando extrato financeiro...")}</div>;
@@ -263,100 +318,198 @@ export default function FinancialStatement() {
       </div>
 
       <div className="card-soft space-y-4" data-testid="statement-filters">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 font-semibold text-[#061B4A]">
-            <SlidersHorizontal size={18} /> {tr("Filtros do extrato")}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 font-semibold text-[#061B4A]">
+              <CalendarDays size={18} /> {tr("Período")}
+            </div>
+            <p className="mt-0.5 text-xs text-[#6B7068]">
+              {tr("Escolha um intervalo rápido ou personalize as datas")}
+            </p>
           </div>
-          {hasFilters && (
-            <button
-              type="button"
-              onClick={() => setFilters(EMPTY_FILTERS)}
-              className="text-sm font-medium text-[#1268F4] hover:underline"
-            >
-              {tr("Limpar filtros")}
-            </button>
-          )}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="space-y-1 text-xs text-[#6B7068]">
-            <span className="flex items-center gap-1"><CalendarDays size={13} /> {tr("Data inicial")}</span>
-            <Input type="date" value={filters.start_date}
-              onChange={event => setFilters({ ...filters, start_date: event.target.value })}
-              data-testid="statement-start-date" />
-          </label>
-          <label className="space-y-1 text-xs text-[#6B7068]">
-            <span className="flex items-center gap-1"><CalendarDays size={13} /> {tr("Data final")}</span>
-            <Input type="date" value={filters.end_date}
-              onChange={event => setFilters({ ...filters, end_date: event.target.value })}
-              data-testid="statement-end-date" />
-          </label>
-          <label className="space-y-1 text-xs text-[#6B7068]">
-            <span>{tr("Carteira")}</span>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={filters.account_id}
-              onChange={event => setFilters({ ...filters, account_id: event.target.value })}
-              data-testid="statement-account-filter">
-              <option value="">{tr("Todas as carteiras")}</option>
-              {accounts.map(account => (
-                <option key={account.id} value={account.id}>{tr(account.name)}</option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-xs text-[#6B7068]">
-            <span>{tr("Movimento")}</span>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={filters.direction}
-              onChange={event => setFilters({ ...filters, direction: event.target.value })}
-              data-testid="statement-direction-filter">
-              <option value="">{tr("Todos os movimentos")}</option>
-              {Object.entries(DIRECTION_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{tr(label)}</option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-xs text-[#6B7068]">
-            <span>{tr("Categoria")}</span>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={filters.category_id}
-              onChange={event => setFilters({ ...filters, category_id: event.target.value })}
-              data-testid="statement-category-filter">
-              <option value="">{tr("Todas as categorias")}</option>
-              {categories.map(category => (
-                <option key={category.id} value={category.id}>{tr(category.name)}</option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-xs text-[#6B7068]">
-            <span>{tr("Status")}</span>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={filters.status}
-              onChange={event => setFilters({ ...filters, status: event.target.value })}
-              data-testid="statement-status-filter">
-              <option value="">{tr("Todos os status")}</option>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{tr(label)}</option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-xs text-[#6B7068]">
-            <span>{tr("Moeda")}</span>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={filters.currency}
-              onChange={event => setFilters({ ...filters, currency: event.target.value })}
-              data-testid="statement-currency-filter">
-              <option value="">{tr("Todas as moedas")}</option>
-              {CURRENCIES.map(currency => (
-                <option key={currency.value} value={currency.value}>{currency.label}</option>
-              ))}
-            </select>
-          </label>
-          <div className="flex items-end">
-            <div className="flex h-10 w-full items-center gap-2 rounded-md bg-[#F1EFE7] px-3 text-sm text-[#4F554D]">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm text-[#4F554D]">
               <Filter size={15} />
               {tr("{count} movimentos", { count: paidRows.length + nonPaidRows.length })}
             </div>
+            {hasFilters && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-sm font-medium text-[#1268F4] hover:underline"
+              >
+                {tr("Limpar filtros")}
+              </button>
+            )}
           </div>
         </div>
+
+        <div
+          className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1"
+          role="group"
+          aria-label={tr("Período do extrato")}
+          data-testid="statement-period-presets"
+        >
+          {PERIOD_PRESETS.map(preset => (
+            <button
+              key={preset.value}
+              type="button"
+              onClick={() => selectPeriod(preset.value)}
+              aria-pressed={periodPreset === preset.value}
+              className={`shrink-0 rounded-xl border px-3.5 py-2 text-sm font-medium transition ${
+                periodPreset === preset.value
+                  ? "border-[#1268F4] bg-[#1268F4] text-white shadow-sm"
+                  : "border-[#D8D7D2] bg-white text-[#4F554D] hover:border-[#1268F4] hover:text-[#1268F4]"
+              }`}
+            >
+              {tr(preset.label)}
+            </button>
+          ))}
+        </div>
+
+        {periodPreset === "custom" && (
+          <div className="grid gap-3 rounded-2xl border border-[#E5E4E0] bg-[#FAFAF8] p-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs text-[#6B7068]">
+              <span className="flex items-center gap-1"><CalendarDays size={13} /> {tr("Data inicial")}</span>
+              <Input
+                type="date"
+                value={filters.start_date}
+                onChange={event => setFilter("start_date", event.target.value)}
+                data-testid="statement-start-date"
+              />
+            </label>
+            <label className="space-y-1 text-xs text-[#6B7068]">
+              <span className="flex items-center gap-1"><CalendarDays size={13} /> {tr("Data final")}</span>
+              <Input
+                type="date"
+                value={filters.end_date}
+                onChange={event => setFilter("end_date", event.target.value)}
+                data-testid="statement-end-date"
+              />
+            </label>
+          </div>
+        )}
+
+        <div className="border-t border-[#E5E4E0] pt-4">
+          <button
+            type="button"
+            onClick={() => setShowMoreFilters(current => !current)}
+            aria-expanded={showMoreFilters}
+            className="flex w-full items-center justify-between gap-3 text-left"
+            data-testid="statement-more-filters"
+          >
+            <span className="flex items-center gap-2 text-sm font-semibold text-[#061B4A]">
+              <SlidersHorizontal size={17} />
+              {tr("Mais filtros")}
+              {advancedFilterCount > 0 && (
+                <span className="rounded-full bg-[#1268F4] px-2 py-0.5 text-xs text-white">
+                  {advancedFilterCount}
+                </span>
+              )}
+            </span>
+            <ChevronDown
+              size={18}
+              className={`text-[#6B7068] transition-transform ${showMoreFilters ? "rotate-180" : ""}`}
+            />
+          </button>
+
+          {showMoreFilters && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <label className="space-y-1 text-xs text-[#6B7068]">
+                <span>{tr("Carteira")}</span>
+                <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={filters.account_id}
+                  onChange={event => setFilter("account_id", event.target.value)}
+                  data-testid="statement-account-filter">
+                  <option value="">{tr("Todas as carteiras")}</option>
+                  {accounts.map(account => (
+                    <option key={account.id} value={account.id}>{tr(account.name)}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs text-[#6B7068]">
+                <span>{tr("Movimento")}</span>
+                <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={filters.direction}
+                  onChange={event => setFilter("direction", event.target.value)}
+                  data-testid="statement-direction-filter">
+                  <option value="">{tr("Todos os movimentos")}</option>
+                  {Object.entries(DIRECTION_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{tr(label)}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs text-[#6B7068]">
+                <span>{tr("Categoria")}</span>
+                <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={filters.category_id}
+                  onChange={event => setFilter("category_id", event.target.value)}
+                  data-testid="statement-category-filter">
+                  <option value="">{tr("Todas as categorias")}</option>
+                  {categories.map(category => (
+                    <option key={category.id} value={category.id}>{tr(category.name)}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs text-[#6B7068]">
+                <span>{tr("Status")}</span>
+                <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={filters.status}
+                  onChange={event => setFilter("status", event.target.value)}
+                  data-testid="statement-status-filter">
+                  <option value="">{tr("Todos os status")}</option>
+                  {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{tr(label)}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs text-[#6B7068]">
+                <span>{tr("Moeda")}</span>
+                <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={filters.currency}
+                  onChange={event => setFilter("currency", event.target.value)}
+                  data-testid="statement-currency-filter">
+                  <option value="">{tr("Todas as moedas")}</option>
+                  {CURRENCIES.map(currency => (
+                    <option key={currency.value} value={currency.value}>{currency.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+        </div>
+
+        {(periodPreset !== "all" || advancedFilterCount > 0) && (
+          <div className="flex flex-wrap items-center gap-2" data-testid="statement-active-filters">
+            <span className="text-xs font-medium text-[#6B7068]">{tr("Filtros ativos")}:</span>
+            {periodPreset !== "all" && (
+              <FilterChip onRemove={() => selectPeriod("all")}>{tr(periodLabel)}</FilterChip>
+            )}
+            {filters.account_id && (
+              <FilterChip onRemove={() => setFilter("account_id", "")}>
+                {tr(selectedAccount?.name || "Carteira")}
+              </FilterChip>
+            )}
+            {filters.direction && (
+              <FilterChip onRemove={() => setFilter("direction", "")}>
+                {tr(DIRECTION_LABELS[filters.direction])}
+              </FilterChip>
+            )}
+            {filters.category_id && (
+              <FilterChip onRemove={() => setFilter("category_id", "")}>
+                {tr(selectedCategory?.name || "Categoria")}
+              </FilterChip>
+            )}
+            {filters.status && (
+              <FilterChip onRemove={() => setFilter("status", "")}>
+                {tr(STATUS_LABELS[filters.status])}
+              </FilterChip>
+            )}
+            {filters.currency && (
+              <FilterChip onRemove={() => setFilter("currency", "")}>{filters.currency}</FilterChip>
+            )}
+          </div>
+        )}
       </div>
 
       <section className="space-y-3">
