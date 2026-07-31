@@ -842,13 +842,19 @@ class SharedExpenseIn(BaseModel):
     amount: float
     date: str
     category: str = "Outros"
+    category_id: Optional[str] = None
     payer_id: str
     participants: List[ParticipantSplit]
     split_type: Literal["equal", "manual", "percent"] = "equal"
     group_id: Optional[str] = None
+    account_id: Optional[str] = None
     notes: str = ""
     currency: Optional[str] = None
     exchange_rate: Optional[float] = None
+
+
+class SharedExpenseAccountIn(BaseModel):
+    account_id: str
 
 
 class ReportFiltersIn(BaseModel):
@@ -2885,8 +2891,12 @@ async def list_transactions(
         q["$and"] = clauses
     rows = await db.transactions.find(q, {"_id": 0}).to_list(2000)
     for r in rows:
-        r["source"] = "recurrence" if r.get("recurrence_id") else "manual"
-        r["editable"] = True
+        if r.get("shared_expense_id"):
+            r["source"] = "shared_expense"
+            r["editable"] = False
+        else:
+            r["source"] = "recurrence" if r.get("recurrence_id") else "manual"
+            r["editable"] = True
         r["overdue"] = False
 
     # Roll-over: include real transactions still pending from previous months
@@ -2915,8 +2925,12 @@ async def list_transactions(
         for r in overdue_rows:
             if r["id"] in existing_ids:
                 continue
-            r["source"] = "recurrence" if r.get("recurrence_id") else "manual"
-            r["editable"] = True
+            if r.get("shared_expense_id"):
+                r["source"] = "shared_expense"
+                r["editable"] = False
+            else:
+                r["source"] = "recurrence" if r.get("recurrence_id") else "manual"
+                r["editable"] = True
             r["overdue"] = True
             rows.append(r)
 
@@ -3222,6 +3236,11 @@ async def update_transaction(tid: str, payload: TransactionIn, user=Depends(get_
     )
     if not current:
         raise HTTPException(404, "Não encontrado")
+    if current.get("shared_expense_id"):
+        raise HTTPException(
+            409,
+            "Edite este lançamento pela despesa compartilhada vinculada",
+        )
     res = await db.transactions.update_one(
         {"id": tid, "user_id": user["id"]},
         {"$set": values},
@@ -3241,6 +3260,11 @@ async def update_transaction(tid: str, payload: TransactionIn, user=Depends(get_
 @api.delete("/transactions/{tid}")
 async def delete_transaction(tid: str, user=Depends(get_current_user)):
     tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
+    if tx and tx.get("shared_expense_id"):
+        raise HTTPException(
+            409,
+            "Exclua este lançamento pela despesa compartilhada vinculada",
+        )
     if tx and tx.get("receipt"):
         await db.files.update_one({"id": tx["receipt"]["file_id"]}, {"$set": {"is_deleted": True}})
     await db.transactions.delete_one({"id": tid, "user_id": user["id"]})
@@ -3258,6 +3282,11 @@ async def toggle_transaction_payment(tid: str, user=Depends(get_current_user)):
     tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
     if not tx:
         raise HTTPException(404, "Lançamento não encontrado")
+    if tx.get("shared_expense_id"):
+        raise HTTPException(
+            409,
+            "O pagamento é controlado pela despesa compartilhada vinculada",
+        )
     if tx.get("status") == "cancelled":
         raise HTTPException(400, "Lançamento cancelado não pode ser pago")
     new_status = "pending" if tx.get("status") == "paid" else "paid"
@@ -3278,12 +3307,24 @@ async def bulk_delete_transactions(body: BulkDeleteIn, user=Depends(get_current_
         return {"deleted": 0}
     txs = await db.transactions.find(
         {"id": {"$in": body.ids}, "user_id": user["id"]}, {"_id": 0}).to_list(5000)
+    protected_ids = {
+        tx["id"] for tx in txs if tx.get("shared_expense_id")
+    }
     for tx in txs:
+        if tx["id"] in protected_ids:
+            continue
         if tx.get("receipt"):
             await db.files.update_one(
                 {"id": tx["receipt"]["file_id"]}, {"$set": {"is_deleted": True}})
     res = await db.transactions.delete_many(
-        {"id": {"$in": body.ids}, "user_id": user["id"]})
+        {
+            "id": {"$in": [
+                transaction_id
+                for transaction_id in body.ids
+                if transaction_id not in protected_ids
+            ]},
+            "user_id": user["id"],
+        })
     return {"deleted": res.deleted_count}
 
 
@@ -4234,6 +4275,103 @@ def shared_expense_status(expense: dict) -> str:
     return "open"
 
 
+async def validate_shared_expense_account(
+    account_id: Optional[str],
+    payer_id: str,
+    user: dict,
+    currency: str,
+) -> Optional[dict]:
+    if not account_id:
+        return None
+    if payer_id != user["id"]:
+        raise HTTPException(
+            400,
+            "Somente quem pagou pode vincular uma carteira própria",
+        )
+    account = await db.accounts.find_one(
+        {"id": account_id, "user_id": user["id"]},
+        {"_id": 0},
+    )
+    if not account:
+        raise HTTPException(404, "Carteira não encontrada")
+    account_currency = normalize_currency(
+        account.get("currency"),
+        user.get("currency", "EUR"),
+    )
+    if account_currency != currency:
+        raise HTTPException(
+            400,
+            "A moeda da despesa deve ser igual à moeda da carteira",
+        )
+    return account
+
+
+async def sync_shared_expense_transaction(expense: dict, payer: dict) -> Optional[dict]:
+    """Keep one wallet transaction linked to a shared expense.
+
+    The shared expense remains the source of truth. The linked row only exposes
+    the real wallet outflow in transactions, balances and statements.
+    """
+    query = {
+        "shared_expense_id": expense["id"],
+        "user_id": payer["id"],
+    }
+    account_id = expense.get("account_id")
+    if expense.get("payer_id") != payer["id"] or not account_id:
+        await db.transactions.delete_many(query)
+        return None
+
+    currency = normalize_currency(
+        expense.get("currency"),
+        payer.get("currency", "EUR"),
+    )
+    values = {
+        "user_id": payer["id"],
+        "type": "expense",
+        "date": expense["date"],
+        "amount": float(expense["amount"]),
+        "category_id": (
+            expense.get("category_id")
+            if expense.get("creator_id") == payer["id"]
+            else None
+        ),
+        "person_id": None,
+        "account_id": account_id,
+        "from_account_id": None,
+        "to_account_id": None,
+        "payment_method": None,
+        "description": expense.get("title", ""),
+        "notes": expense.get("notes", ""),
+        "status": "paid",
+        "currency": currency,
+        "exchange_rates": expense.get("exchange_rates"),
+        "base_currency_at_creation": expense.get("base_currency_at_creation"),
+        "exchange_rate_to_base": expense.get("exchange_rate_to_base"),
+        "rate_date": expense.get("rate_date"),
+        "rate_source": expense.get("rate_source"),
+        "source": "shared_expense",
+        "shared_expense_id": expense["id"],
+        "editable": False,
+        "updated_at": now_iso(),
+    }
+    existing = await db.transactions.find_one(query, {"_id": 0})
+    if existing:
+        await db.transactions.update_one(
+            {"id": existing["id"], **query},
+            {"$set": values},
+        )
+        return {**existing, **values}
+
+    doc = {
+        "id": new_id(),
+        **values,
+        "created_at": now_iso(),
+    }
+    await db.transactions.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
 def normalized_search_text(value: object) -> str:
     normalized = unicodedata.normalize("NFKD", str(value or "").casefold())
     return "".join(char for char in normalized if not unicodedata.combining(char))
@@ -4407,6 +4545,9 @@ async def list_shared(
     party_map = await shared_party_map(items, user.get("language", "pt"))
     for it in items:
         it["payer"] = party_map.get(it["payer_id"])
+        if it.get("payer_id") != user["id"]:
+            # Wallet ownership is private even when the expense itself is shared.
+            it.pop("account_id", None)
         for p in it["participants"]:
             p["participant_id"] = participant_reference(p)
             p["user"] = party_map.get(p["participant_id"])
@@ -4489,19 +4630,34 @@ async def create_shared(
         )
         splits = compute_splits(payload.amount, payload.split_type, participants_in)
         currency = normalize_currency(payload.currency, user.get("currency", "EUR"))
+        await validate_shared_expense_account(
+            payload.account_id,
+            payload.payer_id,
+            user,
+            currency,
+        )
         meta = await monetary_metadata(currency, user.get("currency", "EUR"), payload.date, payload.exchange_rate)
         doc = {
             "id": new_id(), "creator_id": user["id"],
             "title": payload.title, "amount": payload.amount, "date": payload.date,
-            "category": payload.category, "payer_id": payload.payer_id,
+            "category": payload.category, "category_id": payload.category_id,
+            "payer_id": payload.payer_id,
             "split_type": payload.split_type, "group_id": payload.group_id,
-            "notes": payload.notes,
+            "account_id": payload.account_id, "notes": payload.notes,
             **meta,
             "participants": splits, "participant_ids": participant_ids,
             "status": "open", "created_at": now_iso(),
         }
         await db.shared_expenses.insert_one(doc)
         doc.pop("_id", None)
+        try:
+            if payload.payer_id == user["id"] and payload.account_id:
+                await sync_shared_expense_transaction(doc, user)
+        except Exception:
+            # The expense and its wallet outflow are one logical operation.
+            # A failed linked transaction must not leave a half-created record.
+            await db.shared_expenses.delete_one({"id": doc["id"]})
+            raise
 
         payer = await db.users.find_one({"id": payload.payer_id}, {"_id": 0})
         if not payer:
@@ -4585,6 +4741,42 @@ async def settle_participant(sid: str, participant_id: str, user=Depends(get_cur
         "paid_back": True,
         "already_confirmed": not changed,
     }
+
+
+@api.put("/shared-expenses/{sid}/account")
+async def link_shared_expense_account(
+    sid: str,
+    payload: SharedExpenseAccountIn,
+    user=Depends(get_current_user),
+):
+    expense = await db.shared_expenses.find_one({
+        "id": sid,
+        **visible_shared_query(user["id"]),
+    })
+    if not expense:
+        raise HTTPException(404, "Despesa não encontrada")
+    if expense.get("payer_id") != user["id"]:
+        raise HTTPException(403, "Somente quem pagou pode vincular a carteira")
+    currency = normalize_currency(
+        expense.get("currency"),
+        user.get("currency", "EUR"),
+    )
+    await validate_shared_expense_account(
+        payload.account_id,
+        user["id"],
+        user,
+        currency,
+    )
+    await db.shared_expenses.update_one(
+        {"id": sid},
+        {"$set": {
+            "account_id": payload.account_id,
+            "updated_at": now_iso(),
+        }},
+    )
+    expense["account_id"] = payload.account_id
+    await sync_shared_expense_transaction(expense, user)
+    return {"ok": True, "account_id": payload.account_id}
 
 
 # ---------- Notifications ----------
@@ -4730,6 +4922,19 @@ async def update_shared(sid: str, payload: SharedExpenseIn, user=Depends(get_cur
     )
     splits = compute_splits(payload.amount, payload.split_type, participants_in)
     currency = normalize_currency(payload.currency, se.get("currency", user.get("currency", "EUR")))
+    effective_account_id = (
+        payload.account_id
+        if payload.payer_id == user["id"]
+        else se.get("account_id")
+        if payload.payer_id == se.get("payer_id")
+        else None
+    )
+    await validate_shared_expense_account(
+        effective_account_id if payload.payer_id == user["id"] else None,
+        payload.payer_id,
+        user,
+        currency,
+    )
     meta = await monetary_metadata(currency, user.get("currency", "EUR"), payload.date, payload.exchange_rate)
     # preserve paid_back state
     existing_paid = {
@@ -4742,13 +4947,37 @@ async def update_shared(sid: str, payload: SharedExpenseIn, user=Depends(get_cur
         {"id": sid},
         {"$set": {
             "title": payload.title, "amount": payload.amount, "date": payload.date,
-            "category": payload.category, "payer_id": payload.payer_id,
+            "category": payload.category, "category_id": payload.category_id,
+            "payer_id": payload.payer_id,
             "split_type": payload.split_type, "group_id": payload.group_id,
+            "account_id": effective_account_id,
             "notes": payload.notes, "participants": splits,
             "participant_ids": participant_ids,
             **meta,
         }},
     )
+    updated = {
+        **se,
+        **payload.model_dump(exclude={"currency", "exchange_rate", "account_id"}),
+        **meta,
+        "account_id": effective_account_id,
+        "participants": splits,
+        "participant_ids": participant_ids,
+    }
+    await db.transactions.delete_many({
+        "shared_expense_id": sid,
+        "user_id": {"$ne": payload.payer_id},
+    })
+    payer = (
+        user
+        if payload.payer_id == user["id"]
+        else await db.users.find_one(
+            {"id": payload.payer_id},
+            {"_id": 0, "password_hash": 0},
+        )
+    )
+    if payer:
+        await sync_shared_expense_transaction(updated, payer)
     return {"ok": True}
 
 
@@ -4760,6 +4989,7 @@ async def delete_shared(sid: str, user=Depends(get_current_user)):
     if se["creator_id"] != user["id"] and se["payer_id"] != user["id"]:
         raise HTTPException(403, "Apenas o criador ou o pagador pode excluir")
     await db.shared_expenses.delete_one({"id": sid})
+    await db.transactions.delete_many({"shared_expense_id": sid})
     return {"ok": True}
 
 

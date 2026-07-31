@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Check, Trash2, Pencil } from "lucide-react";
+import { Plus, Check, Trash2, Pencil, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { translate as tr } from "@/i18n";
@@ -15,6 +16,7 @@ export default function Receivables() {
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
   const [list, setList] = useState([]);
+  const [sharedRows, setSharedRows] = useState([]);
   const [accs, setAccs] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -22,15 +24,24 @@ export default function Receivables() {
   const [confirmDel, setConfirmDel] = useState(null);
   const [currencyFilter, setCurrencyFilter] = useState("");
 
-  const load = () => api.get("/receivables", {
-    params: currencyFilter ? { currency: currencyFilter } : {},
-  }).then(r => setList(r.data));
-  useEffect(() => { api.get("/accounts").then(r => setAccs(r.data || [])); }, []);
-  useEffect(() => {
+  const load = useCallback(() => Promise.all([
     api.get("/receivables", {
       params: currencyFilter ? { currency: currencyFilter } : {},
-    }).then(r => setList(r.data));
-  }, [currencyFilter]);
+    }),
+    api.get("/settlements"),
+  ]).then(([receivablesResponse, settlementsResponse]) => {
+    setList(receivablesResponse.data);
+    setSharedRows((settlementsResponse.data?.rows || []).filter(row => (
+      !currencyFilter || (row.currency || curr) === currencyFilter
+    )));
+  }), [currencyFilter, curr]);
+  useEffect(() => { api.get("/accounts").then(r => setAccs(r.data || [])); }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const sharedToReceive = sharedRows.filter(row => row.creditor_id === user.id);
+  const sharedToPay = sharedRows.filter(row => row.debtor_id === user.id);
+  const sharedReceiveTotal = sharedToReceive.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const sharedPayTotal = sharedToPay.reduce((sum, row) => sum + Number(row.amount || 0), 0);
 
   const openNew = () => {
     setEditing(null);
@@ -80,7 +91,7 @@ export default function Receivables() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Contas a Receber")}</h1>
-          <p className="text-[#6B7068]">{tr("Valores que você tem a receber")}</p>
+          <p className="text-[#6B7068]">{tr("Valores a receber e a pagar, sem misturar com receitas e despesas")}</p>
         </div>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>
@@ -145,7 +156,82 @@ export default function Receivables() {
         </select>
       </div>
 
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="card-soft border-l-4 border-l-emerald-500">
+          <p className="text-sm text-[#6B7068]">{tr("A receber de despesas compartilhadas")}</p>
+          <p className="mt-1 text-2xl font-semibold text-emerald-700" style={{ fontFamily: "Outfit" }}>
+            {fmtMoney(sharedReceiveTotal, curr)}
+          </p>
+          <p className="mt-1 text-xs text-[#6B7068]">
+            {tr("{count} valor(es) pendente(s)", { count: sharedToReceive.length })}
+          </p>
+        </div>
+        <div className="card-soft border-l-4 border-l-rose-500">
+          <p className="text-sm text-[#6B7068]">{tr("A pagar de despesas compartilhadas")}</p>
+          <p className="mt-1 text-2xl font-semibold text-rose-600" style={{ fontFamily: "Outfit" }}>
+            {fmtMoney(sharedPayTotal, curr)}
+          </p>
+          <p className="mt-1 text-xs text-[#6B7068]">
+            {tr("{count} valor(es) pendente(s)", { count: sharedToPay.length })}
+          </p>
+        </div>
+      </div>
+
+      {(sharedToReceive.length > 0 || sharedToPay.length > 0) && (
+        <div className="card-soft overflow-x-auto p-0">
+          <div className="flex items-center justify-between gap-3 p-4 pb-2">
+            <div>
+              <h2 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>
+                {tr("Pendências compartilhadas")}
+              </h2>
+              <p className="text-xs text-[#6B7068]">
+                {tr("Esses valores não são novas receitas ou despesas.")}
+              </p>
+            </div>
+            <Link to="/acertos" className="inline-flex items-center gap-1 text-sm font-medium text-[#0D5DD7]">
+              {tr("Ver acertos")} <ArrowRight size={14} />
+            </Link>
+          </div>
+          <table className="w-full text-sm">
+            <thead className="bg-[#F1EFE7] text-[#6B7068]">
+              <tr>
+                <th className="text-left py-3 px-4">{tr("Pessoa")}</th>
+                <th className="text-left py-3 px-4">{tr("Despesa")}</th>
+                <th className="text-left py-3 px-4">{tr("Situação")}</th>
+                <th className="text-right py-3 px-4">{tr("Valor")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...sharedToReceive, ...sharedToPay].map(row => {
+                const receiving = row.creditor_id === user.id;
+                const person = receiving ? row.debtor : row.creditor;
+                return (
+                  <tr key={`${row.expense_id}-${row.debtor_id}`} className="border-b border-[#E5E4E0]">
+                    <td className="py-3 px-4 font-medium">{person?.name || "—"}</td>
+                    <td className="py-3 px-4">{row.title}</td>
+                    <td className={`py-3 px-4 font-medium ${receiving ? "text-emerald-700" : "text-rose-600"}`}>
+                      {receiving ? tr("A receber") : tr("A pagar")}
+                    </td>
+                    <td className="py-3 px-4 text-right font-semibold">
+                      {fmtMoney(row.amount, row.currency || curr)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="card-soft overflow-x-auto p-0">
+        <div className="p-4 pb-2">
+          <h2 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>
+            {tr("Outras contas a receber")}
+          </h2>
+          <p className="text-xs text-[#6B7068]">
+            {tr("Cobranças e valores cadastrados manualmente")}
+          </p>
+        </div>
         <table className="w-full text-sm">
           <thead className="bg-[#F1EFE7] text-[#6B7068]">
             <tr>

@@ -780,6 +780,12 @@ export default function Transactions() {
                           <CreditCard size={10} /> {tr("Parcela")}
                         </span>
                       )}
+                      {t.source === "shared_expense" && (
+                        <span data-testid={`tx-shared-badge-${t.id}`}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#0D5DD7] bg-[#EEF4FF] rounded-full px-2 py-0.5">
+                          {tr("Compartilhada")}
+                        </span>
+                      )}
                       {t.overdue && (
                         <span data-testid={`tx-overdue-badge-${t.id}`}
                           className="inline-flex items-center gap-1 text-[10px] font-medium text-[#D9453B] bg-red-50 rounded-full px-2 py-0.5">
@@ -819,7 +825,14 @@ export default function Transactions() {
                             <Check size={16} />
                           </button>
                         ) : (
-                          <span className="text-xs text-[#6B7068] italic pr-1" title={tr("Editar em Parcelamentos")}>vinculado</span>
+                          <span
+                            className="text-xs text-[#6B7068] italic pr-1"
+                            title={t.source === "shared_expense"
+                              ? tr("Edite em Despesas Compartilhadas")
+                              : tr("Lançamento vinculado")}
+                          >
+                            {tr("Vinculado")}
+                          </span>
                         )
                       ) : (
                       <>
