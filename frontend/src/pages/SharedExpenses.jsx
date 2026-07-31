@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, UserPlus, X, Check, Pencil, ArrowRight, Scale } from "lucide-react";
+import { Plus, Trash2, UserPlus, X, Check, Pencil, ArrowRight, Scale, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { translate as tr } from "@/i18n";
@@ -24,7 +24,8 @@ function Initials({ name, color, size = 28 }) {
 
 const emptyForm = (user) => ({
   title: "", amount: "", date: new Date().toISOString().slice(0, 10),
-  category: tr("Mercado"), payer_id: user?.id || "", split_type: "equal", group_id: "", notes: "",
+  category: tr("Mercado"), category_id: "", payer_id: user?.id || "",
+  split_type: "equal", group_id: "", account_id: "", notes: "",
   currency: user?.currency || "EUR",
 });
 
@@ -34,6 +35,8 @@ export default function SharedExpenses() {
   const [list, setList] = useState([]);
   const [groups, setGroups] = useState([]);
   const [people, setPeople] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [summary, setSummary] = useState([]); // {user, net}
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null); // expense being edited or null
@@ -44,6 +47,8 @@ export default function SharedExpenses() {
   const [form, setForm] = useState(emptyForm(user));
   const [confirmDelete, setConfirmDelete] = useState(null); // expense id
   const [currencyFilter, setCurrencyFilter] = useState("");
+  const [linkingExpense, setLinkingExpense] = useState(null);
+  const [linkingAccountId, setLinkingAccountId] = useState("");
 
   const load = useCallback(async () => {
     const [a, b, c] = await Promise.all([
@@ -57,14 +62,29 @@ export default function SharedExpenses() {
     setSummary(b.data.summary || []);
     setPeople(c.data);
   }, [currencyFilter]);
-  useEffect(() => { api.get("/groups").then(r => setGroups(r.data)); }, []);
+  useEffect(() => {
+    Promise.all([
+      api.get("/groups"),
+      api.get("/accounts"),
+      api.get("/categories"),
+    ]).then(([groupResponse, accountResponse, categoryResponse]) => {
+      setGroups(groupResponse.data);
+      setAccounts(accountResponse.data);
+      setCategories(categoryResponse.data.filter(item => item.kind !== "income"));
+    });
+  }, []);
   useEffect(() => {
     load();
   }, [load]);
 
   const openNew = () => {
+    const defaultCategory = categories.find(item => item.name === "Mercado");
     setEditing(null);
-    setForm(emptyForm(user));
+    setForm({
+      ...emptyForm(user),
+      category: defaultCategory?.name || tr("Mercado"),
+      category_id: defaultCategory?.id || "",
+    });
     setParticipants([{ user, user_id: user.id, amount: "", percent: "" }]);
     setOpen(true);
   };
@@ -116,7 +136,8 @@ export default function SharedExpenses() {
     setForm({
       title: e.title, amount: String(e.amount), date: e.date,
       category: e.category, payer_id: e.payer_id, split_type: e.split_type,
-      group_id: e.group_id || "", notes: e.notes || "",
+      category_id: e.category_id || "", group_id: e.group_id || "",
+      account_id: e.account_id || "", notes: e.notes || "",
       currency: e.currency || curr,
     });
     setParticipants(e.participants.map(p => ({
@@ -178,8 +199,11 @@ export default function SharedExpenses() {
     try {
       const body = {
         title: form.title, amount: parseFloat(form.amount), date: form.date,
-        category: form.category, payer_id: form.payer_id, split_type: form.split_type,
-        group_id: form.group_id || null, notes: form.notes,
+        category: form.category, category_id: form.category_id || null,
+        payer_id: form.payer_id, split_type: form.split_type,
+        group_id: form.group_id || null,
+        account_id: form.payer_id === user.id ? (form.account_id || null) : null,
+        notes: form.notes,
         currency: form.currency,
         participants: participants.map(p => ({
           user_id: p.user_id || null,
@@ -222,6 +246,21 @@ export default function SharedExpenses() {
     } catch (err) {
       toast.error(formatApiError(err));
       setConfirmDelete(null);
+    }
+  };
+
+  const linkAccount = async () => {
+    if (!linkingExpense || !linkingAccountId) return;
+    try {
+      await api.put(`/shared-expenses/${linkingExpense.id}/account`, {
+        account_id: linkingAccountId,
+      });
+      toast.success(tr("Carteira vinculada"));
+      setLinkingExpense(null);
+      setLinkingAccountId("");
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err));
     }
   };
 
@@ -302,8 +341,17 @@ export default function SharedExpenses() {
                   </SelectContent>
                 </Select></div>
               <div><Label>{tr("Categoria")}</Label>
-                <Input value={form.category} data-testid="shared-category-input"
-                  onChange={e => setForm({ ...form, category: e.target.value })} /></div>
+                <Select value={form.category_id} onValueChange={value => {
+                  const category = categories.find(item => item.id === value);
+                  setForm({ ...form, category_id: value, category: category?.name || form.category });
+                }}>
+                  <SelectTrigger data-testid="shared-category-select"><SelectValue placeholder={tr("Selecione a categoria")} /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map(category => (
+                      <SelectItem key={category.id} value={category.id}>{tr(category.name)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select></div>
               <div><Label>{tr("Grupo (opcional)")}</Label>
                 <Select value={form.group_id} onValueChange={applyGroup}>
                   <SelectTrigger data-testid="shared-group-select"><SelectValue placeholder={tr("Nenhum")} /></SelectTrigger>
@@ -405,13 +453,45 @@ export default function SharedExpenses() {
                   </SelectContent>
                 </Select></div>
               <div><Label>{tr("Quem pagou")}</Label>
-                <Select value={form.payer_id} onValueChange={v => setForm({ ...form, payer_id: v })}>
+                <Select value={form.payer_id} onValueChange={v => setForm({
+                  ...form,
+                  payer_id: v,
+                  account_id: v === user.id ? form.account_id : "",
+                })}>
                   <SelectTrigger data-testid="shared-payer-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {participants.map(p => <SelectItem key={p.user.id} value={p.user.id}>{p.user.name}</SelectItem>)}
                   </SelectContent>
                 </Select></div>
             </div>
+
+            {form.payer_id === user.id && (
+              <div>
+                <Label>{tr("Carteira usada no pagamento")}</Label>
+                <Select value={form.account_id} onValueChange={value => {
+                  const account = accounts.find(item => item.id === value);
+                  setForm({
+                    ...form,
+                    account_id: value,
+                    currency: account?.currency || form.currency,
+                  });
+                }}>
+                  <SelectTrigger data-testid="shared-account-select">
+                    <SelectValue placeholder={tr("Selecione a carteira")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map(account => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {tr(account.name)} ({account.currency || curr})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-[#6B7068]">
+                  {tr("O valor total aparecerá em Lançamentos e será descontado desta carteira.")}
+                </p>
+              </div>
+            )}
 
             <Button type="submit" disabled={saving} className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="shared-submit-button">
               {saving ? tr("Salvando...") : editing ? tr("Salvar alterações") : tr("Criar despesa")}
@@ -428,6 +508,48 @@ export default function SharedExpenses() {
         onConfirm={doDelete}
         testId="shared-confirm-delete"
       />
+
+      <Dialog open={!!linkingExpense} onOpenChange={value => {
+        if (!value) {
+          setLinkingExpense(null);
+          setLinkingAccountId("");
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{tr("Vincular carteira")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-[#6B7068]">
+              {tr("Escolha a carteira usada para pagar esta despesa. O valor total passará a aparecer em Lançamentos.")}
+            </p>
+            <Select value={linkingAccountId} onValueChange={setLinkingAccountId}>
+              <SelectTrigger data-testid="link-shared-account-select">
+                <SelectValue placeholder={tr("Selecione a carteira")} />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts
+                  .filter(account => (account.currency || curr) === (linkingExpense?.currency || curr))
+                  .map(account => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {tr(account.name)} ({account.currency || curr})
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              disabled={!linkingAccountId}
+              onClick={linkAccount}
+              className="bg-[#061B4A] hover:bg-[#1268F4]"
+            >
+              {tr("Vincular carteira")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="space-y-4">
         {list.length === 0 && <div className="card-soft text-center text-[#6B7068]">{tr("Nenhuma despesa compartilhada")}</div>}
@@ -473,6 +595,19 @@ export default function SharedExpenses() {
                     <div className="text-2xl font-semibold" style={{ fontFamily: "Outfit" }}>{fmtMoney(e.amount, e.currency || curr)}</div>
                   </div>
                   <div className="flex gap-1">
+                    {e.payer_id === user.id && !e.account_id && (
+                      <button
+                        onClick={() => {
+                          setLinkingExpense(e);
+                          setLinkingAccountId("");
+                        }}
+                        data-testid={`shared-link-account-${e.id}`}
+                        className="p-2 rounded-lg text-amber-700 hover:bg-amber-50 border border-amber-200"
+                        title={tr("Vincular carteira")}
+                      >
+                        <Wallet size={16} />
+                      </button>
+                    )}
                     {canEdit && (
                       <button onClick={() => openEdit(e)} data-testid={`shared-edit-${e.id}`}
                         className="p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A] border border-[#E5E4E0]"
@@ -491,12 +626,34 @@ export default function SharedExpenses() {
                 </div>
               </div>
 
+              {e.payer_id === user.id && (
+                <div className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${
+                  e.account_id
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-amber-50 text-amber-700"
+                }`}>
+                  <Wallet size={12} />
+                  {e.account_id
+                    ? tr("Registrada em Lançamentos")
+                    : tr("Vincule uma carteira para registrar a saída")}
+                </div>
+              )}
+
               <div className="mt-4 space-y-2">
                 {e.participants.map(p => {
                   const participantId = p.participant_id || p.user_id || p.person_id;
                   const isPayer = participantId === e.payer_id;
                   const iAmPayer = e.payer_id === user.id;       // eu recebo
                   const iAmThisDebtor = participantId === user.id;   // eu devo
+                  const isExternal = Boolean(p.person_id || p.user?.external);
+                  const payerParticipant = e.participants.find(item => (
+                    (item.participant_id || item.user_id || item.person_id) === e.payer_id
+                  ));
+                  const requiresManualSettlement = Boolean(
+                    isExternal
+                    || payerParticipant?.person_id
+                    || payerParticipant?.user?.external
+                  );
                   let actionLabel = tr("Marcar pago");
                   let actionTitle = "Confirmar pagamento";
                   if (iAmPayer && !isPayer) {
@@ -528,17 +685,27 @@ export default function SharedExpenses() {
                       }`} style={{ fontFamily: "Outfit" }} data-testid={`participant-amount-${e.id}-${participantId}`}>
                         {fmtMoney(p.owed || 0, e.currency || curr)}
                       </div>
-                      {!isPayer && (
+                      {!isPayer && p.paid_back && (
                         <button onClick={() => togglePaid(e.id, participantId)} data-testid={`settle-${e.id}-${participantId}`}
-                          disabled={p.paid_back}
+                          disabled
                           title={actionTitle}
-                          className={`px-3 py-1.5 rounded-lg text-xs whitespace-nowrap ${
-                            p.paid_back
-                              ? "bg-emerald-50 text-emerald-700 cursor-default"
-                              : "bg-[#061B4A] text-white hover:bg-[#1268F4]"
-                          }`}>
-                          {p.paid_back ? <><Check size={12} className="inline mr-1" />{actionLabel}</> : actionLabel}
+                          className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap bg-emerald-50 text-emerald-700 cursor-default">
+                          <Check size={12} className="inline mr-1" />{actionLabel}
                         </button>
+                      )}
+                      {!isPayer && !p.paid_back && requiresManualSettlement && e.creator_id === user.id && (
+                        <button onClick={() => togglePaid(e.id, participantId)} data-testid={`settle-${e.id}-${participantId}`}
+                          title={tr("Confirmar manualmente")}
+                          className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap bg-[#061B4A] text-white hover:bg-[#1268F4]">
+                          {tr("Confirmar manualmente")}
+                        </button>
+                      )}
+                      {!isPayer && !p.paid_back && !requiresManualSettlement && user.id in {[e.payer_id]: true, [participantId]: true} && (
+                        <Link to="/acertos"
+                          className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap bg-[#061B4A] text-white hover:bg-[#1268F4]"
+                          data-testid={`open-settlement-${e.id}-${participantId}`}>
+                          {iAmThisDebtor ? tr("Registrar pagamento") : tr("Ver acerto")}
+                        </Link>
                       )}
                     </div>
                   );

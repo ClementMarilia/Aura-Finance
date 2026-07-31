@@ -780,6 +780,18 @@ export default function Transactions() {
                           <CreditCard size={10} /> {tr("Parcela")}
                         </span>
                       )}
+                      {t.source === "shared_expense" && (
+                        <span data-testid={`tx-shared-badge-${t.id}`}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#0D5DD7] bg-[#EEF4FF] rounded-full px-2 py-0.5">
+                          {tr("Compartilhada")}
+                        </span>
+                      )}
+                      {t.source === "settlement" && (
+                        <span data-testid={`tx-settlement-badge-${t.id}`}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-violet-700 bg-violet-50 rounded-full px-2 py-0.5">
+                          {tr("Acerto")}
+                        </span>
+                      )}
                       {t.overdue && (
                         <span data-testid={`tx-overdue-badge-${t.id}`}
                           className="inline-flex items-center gap-1 text-[10px] font-medium text-[#D9453B] bg-red-50 rounded-full px-2 py-0.5">
@@ -801,8 +813,21 @@ export default function Transactions() {
                   <td className={`py-3 px-4 text-right font-medium ${
                     t.type === "income" ? "text-emerald-600" : t.type === "expense" ? "text-rose-600" : "text-[#1A1C1A]"
                   }`}>
-                    <div>{t.type === "expense" ? "-" : t.type === "income" ? "+" : ""}{fmtMoney(t.amount, t.currency || curr)}</div>
-                    {t.type === "transfer" && t.target_currency && (
+                    <div>
+                      {t.source === "settlement"
+                        ? (
+                          ["out", "credit_reversal"].includes(t.settlement_direction)
+                            ? "-"
+                            : "+"
+                        )
+                        : t.type === "expense"
+                          ? "-"
+                          : t.type === "income"
+                            ? "+"
+                            : ""}
+                      {fmtMoney(t.amount, t.currency || curr)}
+                    </div>
+                    {t.type === "transfer" && t.target_currency && t.source !== "settlement" && (
                       <div className="text-xs text-[#6B7068]">→ {fmtMoney(t.target_amount ?? t.amount, t.target_currency)}</div>
                     )}
                     {t.type !== "transfer" && (t.currency || curr) !== curr && (
@@ -819,7 +844,14 @@ export default function Transactions() {
                             <Check size={16} />
                           </button>
                         ) : (
-                          <span className="text-xs text-[#6B7068] italic pr-1" title={tr("Editar em Parcelamentos")}>vinculado</span>
+                          <span
+                            className="text-xs text-[#6B7068] italic pr-1"
+                            title={t.source === "shared_expense"
+                              ? tr("Edite em Despesas Compartilhadas")
+                              : tr("Lançamento vinculado")}
+                          >
+                            {tr("Vinculado")}
+                          </span>
                         )
                       ) : (
                       <>
