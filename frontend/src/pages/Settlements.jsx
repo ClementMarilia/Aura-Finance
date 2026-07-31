@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import api, { CURRENCIES, fmtMoney, fmtDate } from "@/lib/api";
+import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, Bell, History as HistoryIcon, Search, X } from "lucide-react";
+import { Check, Bell, History as HistoryIcon, Search, X, Wallet, Clock, Ban } from "lucide-react";
 import { toast } from "sonner";
 
 import { translate as tr } from "@/i18n";
@@ -38,6 +40,11 @@ export default function Settlements() {
   const [historyFilters, setHistoryFilters] = useState(emptyHistoryFilters);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [tab, setTab] = useState("open");
+  const [accounts, setAccounts] = useState([]);
+  const [paymentDialog, setPaymentDialog] = useState(null);
+  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentBusy, setPaymentBusy] = useState(false);
 
   const load = () => api.get("/settlements").then(r => setData(r.data));
   const loadHistory = useCallback(async (filters = emptyHistoryFilters) => {
@@ -60,7 +67,11 @@ export default function Settlements() {
       setHistoryLoading(false);
     }
   }, []);
-  useEffect(() => { load(); loadHistory(); }, [loadHistory]);
+  useEffect(() => {
+    load();
+    loadHistory();
+    api.get("/accounts").then(response => setAccounts(response.data));
+  }, [loadHistory]);
 
   const updateHistoryFilter = (field, value) => {
     setHistoryFilters(current => ({ ...current, [field]: value }));
@@ -83,20 +94,96 @@ export default function Settlements() {
     } catch (err) { toast.error(err?.response?.data?.detail || "Erro"); }
   };
 
-  const settleAll = async (otherUserId, name) => {
-    if (!window.confirm(tr("Marcar TODAS as dívidas pendentes entre você e {name} como pagas?", { name }))) return;
-    const r = await api.post(`/settlements/settle-between/${otherUserId}`);
-    toast.success(`${r.data.expenses_updated} despesa(s) quitada(s)`);
-    load();
-    loadHistory(historyFilters);
+  const openWalletDialog = (mode, row) => {
+    setPaymentDialog({ mode, row });
+    setSelectedAccountId("");
+    setPaymentAmount(
+      mode === "send" ? String(row.settlement_amount || "") : "",
+    );
   };
 
-  const markPaid = async (row) => {
-    await api.post(`/shared-expenses/${row.expense_id}/settle/${row.debtor_id}`);
-    toast.success(tr("Acerto registrado"));
-    load();
-    loadHistory(historyFilters);
+  const closeWalletDialog = () => {
+    if (paymentBusy) return;
+    setPaymentDialog(null);
+    setSelectedAccountId("");
+    setPaymentAmount("");
   };
+
+  const submitWalletAction = async () => {
+    if (!paymentDialog || paymentBusy) return;
+    const amount = Number(paymentAmount);
+    if (
+      paymentDialog.mode === "send"
+      && (!selectedAccountId || !Number.isFinite(amount) || amount <= 0)
+    ) return;
+    setPaymentBusy(true);
+    try {
+      if (paymentDialog.mode === "send") {
+        await postCreate("/settlements/payments", {
+          expense_id: paymentDialog.row.expense_id,
+          account_id: selectedAccountId,
+          amount,
+        });
+        toast.success(tr("Pagamento registrado. Aguardando confirmação."));
+      } else {
+        await api.post(
+          `/settlements/payments/${paymentDialog.row.payment.id}/confirm`,
+          { account_id: selectedAccountId },
+        );
+        toast.success(tr("Recebimento confirmado"));
+      }
+      setPaymentDialog(null);
+      setSelectedAccountId("");
+      setPaymentAmount("");
+      await Promise.all([load(), loadHistory(historyFilters)]);
+    } catch (error) {
+      toast.error(formatApiError(error));
+    } finally {
+      setPaymentBusy(false);
+    }
+  };
+
+  const closePayment = async (row, action) => {
+    const message = action === "cancel"
+      ? tr("Cancelar o registro? O app criará uma reversão na sua carteira. Faça isso somente se o pagamento não aconteceu.")
+      : tr("Rejeitar este pagamento? O débito de quem enviou será mantido e o acerto ficará em contestação.");
+    if (!window.confirm(message)) return;
+    const reason = window.prompt(
+      action === "cancel"
+        ? tr("Informe o motivo do cancelamento (opcional)")
+        : tr("Informe o motivo da contestação (opcional)"),
+      "",
+    );
+    if (reason === null) return;
+    try {
+      await api.post(
+        `/settlements/payments/${row.payment.id}/${action}`,
+        { reason },
+      );
+      toast.success(
+        action === "cancel"
+          ? tr("Pagamento cancelado com reversão registrada")
+          : tr("Pagamento colocado em contestação"),
+      );
+      await load();
+    } catch (error) {
+      toast.error(formatApiError(error));
+    }
+  };
+
+  const confirmExternalPayment = async (row) => {
+    try {
+      await api.post(`/shared-expenses/${row.expense_id}/settle/${row.debtor_id}`);
+      toast.success(tr("Acerto registrado"));
+      await Promise.all([load(), loadHistory(historyFilters)]);
+    } catch (error) {
+      toast.error(formatApiError(error));
+    }
+  };
+
+  const paymentAccounts = accounts.filter(account => (
+    (account.currency || curr) === paymentDialog?.row?.settlement_currency
+  ));
 
   return (
     <div className="space-y-6" data-testid="settlements-page">
@@ -151,10 +238,11 @@ export default function Settlements() {
                       <Bell size={12} /> {tr("Cutucar")}
                     </button>
                   )}
-                  <button onClick={() => settleAll(s.user?.id, s.user?.name)} data-testid={`settle-all-${s.user?.id}`}
-                    className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-[#061B4A] text-white hover:bg-[#1268F4] flex items-center justify-center gap-1 transition-colors">
-                    <Check size={12} /> {tr("Quitar tudo")}
-                  </button>
+                  {s.net < 0 && (
+                    <div className="text-xs text-[#6B7068] flex items-center gap-1.5">
+                      <Wallet size={12} /> {tr("Pague pelos lançamentos abaixo")}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -215,12 +303,73 @@ export default function Settlements() {
                     <td className="py-3 px-4">{r.title}</td>
                     <td className="py-3 px-4">{fmtDate(r.date)}</td>
                     <td className="py-3 px-4 text-right font-semibold">{fmtMoney(r.amount, curr)}</td>
-                    <td className="py-3 px-4">
-                      {(r.debtor_id === user.id || r.creditor_id === user.id || r.managed_by_user) && (
-                        <button onClick={() => markPaid(r)} data-testid={`mark-paid-${i}`}
+                    <td className="py-3 px-4 min-w-[190px]">
+                      {!r.payment && r.external_debtor && r.managed_by_user && (
+                        <button onClick={() => confirmExternalPayment(r)} data-testid={`confirm-external-${i}`}
                           className="px-3 py-1.5 rounded-lg text-xs bg-[#061B4A] text-white hover:bg-[#1268F4] flex items-center gap-1">
-                          <Check size={12} /> {tr("Marcar pago")}
+                          <Check size={12} /> {tr("Confirmar manualmente")}
                         </button>
+                      )}
+                      {!r.payment && !r.external_debtor && r.debtor_id === user.id && (
+                        <button onClick={() => openWalletDialog("send", r)} data-testid={`send-payment-${i}`}
+                          className="px-3 py-1.5 rounded-lg text-xs bg-[#061B4A] text-white hover:bg-[#1268F4] flex items-center gap-1">
+                          <Wallet size={12} /> {tr("Registrar pagamento")}
+                        </button>
+                      )}
+                      {!r.payment && !r.external_debtor && r.creditor_id === user.id && (
+                        <span className="text-xs text-[#6B7068]">{tr("Aguardando pagamento")}</span>
+                      )}
+                      {r.payment?.status === "sent" && r.payment.is_sender && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-amber-700 flex items-center gap-1">
+                            <Clock size={12} /> {tr("Aguardando confirmação")}
+                          </span>
+                          <button onClick={() => closePayment(r, "cancel")}
+                            className="text-xs text-rose-600 hover:underline"
+                            data-testid={`cancel-payment-${i}`}>
+                            {tr("Cancelar")}
+                          </button>
+                        </div>
+                      )}
+                      {r.payment?.status === "sent" && r.payment.is_receiver && (
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => openWalletDialog("confirm", r)}
+                            className="px-3 py-1.5 rounded-lg text-xs bg-emerald-700 text-white hover:bg-emerald-800 flex items-center gap-1"
+                            data-testid={`confirm-payment-${i}`}>
+                            <Check size={12} /> {tr("Confirmar recebimento")}
+                          </button>
+                          <button onClick={() => closePayment(r, "reject")}
+                            className="px-3 py-1.5 rounded-lg text-xs border border-rose-200 text-rose-700 hover:bg-rose-50 flex items-center gap-1"
+                            data-testid={`reject-payment-${i}`}>
+                            <Ban size={12} /> {tr("Rejeitar")}
+                          </button>
+                        </div>
+                      )}
+                      {r.payment?.status === "disputed" && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-rose-700 flex items-center gap-1">
+                            <Ban size={12} /> {tr("Pagamento em contestação")}
+                          </span>
+                          {r.payment.is_receiver && (
+                            <button onClick={() => openWalletDialog("confirm", r)}
+                              className="text-xs text-emerald-700 hover:underline"
+                              data-testid={`confirm-disputed-payment-${i}`}>
+                              {tr("Confirmar após verificar")}
+                            </button>
+                          )}
+                          {r.payment.is_sender && (
+                            <button onClick={() => closePayment(r, "cancel")}
+                              className="text-xs text-rose-600 hover:underline"
+                              data-testid={`cancel-disputed-payment-${i}`}>
+                              {tr("Cancelar registro")}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {["confirming", "cancelling"].includes(r.payment?.status) && (
+                        <span className="text-xs text-[#6B7068] flex items-center gap-1">
+                          <Clock size={12} /> {tr("Processando confirmação...")}
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -390,6 +539,128 @@ export default function Settlements() {
           </div>
         </div>
       )}
+
+      <Dialog open={Boolean(paymentDialog)} onOpenChange={open => !open && closeWalletDialog()}>
+        <DialogContent className="max-w-md" data-testid="settlement-wallet-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {paymentDialog?.mode === "send"
+                ? tr("Registrar pagamento")
+                : tr("Confirmar recebimento")}
+            </DialogTitle>
+          </DialogHeader>
+          {paymentDialog && (
+            <div className="space-y-4">
+              <div className="rounded-xl bg-[#F1EFE7] p-3">
+                <div className="text-sm font-medium">{paymentDialog.row.title}</div>
+                <div className="mt-1 text-xl font-semibold" style={{ fontFamily: "Outfit" }}>
+                  {fmtMoney(
+                    paymentDialog.row.settlement_amount,
+                    paymentDialog.row.settlement_currency,
+                  )}
+                </div>
+              </div>
+              {paymentDialog.mode === "send" && (
+                <div className="space-y-2">
+                  <Label htmlFor="settlement-amount">{tr("Valor do pagamento")}</Label>
+                  <Input
+                    id="settlement-amount"
+                    type="number"
+                    min="0.01"
+                    max={paymentDialog.row.settlement_amount}
+                    step="0.01"
+                    value={paymentAmount}
+                    onChange={event => setPaymentAmount(event.target.value)}
+                    data-testid="settlement-amount"
+                  />
+                  <p className="text-xs text-[#6B7068]">
+                    {tr("Você pode registrar um pagamento parcial de até {amount}.", {
+                      amount: fmtMoney(
+                        paymentDialog.row.settlement_amount,
+                        paymentDialog.row.settlement_currency,
+                      ),
+                    })}
+                  </p>
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label>
+                  {paymentDialog.mode === "send"
+                    ? tr("Carteira de saída")
+                    : tr("Carteira de entrada (opcional)")}
+                </Label>
+                <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                  <SelectTrigger data-testid="settlement-account">
+                    <SelectValue
+                      placeholder={
+                        paymentDialog.mode === "send"
+                          ? tr("Selecione uma carteira")
+                          : tr("Confirmar sem adicionar a uma carteira")
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {paymentAccounts.map(account => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.name} · {fmtMoney(account.balance, account.currency || curr)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {paymentDialog.mode === "confirm" && selectedAccountId && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAccountId("")}
+                    className="text-xs text-[#1268F4] hover:underline"
+                  >
+                    {tr("Não adicionar a uma carteira")}
+                  </button>
+                )}
+                {paymentAccounts.length === 0 && paymentDialog.mode === "send" && (
+                  <p className="text-xs text-rose-600">
+                    {tr("Você não possui uma carteira na moeda deste acerto.")}
+                  </p>
+                )}
+              </div>
+              <p className="text-xs text-[#6B7068]">
+                {paymentDialog.mode === "send"
+                  ? tr("O valor sairá agora da carteira e ficará aguardando a confirmação de quem recebe.")
+                  : selectedAccountId
+                    ? tr("Ao confirmar, o valor entrará na carteira escolhida e reduzirá a dívida.")
+                    : tr("A dívida será atualizada sem alterar nenhuma carteira sua.")}
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <button type="button" onClick={closeWalletDialog}
+              disabled={paymentBusy}
+              className="px-4 py-2 rounded-xl text-sm border border-[#E5E4E0]">
+              {tr("Voltar")}
+            </button>
+            <button type="button" onClick={submitWalletAction}
+              disabled={
+                paymentBusy
+                || (
+                  paymentDialog?.mode === "send"
+                  && (
+                    !selectedAccountId
+                    || !Number.isFinite(Number(paymentAmount))
+                    || Number(paymentAmount) <= 0
+                    || Number(paymentAmount) > Number(paymentDialog.row.settlement_amount)
+                  )
+                )
+              }
+              className="px-4 py-2 rounded-xl text-sm bg-[#061B4A] text-white disabled:opacity-50"
+              data-testid="settlement-wallet-submit">
+              {paymentBusy ? tr("Salvando...") : (
+                paymentDialog?.mode === "send"
+                  ? tr("Confirmar envio")
+                  : tr("Confirmar recebimento")
+              )}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

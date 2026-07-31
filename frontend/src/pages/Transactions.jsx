@@ -786,6 +786,12 @@ export default function Transactions() {
                           {tr("Compartilhada")}
                         </span>
                       )}
+                      {t.source === "settlement" && (
+                        <span data-testid={`tx-settlement-badge-${t.id}`}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-violet-700 bg-violet-50 rounded-full px-2 py-0.5">
+                          {tr("Acerto")}
+                        </span>
+                      )}
                       {t.overdue && (
                         <span data-testid={`tx-overdue-badge-${t.id}`}
                           className="inline-flex items-center gap-1 text-[10px] font-medium text-[#D9453B] bg-red-50 rounded-full px-2 py-0.5">
@@ -807,8 +813,21 @@ export default function Transactions() {
                   <td className={`py-3 px-4 text-right font-medium ${
                     t.type === "income" ? "text-emerald-600" : t.type === "expense" ? "text-rose-600" : "text-[#1A1C1A]"
                   }`}>
-                    <div>{t.type === "expense" ? "-" : t.type === "income" ? "+" : ""}{fmtMoney(t.amount, t.currency || curr)}</div>
-                    {t.type === "transfer" && t.target_currency && (
+                    <div>
+                      {t.source === "settlement"
+                        ? (
+                          ["out", "credit_reversal"].includes(t.settlement_direction)
+                            ? "-"
+                            : "+"
+                        )
+                        : t.type === "expense"
+                          ? "-"
+                          : t.type === "income"
+                            ? "+"
+                            : ""}
+                      {fmtMoney(t.amount, t.currency || curr)}
+                    </div>
+                    {t.type === "transfer" && t.target_currency && t.source !== "settlement" && (
                       <div className="text-xs text-[#6B7068]">→ {fmtMoney(t.target_amount ?? t.amount, t.target_currency)}</div>
                     )}
                     {t.type !== "transfer" && (t.currency || curr) !== curr && (

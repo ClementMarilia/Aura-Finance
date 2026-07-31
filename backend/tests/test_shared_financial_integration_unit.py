@@ -101,6 +101,7 @@ def test_unlinked_shared_expense_never_changes_wallet(monkeypatch):
     fake_db.transactions.delete_many.assert_awaited_once_with({
         "shared_expense_id": "shared-1",
         "user_id": "marilia",
+        "source": "shared_expense",
     })
     fake_db.transactions.insert_one.assert_not_awaited()
 

@@ -857,6 +857,22 @@ class SharedExpenseAccountIn(BaseModel):
     account_id: str
 
 
+class SettlementPaymentStartIn(BaseModel):
+    expense_id: str
+    account_id: str
+    amount: Optional[float] = Field(default=None, gt=0)
+    note: str = Field(default="", max_length=500)
+
+
+class SettlementPaymentConfirmIn(BaseModel):
+    account_id: Optional[str] = None
+    note: str = Field(default="", max_length=500)
+
+
+class SettlementPaymentActionIn(BaseModel):
+    reason: str = Field(default="", max_length=500)
+
+
 class ReportFiltersIn(BaseModel):
     description: str = Field(default="", max_length=120)
     category_ids: List[str] = Field(default_factory=list)
@@ -1707,6 +1723,26 @@ async def anonymize_user_in_shared_history(
     await db.settlement_history.update_many(
         {"creditor_id": user_id},
         {"$set": {"creditor_id": anonymous_user_id}},
+    )
+    await db.settlement_payments.update_many(
+        {"debtor_id": user_id},
+        {
+            "$set": {
+                "debtor_id": anonymous_user_id,
+                "anonymized_at": now_iso(),
+            },
+            "$unset": {"payer_account_id": ""},
+        },
+    )
+    await db.settlement_payments.update_many(
+        {"creditor_id": user_id},
+        {
+            "$set": {
+                "creditor_id": anonymous_user_id,
+                "anonymized_at": now_iso(),
+            },
+            "$unset": {"receiver_account_id": ""},
+        },
     )
 
 
@@ -2891,7 +2927,10 @@ async def list_transactions(
         q["$and"] = clauses
     rows = await db.transactions.find(q, {"_id": 0}).to_list(2000)
     for r in rows:
-        if r.get("shared_expense_id"):
+        if r.get("settlement_payment_id"):
+            r["source"] = "settlement"
+            r["editable"] = False
+        elif r.get("shared_expense_id"):
             r["source"] = "shared_expense"
             r["editable"] = False
         else:
@@ -2925,7 +2964,10 @@ async def list_transactions(
         for r in overdue_rows:
             if r["id"] in existing_ids:
                 continue
-            if r.get("shared_expense_id"):
+            if r.get("settlement_payment_id"):
+                r["source"] = "settlement"
+                r["editable"] = False
+            elif r.get("shared_expense_id"):
                 r["source"] = "shared_expense"
                 r["editable"] = False
             else:
@@ -3236,10 +3278,10 @@ async def update_transaction(tid: str, payload: TransactionIn, user=Depends(get_
     )
     if not current:
         raise HTTPException(404, "Não encontrado")
-    if current.get("shared_expense_id"):
+    if current.get("shared_expense_id") or current.get("settlement_payment_id"):
         raise HTTPException(
             409,
-            "Edite este lançamento pela despesa compartilhada vinculada",
+            "Edite este lançamento pela operação financeira vinculada",
         )
     res = await db.transactions.update_one(
         {"id": tid, "user_id": user["id"]},
@@ -3260,10 +3302,10 @@ async def update_transaction(tid: str, payload: TransactionIn, user=Depends(get_
 @api.delete("/transactions/{tid}")
 async def delete_transaction(tid: str, user=Depends(get_current_user)):
     tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
-    if tx and tx.get("shared_expense_id"):
+    if tx and (tx.get("shared_expense_id") or tx.get("settlement_payment_id")):
         raise HTTPException(
             409,
-            "Exclua este lançamento pela despesa compartilhada vinculada",
+            "Exclua este lançamento pela operação financeira vinculada",
         )
     if tx and tx.get("receipt"):
         await db.files.update_one({"id": tx["receipt"]["file_id"]}, {"$set": {"is_deleted": True}})
@@ -3282,10 +3324,10 @@ async def toggle_transaction_payment(tid: str, user=Depends(get_current_user)):
     tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
     if not tx:
         raise HTTPException(404, "Lançamento não encontrado")
-    if tx.get("shared_expense_id"):
+    if tx.get("shared_expense_id") or tx.get("settlement_payment_id"):
         raise HTTPException(
             409,
-            "O pagamento é controlado pela despesa compartilhada vinculada",
+            "O pagamento é controlado pela operação financeira vinculada",
         )
     if tx.get("status") == "cancelled":
         raise HTTPException(400, "Lançamento cancelado não pode ser pago")
@@ -3308,7 +3350,9 @@ async def bulk_delete_transactions(body: BulkDeleteIn, user=Depends(get_current_
     txs = await db.transactions.find(
         {"id": {"$in": body.ids}, "user_id": user["id"]}, {"_id": 0}).to_list(5000)
     protected_ids = {
-        tx["id"] for tx in txs if tx.get("shared_expense_id")
+        tx["id"]
+        for tx in txs
+        if tx.get("shared_expense_id") or tx.get("settlement_payment_id")
     }
     for tx in txs:
         if tx["id"] in protected_ids:
@@ -4315,6 +4359,7 @@ async def sync_shared_expense_transaction(expense: dict, payer: dict) -> Optiona
     query = {
         "shared_expense_id": expense["id"],
         "user_id": payer["id"],
+        "source": "shared_expense",
     }
     account_id = expense.get("account_id")
     if expense.get("payer_id") != payer["id"] or not account_id:
@@ -4404,6 +4449,172 @@ async def record_settlement(expense: dict, debtor_id: str, paid_at: str) -> None
         }},
         upsert=True,
     )
+
+
+def shared_expense_participant(expense: dict, participant_id: str) -> Optional[dict]:
+    return next(
+        (
+            item for item in expense.get("participants", [])
+            if participant_reference(item) == participant_id
+        ),
+        None,
+    )
+
+
+async def validate_settlement_account(
+    account_id: str,
+    user: dict,
+    currency: str,
+) -> dict:
+    account = await db.accounts.find_one(
+        {"id": account_id, "user_id": user["id"]},
+        {"_id": 0},
+    )
+    if not account:
+        raise HTTPException(404, "Carteira não encontrada")
+    account_currency = normalize_currency(
+        account.get("currency"),
+        user.get("currency", "EUR"),
+    )
+    if account_currency != normalize_currency(currency):
+        raise HTTPException(
+            400,
+            "Escolha uma carteira com a mesma moeda do acerto",
+        )
+    return account
+
+
+def settlement_wallet_transaction(
+    payment: dict,
+    user_id: str,
+    account_id: str,
+    direction: Literal["out", "in", "reversal", "credit_reversal"],
+) -> dict:
+    amount = round(float(payment.get("amount") or 0), 2)
+    currency = normalize_currency(payment.get("currency"))
+    description = payment.get("expense_title") or "Acerto de despesa compartilhada"
+    is_debit = direction in ("out", "credit_reversal")
+    counterparty_id = (
+        payment.get("debtor_id")
+        if direction in ("in", "credit_reversal")
+        else payment.get("creditor_id")
+    )
+    notes = {
+        "out": "Pagamento de acerto enviado",
+        "in": "Pagamento de acerto recebido",
+        "reversal": "Reversão de pagamento de acerto cancelado",
+        "credit_reversal": "Reversão técnica de crédito de acerto",
+    }[direction]
+    transaction = {
+        "id": new_id(),
+        "user_id": user_id,
+        "type": "transfer",
+        "date": now_iso()[:10],
+        "amount": amount,
+        "category_id": None,
+        "person_id": counterparty_id,
+        "account_id": None,
+        "from_account_id": account_id if is_debit else None,
+        "to_account_id": account_id if not is_debit else None,
+        "payment_method": None,
+        "description": description,
+        "notes": notes,
+        "status": "paid",
+        "currency": currency,
+        "target_currency": currency,
+        "target_amount": amount,
+        "transfer_exchange_rate": 1.0,
+        "rate_source": "automatic",
+        "source": "settlement",
+        "settlement_payment_id": payment["id"],
+        "shared_expense_id": payment["expense_id"],
+        "settlement_direction": direction,
+        "editable": False,
+        "created_at": now_iso(),
+    }
+    return transaction
+
+
+async def create_settlement_transaction_once(
+    payment: dict,
+    user_id: str,
+    account_id: str,
+    direction: Literal["out", "in", "reversal", "credit_reversal"],
+) -> dict:
+    """Create one immutable wallet leg for a settlement payment.
+
+    The compound database index makes this safe when an HTTP request is retried.
+    Reversals are new rows; original financial rows are never deleted.
+    """
+    existing = await db.transactions.find_one(
+        {
+            "settlement_payment_id": payment["id"],
+            "settlement_direction": direction,
+            "user_id": user_id,
+        },
+        {"_id": 0},
+    )
+    if existing:
+        return existing
+    transaction = settlement_wallet_transaction(
+        payment,
+        user_id,
+        account_id,
+        direction,
+    )
+    try:
+        await db.transactions.insert_one(transaction)
+    except DuplicateKeyError:
+        existing = await db.transactions.find_one(
+            {
+                "settlement_payment_id": payment["id"],
+                "settlement_direction": direction,
+                "user_id": user_id,
+            },
+            {"_id": 0},
+        )
+        if existing:
+            return existing
+        raise
+    transaction.pop("_id", None)
+    return transaction
+
+
+async def confirmed_settlement_total(expense_id: str, debtor_id: str) -> float:
+    payments = await db.settlement_payments.find(
+        {
+            "expense_id": expense_id,
+            "debtor_id": debtor_id,
+            "status": "confirmed",
+        },
+        {"_id": 0, "amount": 1},
+    ).to_list(1000)
+    return round(sum(float(item.get("amount") or 0) for item in payments), 2)
+
+
+def public_settlement_payment(payment: Optional[dict], user_id: str) -> Optional[dict]:
+    if not payment:
+        return None
+    if user_id not in {
+        payment.get("debtor_id"),
+        payment.get("creditor_id"),
+    }:
+        return None
+    return {
+        "id": payment.get("id"),
+        "status": payment.get("status"),
+        "amount": payment.get("amount"),
+        "currency": payment.get("currency"),
+        "sent_at": payment.get("sent_at"),
+        "confirmed_at": payment.get("confirmed_at"),
+        "cancelled_at": payment.get("cancelled_at"),
+        "rejected_at": payment.get("rejected_at"),
+        "reversed_at": payment.get("reversed_at"),
+        "rejection_reason": payment.get("rejection_reason"),
+        "receiver_wallet_recorded": bool(payment.get("receiver_account_id")),
+        "is_sender": payment.get("debtor_id") == user_id,
+        "is_receiver": payment.get("creditor_id") == user_id,
+    }
 
 
 async def confirm_shared_participant(expense: dict, debtor_id: str) -> tuple[dict, bool]:
@@ -4516,6 +4727,53 @@ async def backfill_shared_settlement_history() -> int:
                     }
                 },
             )
+    return repaired
+
+
+async def repair_confirmed_settlement_debts() -> int:
+    """Finish debt synchronization after an interrupted confirmation.
+
+    Confirmed payments remain the financial source of truth. This repair only
+    updates the derived paid_back flag and settlement history when the sum of
+    confirmed payments covers the original participant debt.
+    """
+    payments = await db.settlement_payments.find(
+        {"status": "confirmed"},
+        {"_id": 0, "expense_id": 1, "debtor_id": 1, "amount": 1},
+    ).to_list(5000)
+    totals = defaultdict(float)
+    for payment in payments:
+        key = (payment.get("expense_id"), payment.get("debtor_id"))
+        totals[key] += float(payment.get("amount") or 0)
+
+    repaired = 0
+    for (expense_id, debtor_id), total in totals.items():
+        if not expense_id or not debtor_id:
+            continue
+        expense = await db.shared_expenses.find_one(
+            {"id": expense_id},
+            {"_id": 0},
+        )
+        if not expense:
+            continue
+        participant = shared_expense_participant(expense, debtor_id)
+        if (
+            not participant
+            or participant.get("paid_back")
+            or total + 0.009 < float(participant.get("owed") or 0)
+        ):
+            continue
+        _, changed = await confirm_shared_participant(expense, debtor_id)
+        if changed:
+            repaired += 1
+        await db.settlement_payments.update_many(
+            {
+                "expense_id": expense_id,
+                "debtor_id": debtor_id,
+                "status": "confirmed",
+            },
+            {"$unset": {"settlement_sync_pending": ""}},
+        )
     return repaired
 
 
@@ -4713,7 +4971,17 @@ async def settle_participant(sid: str, participant_id: str, user=Depends(get_cur
         ),
         None,
     )
-    if target and target.get("person_id") and se.get("creator_id") != user["id"]:
+    payer_participant = shared_expense_participant(se, se.get("payer_id"))
+    manual_settlement = bool(
+        (target or {}).get("person_id")
+        or (payer_participant or {}).get("person_id")
+    )
+    if not manual_settlement:
+        raise HTTPException(
+            409,
+            "Participantes cadastrados devem usar o fluxo de pagamento e confirmação",
+        )
+    if se.get("creator_id") != user["id"]:
         raise HTTPException(403, "Apenas quem cadastrou a pessoa externa pode confirmar o acerto")
     updated, changed = await confirm_shared_participant(se, participant_id)
     status = shared_expense_status(updated)
@@ -4917,6 +5185,23 @@ async def update_shared(sid: str, payload: SharedExpenseIn, user=Depends(get_cur
         raise HTTPException(404, "Não encontrado")
     if se["creator_id"] != user["id"]:
         raise HTTPException(403, "Apenas o criador pode editar")
+    payment_count = await db.settlement_payments.count_documents({
+        "expense_id": sid,
+        "status": {
+            "$in": [
+                "sent",
+                "confirming",
+                "confirmed",
+                "disputed",
+                "cancelling",
+            ],
+        },
+    })
+    if payment_count:
+        raise HTTPException(
+            409,
+            "Esta despesa possui acertos financeiros e não pode mais ser editada",
+        )
     participants_in, participant_ids = await validate_shared_participants(
         payload, user["id"]
     )
@@ -4967,6 +5252,7 @@ async def update_shared(sid: str, payload: SharedExpenseIn, user=Depends(get_cur
     await db.transactions.delete_many({
         "shared_expense_id": sid,
         "user_id": {"$ne": payload.payer_id},
+        "source": "shared_expense",
     })
     payer = (
         user
@@ -4988,12 +5274,548 @@ async def delete_shared(sid: str, user=Depends(get_current_user)):
         raise HTTPException(404, "Não encontrado")
     if se["creator_id"] != user["id"] and se["payer_id"] != user["id"]:
         raise HTTPException(403, "Apenas o criador ou o pagador pode excluir")
+    payment_count = await db.settlement_payments.count_documents({
+        "expense_id": sid,
+        "status": {
+            "$in": [
+                "sent",
+                "confirming",
+                "confirmed",
+                "disputed",
+                "cancelling",
+            ],
+        },
+    })
+    if payment_count:
+        raise HTTPException(
+            409,
+            "Esta despesa possui acertos financeiros e não pode ser excluída",
+        )
     await db.shared_expenses.delete_one({"id": sid})
-    await db.transactions.delete_many({"shared_expense_id": sid})
+    await db.transactions.delete_many({
+        "shared_expense_id": sid,
+        "source": "shared_expense",
+    })
     return {"ok": True}
 
 
 # ---------- Settlements ----------
+@api.post("/settlements/payments")
+async def start_settlement_payment(
+    payload: SettlementPaymentStartIn,
+    user=Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    async def create():
+        expense = await db.shared_expenses.find_one(
+            {
+                "id": payload.expense_id,
+                **visible_shared_query(user["id"]),
+                "status": {"$ne": "finalized"},
+            },
+            {"_id": 0},
+        )
+        if not expense:
+            raise HTTPException(404, "Despesa não encontrada")
+        participant = shared_expense_participant(expense, user["id"])
+        if not participant or user["id"] == expense.get("payer_id"):
+            raise HTTPException(403, "Somente quem deve pode registrar o pagamento")
+        if participant.get("person_id"):
+            raise HTTPException(400, "Pessoas externas usam confirmação manual")
+        if participant.get("paid_back") is True:
+            raise HTTPException(409, "Este acerto já foi concluído")
+        creditor = await db.users.find_one(
+            {"id": expense.get("payer_id")},
+            {"_id": 0, "password_hash": 0},
+        )
+        if not creditor:
+            raise HTTPException(
+                400,
+                "O recebimento por pessoa externa deve ser confirmado manualmente",
+            )
+        currency = normalize_currency(
+            expense.get("currency"),
+            user.get("currency", "EUR"),
+        )
+        await validate_settlement_account(payload.account_id, user, currency)
+        confirmed_total = await confirmed_settlement_total(
+            expense["id"],
+            user["id"],
+        )
+        remaining = round(
+            float(participant.get("owed") or 0) - confirmed_total,
+            2,
+        )
+        requested_amount = (
+            remaining
+            if payload.amount is None
+            else round(float(payload.amount), 2)
+        )
+        if not math.isfinite(requested_amount) or requested_amount <= 0:
+            raise HTTPException(400, "O valor deve ser maior que zero")
+        if requested_amount > remaining:
+            raise HTTPException(
+                409,
+                "O pagamento não pode superar o valor ainda devido",
+            )
+        amount = requested_amount
+        if amount <= 0:
+            raise HTTPException(400, "Não existe valor pendente para este acerto")
+
+        created_at = now_iso()
+        payment = {
+            "id": new_id(),
+            "expense_id": expense["id"],
+            "expense_title": expense.get("title", ""),
+            "debtor_id": user["id"],
+            "creditor_id": expense["payer_id"],
+            "amount": amount,
+            "currency": currency,
+            "status": "sent",
+            "active": True,
+            "payer_account_id": payload.account_id,
+            "payment_method": "wallet",
+            "note": payload.note.strip(),
+            "version": 1,
+            "idempotency_key": (idempotency_key or "").strip() or None,
+            "sent_at": created_at,
+            "created_at": created_at,
+            "updated_at": created_at,
+        }
+        try:
+            await db.settlement_payments.insert_one(payment)
+        except DuplicateKeyError:
+            raise HTTPException(
+                409,
+                "Já existe um pagamento aguardando confirmação",
+            )
+
+        try:
+            transaction = await create_settlement_transaction_once(
+                payment,
+                user["id"],
+                payload.account_id,
+                "out",
+            )
+            await db.settlement_payments.update_one(
+                {"id": payment["id"], "status": "sent"},
+                {"$set": {
+                    "debit_transaction_id": transaction["id"],
+                    "updated_at": now_iso(),
+                }},
+            )
+            payment["debit_transaction_id"] = transaction["id"]
+        except Exception as exc:
+            # A failed attempt must never leave a silent debit. If the debit was
+            # inserted before the failure, record an explicit compensating leg.
+            debit = await db.transactions.find_one(
+                {
+                    "settlement_payment_id": payment["id"],
+                    "settlement_direction": "out",
+                    "user_id": user["id"],
+                },
+                {"_id": 0},
+            )
+            reversal = None
+            if debit:
+                reversal = await create_settlement_transaction_once(
+                    payment,
+                    user["id"],
+                    payload.account_id,
+                    "reversal",
+                )
+            await db.settlement_payments.update_one(
+                {"id": payment["id"]},
+                {"$set": {
+                    "status": "failed",
+                    "active": False,
+                    "failure_reason": type(exc).__name__,
+                    "reversal_transaction_id": (
+                        reversal.get("id") if reversal else None
+                    ),
+                    "reversed_at": now_iso() if reversal else None,
+                    "updated_at": now_iso(),
+                }},
+            )
+            raise
+
+        try:
+            await push_notification(
+                expense["payer_id"],
+                "settlement_paid",
+                "Pagamento aguardando confirmação",
+                (
+                    f"{user['name']} registrou o envio de "
+                    f"{fmt_eur(amount, currency)} referente a '{expense.get('title', '')}'."
+                ),
+                "/acertos",
+                {"settlement_payment_id": payment["id"]},
+            )
+        except Exception as exc:
+            logger.warning(
+                "Settlement payment notification failed for %s: %s",
+                payment["id"],
+                exc,
+            )
+        return {
+            "ok": True,
+            "payment": public_settlement_payment(payment, user["id"]),
+        }
+
+    return await run_idempotent_create(
+        "start_settlement_payment",
+        user["id"],
+        idempotency_key,
+        payload.model_dump(),
+        create,
+    )
+
+
+@api.post("/settlements/payments/{payment_id}/confirm")
+async def confirm_settlement_payment(
+    payment_id: str,
+    payload: SettlementPaymentConfirmIn,
+    user=Depends(get_current_user),
+):
+    payment = await db.settlement_payments.find_one(
+        {
+            "id": payment_id,
+            "creditor_id": user["id"],
+            "status": {"$in": ["sent", "disputed"]},
+            "active": True,
+        },
+        {"_id": 0},
+    )
+    if not payment:
+        existing = await db.settlement_payments.find_one(
+            {"id": payment_id, "creditor_id": user["id"]},
+            {"_id": 0},
+        )
+        if existing and existing.get("status") == "confirmed":
+            return {
+                "ok": True,
+                "status": "confirmed",
+                "already_confirmed": True,
+                "wallet_recorded": bool(existing.get("receiver_account_id")),
+            }
+        raise HTTPException(404, "Pagamento pendente não encontrado")
+    if payload.account_id:
+        await validate_settlement_account(
+            payload.account_id,
+            user,
+            payment["currency"],
+        )
+    previous_status = payment["status"]
+    claim = await db.settlement_payments.update_one(
+        {
+            "id": payment_id,
+            "creditor_id": user["id"],
+            "status": previous_status,
+            "active": True,
+        },
+        {"$set": {
+            "status": "confirming",
+            "confirming_at": now_iso(),
+            "updated_at": now_iso(),
+        }},
+    )
+    if not claim.matched_count:
+        raise HTTPException(409, "Este pagamento já está sendo processado")
+
+    receiver_transaction = None
+    try:
+        expense = await db.shared_expenses.find_one(
+            {"id": payment["expense_id"]},
+            {"_id": 0},
+        )
+        if not expense:
+            raise HTTPException(404, "Despesa não encontrada")
+        participant = shared_expense_participant(
+            expense,
+            payment["debtor_id"],
+        )
+        if not participant:
+            raise HTTPException(404, "Participante não encontrado")
+        if payload.account_id:
+            receiver_transaction = await create_settlement_transaction_once(
+                payment,
+                user["id"],
+                payload.account_id,
+                "in",
+            )
+        confirmed_at = now_iso()
+        await db.settlement_payments.update_one(
+            {"id": payment_id, "status": "confirming"},
+            {"$set": {
+                "status": "confirmed",
+                "active": False,
+                "receiver_account_id": payload.account_id,
+                "credit_transaction_id": (
+                    receiver_transaction.get("id")
+                    if receiver_transaction
+                    else None
+                ),
+                "receiver_note": payload.note.strip(),
+                "confirmed_at": confirmed_at,
+                "confirmed_by": user["id"],
+                "updated_at": confirmed_at,
+                "version": int(payment.get("version") or 1) + 1,
+            }},
+        )
+    except Exception:
+        # If a credit was written but confirmation failed, neutralize it with
+        # an immutable reversal instead of deleting financial history.
+        if receiver_transaction and payload.account_id:
+            await create_settlement_transaction_once(
+                payment,
+                user["id"],
+                payload.account_id,
+                "credit_reversal",
+            )
+        await db.settlement_payments.update_one(
+            {"id": payment_id, "status": "confirming"},
+            {
+                "$set": {
+                    "status": previous_status,
+                    "updated_at": now_iso(),
+                },
+                "$unset": {"confirming_at": ""},
+            },
+        )
+        raise
+
+    confirmed_total = await confirmed_settlement_total(
+        payment["expense_id"],
+        payment["debtor_id"],
+    )
+    amount_due = round(float(participant.get("owed") or 0), 2)
+    debt_completed = confirmed_total + 0.009 >= amount_due
+    if debt_completed and not participant.get("paid_back"):
+        try:
+            await confirm_shared_participant(
+                expense,
+                payment["debtor_id"],
+            )
+        except Exception as exc:
+            logger.exception(
+                "Settlement debt synchronization failed for %s: %s",
+                payment_id,
+                exc,
+            )
+            await db.settlement_payments.update_one(
+                {"id": payment_id, "status": "confirmed"},
+                {"$set": {
+                    "settlement_sync_pending": True,
+                    "updated_at": now_iso(),
+                }},
+            )
+    try:
+        await push_notification(
+            payment["debtor_id"],
+            "settlement_paid",
+            "Recebimento confirmado",
+            (
+                f"{user['name']} confirmou o recebimento de "
+                f"{fmt_eur(payment['amount'], payment['currency'])}."
+            ),
+            "/acertos",
+            {"settlement_payment_id": payment_id},
+        )
+    except Exception as exc:
+        logger.warning(
+            "Settlement confirmation notification failed for %s: %s",
+            payment_id,
+            exc,
+        )
+    return {
+        "ok": True,
+        "status": "confirmed",
+        "wallet_recorded": bool(payload.account_id),
+        "debt_completed": debt_completed,
+        "remaining_amount": max(round(amount_due - confirmed_total, 2), 0),
+    }
+
+
+async def cancel_unconfirmed_settlement_payment(
+    payment_id: str,
+    user: dict,
+    reason: str,
+) -> dict:
+    payment = await db.settlement_payments.find_one(
+        {
+            "id": payment_id,
+            "debtor_id": user["id"],
+            "status": {"$in": ["sent", "disputed"]},
+            "active": True,
+        },
+        {"_id": 0},
+    )
+    if not payment:
+        existing = await db.settlement_payments.find_one(
+            {"id": payment_id, "debtor_id": user["id"]},
+            {"_id": 0},
+        )
+        if existing and existing.get("status") == "cancelled":
+            return {
+                "ok": True,
+                "status": "cancelled",
+                "reversed": bool(existing.get("reversal_transaction_id")),
+                "already_cancelled": True,
+            }
+        raise HTTPException(404, "Pagamento pendente não encontrado")
+    claim = await db.settlement_payments.update_one(
+        {
+            "id": payment_id,
+            "debtor_id": user["id"],
+            "status": payment["status"],
+            "active": True,
+        },
+        {"$set": {
+            "status": "cancelling",
+            "updated_at": now_iso(),
+        }},
+    )
+    if not claim.matched_count:
+        raise HTTPException(409, "Este pagamento já está sendo processado")
+    try:
+        reversal = await create_settlement_transaction_once(
+            payment,
+            user["id"],
+            payment["payer_account_id"],
+            "reversal",
+        )
+        cancelled_at = now_iso()
+        await db.settlement_payments.update_one(
+            {"id": payment_id, "status": "cancelling"},
+            {"$set": {
+                "status": "cancelled",
+                "active": False,
+                "cancellation_reason": reason.strip(),
+                "cancelled_at": cancelled_at,
+                "cancelled_by": user["id"],
+                "reversal_transaction_id": reversal["id"],
+                "reversed_at": cancelled_at,
+                "updated_at": cancelled_at,
+                "version": int(payment.get("version") or 1) + 1,
+            }},
+        )
+    except Exception:
+        await db.settlement_payments.update_one(
+            {"id": payment_id, "status": "cancelling"},
+            {"$set": {
+                "status": payment["status"],
+                "updated_at": now_iso(),
+            }},
+        )
+        raise
+    try:
+        await push_notification(
+            payment["creditor_id"],
+            "settlement_paid",
+            "Registro de pagamento cancelado",
+            (
+                f"{user['name']} cancelou o registro de "
+                f"{fmt_eur(payment['amount'], payment['currency'])}. "
+                "A dívida permanece pendente."
+            ),
+            "/acertos",
+            {"settlement_payment_id": payment_id},
+        )
+    except Exception as exc:
+        logger.warning(
+            "Settlement cancellation notification failed for %s: %s",
+            payment_id,
+            exc,
+        )
+    return {"ok": True, "status": "cancelled", "reversed": True}
+
+
+@api.post("/settlements/payments/{payment_id}/cancel")
+async def cancel_settlement_payment(
+    payment_id: str,
+    payload: SettlementPaymentActionIn,
+    user=Depends(get_current_user),
+):
+    return await cancel_unconfirmed_settlement_payment(
+        payment_id,
+        user,
+        payload.reason,
+    )
+
+
+@api.post("/settlements/payments/{payment_id}/reject")
+async def reject_settlement_payment(
+    payment_id: str,
+    payload: SettlementPaymentActionIn,
+    user=Depends(get_current_user),
+):
+    payment = await db.settlement_payments.find_one(
+        {
+            "id": payment_id,
+            "creditor_id": user["id"],
+            "status": "sent",
+            "active": True,
+        },
+        {"_id": 0},
+    )
+    if not payment:
+        existing = await db.settlement_payments.find_one(
+            {"id": payment_id, "creditor_id": user["id"]},
+            {"_id": 0},
+        )
+        if existing and existing.get("status") == "disputed":
+            return {
+                "ok": True,
+                "status": "disputed",
+                "wallet_reversed": False,
+                "already_disputed": True,
+            }
+        raise HTTPException(404, "Pagamento pendente não encontrado")
+    disputed_at = now_iso()
+    result = await db.settlement_payments.update_one(
+        {
+            "id": payment_id,
+            "creditor_id": user["id"],
+            "status": "sent",
+            "active": True,
+        },
+        {"$set": {
+            "status": "disputed",
+            "rejected_at": disputed_at,
+            "rejected_by": user["id"],
+            "rejection_reason": payload.reason.strip(),
+            "updated_at": disputed_at,
+            "version": int(payment.get("version") or 1) + 1,
+        }},
+    )
+    if not result.matched_count:
+        raise HTTPException(409, "Este pagamento já está sendo processado")
+    try:
+        await push_notification(
+            payment["debtor_id"],
+            "settlement_paid",
+            "Pagamento em contestação",
+            (
+                f"{user['name']} não confirmou o recebimento de "
+                f"{fmt_eur(payment['amount'], payment['currency'])}. "
+                "O movimento da sua carteira não foi estornado."
+            ),
+            "/acertos",
+            {"settlement_payment_id": payment_id},
+        )
+    except Exception as exc:
+        logger.warning(
+            "Settlement dispute notification failed for %s: %s",
+            payment_id,
+            exc,
+        )
+    return {
+        "ok": True,
+        "status": "disputed",
+        "wallet_reversed": False,
+    }
+
+
 @api.post("/settlements/settle-between/{other_id}")
 async def settle_between(other_id: str, user=Depends(get_current_user)):
     """Mark as paid_back all open shared-expense debts between current user and other_id."""
@@ -5022,7 +5844,16 @@ async def settle_between(other_id: str, user=Depends(get_current_user)):
         elif payer == user["id"]:
             debtor_id = other_id
         if debtor_id:
-            _, changed = await confirm_shared_participant(e, debtor_id)
+            debtor_participant = shared_expense_participant(e, debtor_id)
+            payer_participant = shared_expense_participant(e, payer)
+            manual_settlement = bool(
+                (debtor_participant or {}).get("person_id")
+                or (payer_participant or {}).get("person_id")
+            )
+            if manual_settlement and e.get("creator_id") == user["id"]:
+                _, changed = await confirm_shared_participant(e, debtor_id)
+            else:
+                changed = False
         else:
             changed = False
         if changed:
@@ -5223,13 +6054,53 @@ async def list_settlements(user=Depends(get_current_user)):
     # Net balance per user (across ALL pending shared expenses the user sees)
     net = defaultdict(float)
     base_currency = normalize_currency(user.get("currency"))
+    settlement_payments = await db.settlement_payments.find(
+        {
+            "expense_id": {"$in": [expense["id"] for expense in exps]},
+            "status": {
+                "$in": [
+                    "sent",
+                    "confirming",
+                    "disputed",
+                    "cancelling",
+                    "confirmed",
+                ],
+            },
+        },
+        {"_id": 0},
+    ).to_list(1000)
+    payment_map = {
+        (item.get("expense_id"), item.get("debtor_id")): item
+        for item in settlement_payments
+        if item.get("active")
+    }
+    confirmed_totals = defaultdict(float)
+    for payment in settlement_payments:
+        if payment.get("status") == "confirmed":
+            key = (payment.get("expense_id"), payment.get("debtor_id"))
+            confirmed_totals[key] += float(payment.get("amount") or 0)
     for e in exps:
         payer = e["payer_id"]
+        payer_participant = shared_expense_participant(e, payer)
         for p in e["participants"]:
             participant_id = participant_reference(p)
             if participant_id == payer or p.get("paid_back"):
                 continue
-            owed = amount_in_currency({**e, "amount": p["owed"]}, base_currency)
+            payment_key = (e["id"], participant_id)
+            remaining = max(
+                round(
+                    float(p.get("owed") or 0)
+                    - confirmed_totals[payment_key],
+                    2,
+                ),
+                0,
+            )
+            if remaining <= 0.005:
+                continue
+            owed = amount_in_currency(
+                {**e, "amount": remaining},
+                base_currency,
+            )
             net[payer] += owed
             net[participant_id] -= owed
             user_ids.update([payer, participant_id])
@@ -5240,7 +6111,20 @@ async def list_settlements(user=Depends(get_current_user)):
                     "debtor_id": participant_id, "creditor_id": payer,
                     "amount": round(owed, 2), "date": e["date"],
                     "currency": base_currency,
+                    "settlement_amount": remaining,
+                    "settlement_currency": normalize_currency(
+                        e.get("currency"),
+                        base_currency,
+                    ),
+                    "external_debtor": bool(
+                        p.get("person_id")
+                        or (payer_participant or {}).get("person_id")
+                    ),
                     "managed_by_user": e.get("creator_id") == user["id"],
+                    "payment": public_settlement_payment(
+                        payment_map.get(payment_key),
+                        user["id"],
+                    ),
                 })
     # Simplification: greedy match
     creditors = sorted(
@@ -8021,6 +8905,7 @@ async def startup():
         "users", "people", "categories", "accounts", "transactions", "recurrences",
         "installment_purchases", "installments", "receivables", "groups",
         "shared_expenses", "notifications", "goals", "account_adjustments",
+        "settlement_payments",
     ):
         await db[collection_name].create_index("id")
     # Existing categories are intentionally left untouched. The partial index
@@ -8041,6 +8926,18 @@ async def startup():
     )
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
     await db.transactions.create_index([("user_id", 1), ("person_id", 1)])
+    await db.transactions.create_index(
+        [
+            ("settlement_payment_id", 1),
+            ("settlement_direction", 1),
+            ("user_id", 1),
+        ],
+        unique=True,
+        partialFilterExpression={
+            "settlement_payment_id": {"$type": "string"},
+            "settlement_direction": {"$type": "string"},
+        },
+    )
     await db.account_adjustments.create_index(
         [("user_id", 1), ("account_id", 1), ("date", -1)]
     )
@@ -8058,6 +8955,23 @@ async def startup():
     await db.settlement_history.create_index(
         [("expense_id", 1), ("debtor_id", 1)]
     )
+    await db.settlement_payments.create_index(
+        [("expense_id", 1), ("debtor_id", 1), ("active", 1)],
+        unique=True,
+        partialFilterExpression={"active": True},
+    )
+    await db.settlement_payments.create_index(
+        [("creditor_id", 1), ("status", 1), ("sent_at", -1)]
+    )
+    await db.settlement_payments.create_index(
+        [("expense_id", 1), ("debtor_id", 1), ("status", 1)]
+    )
+    repaired_payment_debts = await repair_confirmed_settlement_debts()
+    if repaired_payment_debts:
+        logger.info(
+            "Settlement payment repair synchronized %s debt(s)",
+            repaired_payment_debts,
+        )
     repaired_settlements = await backfill_shared_settlement_history()
     if repaired_settlements:
         logger.info(

@@ -645,6 +645,15 @@ export default function SharedExpenses() {
                   const isPayer = participantId === e.payer_id;
                   const iAmPayer = e.payer_id === user.id;       // eu recebo
                   const iAmThisDebtor = participantId === user.id;   // eu devo
+                  const isExternal = Boolean(p.person_id || p.user?.external);
+                  const payerParticipant = e.participants.find(item => (
+                    (item.participant_id || item.user_id || item.person_id) === e.payer_id
+                  ));
+                  const requiresManualSettlement = Boolean(
+                    isExternal
+                    || payerParticipant?.person_id
+                    || payerParticipant?.user?.external
+                  );
                   let actionLabel = tr("Marcar pago");
                   let actionTitle = "Confirmar pagamento";
                   if (iAmPayer && !isPayer) {
@@ -676,17 +685,27 @@ export default function SharedExpenses() {
                       }`} style={{ fontFamily: "Outfit" }} data-testid={`participant-amount-${e.id}-${participantId}`}>
                         {fmtMoney(p.owed || 0, e.currency || curr)}
                       </div>
-                      {!isPayer && (
+                      {!isPayer && p.paid_back && (
                         <button onClick={() => togglePaid(e.id, participantId)} data-testid={`settle-${e.id}-${participantId}`}
-                          disabled={p.paid_back}
+                          disabled
                           title={actionTitle}
-                          className={`px-3 py-1.5 rounded-lg text-xs whitespace-nowrap ${
-                            p.paid_back
-                              ? "bg-emerald-50 text-emerald-700 cursor-default"
-                              : "bg-[#061B4A] text-white hover:bg-[#1268F4]"
-                          }`}>
-                          {p.paid_back ? <><Check size={12} className="inline mr-1" />{actionLabel}</> : actionLabel}
+                          className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap bg-emerald-50 text-emerald-700 cursor-default">
+                          <Check size={12} className="inline mr-1" />{actionLabel}
                         </button>
+                      )}
+                      {!isPayer && !p.paid_back && requiresManualSettlement && e.creator_id === user.id && (
+                        <button onClick={() => togglePaid(e.id, participantId)} data-testid={`settle-${e.id}-${participantId}`}
+                          title={tr("Confirmar manualmente")}
+                          className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap bg-[#061B4A] text-white hover:bg-[#1268F4]">
+                          {tr("Confirmar manualmente")}
+                        </button>
+                      )}
+                      {!isPayer && !p.paid_back && !requiresManualSettlement && user.id in {[e.payer_id]: true, [participantId]: true} && (
+                        <Link to="/acertos"
+                          className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap bg-[#061B4A] text-white hover:bg-[#1268F4]"
+                          data-testid={`open-settlement-${e.id}-${participantId}`}>
+                          {iAmThisDebtor ? tr("Registrar pagamento") : tr("Ver acerto")}
+                        </Link>
                       )}
                     </div>
                   );

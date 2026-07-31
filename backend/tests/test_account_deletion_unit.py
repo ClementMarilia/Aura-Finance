@@ -60,6 +60,7 @@ def account_deletion_db(shared_items=None, shared_count=0):
         files=collection(),
         websocket_tickets=collection(),
         settlement_history=collection(),
+        settlement_payments=collection(),
         password_reset_tokens=collection(),
         password_reset_requests=collection(),
         email_delivery_logs=collection(),
