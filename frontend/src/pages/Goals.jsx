@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import AmountInput from "@/components/AmountInput";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -235,13 +236,13 @@ export default function Goals() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{tr("Valor alvo")}</Label>
-                <Input type="number" step="0.01" value={form.target_amount} required data-testid="goal-target-input"
-                  onChange={e => setForm({ ...form, target_amount: e.target.value })} />
+                <AmountInput value={form.target_amount} currency={form.currency || curr} required data-testid="goal-target-input"
+                  onValueChange={target_amount => setForm({ ...form, target_amount })} />
               </div>
               <div>
                 <Label>{tr("Já guardado")}</Label>
-                <Input type="number" step="0.01" value={form.current_amount} data-testid="goal-current-input"
-                  onChange={e => setForm({ ...form, current_amount: e.target.value })} />
+                <AmountInput value={form.current_amount} currency={form.currency || curr} data-testid="goal-current-input"
+                  onValueChange={current_amount => setForm({ ...form, current_amount })} />
               </div>
             </div>
             <div>
@@ -310,8 +311,8 @@ export default function Goals() {
           <form onSubmit={contribute} className="space-y-3">
             <div>
               <Label>{tr("Valor do aporte")}</Label>
-              <Input type="number" step="0.01" autoFocus value={contribAmt} required data-testid="goal-contrib-input"
-                onChange={e => setContribAmt(e.target.value)} />
+              <AmountInput autoFocus value={contribAmt} currency={contribFor?.currency || curr} required data-testid="goal-contrib-input"
+                onValueChange={setContribAmt} />
             </div>
             <div>
               <Label>{tr("Debitar da conta (opcional)")}</Label>
@@ -346,8 +347,8 @@ export default function Goals() {
           <form onSubmit={withdraw} className="space-y-3">
             <div>
               <Label>{tr("Valor do resgate")}</Label>
-              <Input type="number" step="0.01" autoFocus value={withdrawAmt} required data-testid="goal-withdraw-input"
-                onChange={e => setWithdrawAmt(e.target.value)} />
+              <AmountInput autoFocus value={withdrawAmt} currency={withdrawFor?.currency || curr} required data-testid="goal-withdraw-input"
+                onValueChange={setWithdrawAmt} />
               <p className="text-xs text-[#6B7068] mt-1">{tr("Disponível:")} {fmtMoney(withdrawFor?.current_amount || 0, withdrawFor?.currency || curr)}</p>
             </div>
             <div>

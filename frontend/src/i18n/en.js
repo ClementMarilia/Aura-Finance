@@ -927,4 +927,12 @@ export default {
   "Você não possui uma carteira na moeda deste acerto.": "You do not have an account in this settlement's currency.",
   "Você pode registrar um pagamento parcial de até {amount}.": "You can record a partial payment of up to {amount}.",
   "Voltar": "Back",
+  "Abrir calculadora": "Open calculator",
+  "Calculadora": "Calculator",
+  "Não é possível dividir por zero": "Cannot divide by zero",
+  "Cálculo inválido": "Invalid calculation",
+  "Apagar último dígito": "Delete last digit",
+  "Dividir entre pessoas": "Divide among people",
+  "Dividir": "Divide",
+  "Usar resultado": "Use result",
 };

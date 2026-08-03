@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import AmountInput from "@/components/AmountInput";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -252,8 +253,8 @@ export default function Recurrences() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{tr("Valor")}</Label>
-                <Input type="number" step="0.01" value={form.amount} required data-testid="rec-amount-input"
-                  onChange={e => setForm({ ...form, amount: e.target.value })} />
+                <AmountInput value={form.amount} currency={form.currency || curr} required data-testid="rec-amount-input"
+                  onValueChange={amount => setForm({ ...form, amount })} />
               </div>
               <div>
                 <Label>{tr("Próxima data")}</Label>

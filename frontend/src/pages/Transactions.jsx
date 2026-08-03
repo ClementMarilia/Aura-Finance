@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import AmountInput from "@/components/AmountInput";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -425,9 +426,8 @@ export default function Transactions() {
                 </div>
                 <div>
                   <Label>{tr("Valor")}</Label>
-                  <Input type="number" step="0.01" value={form.amount}
-                    onChange={e => {
-                      const amount = e.target.value;
+                  <AmountInput value={form.amount} currency={sourceCurrency}
+                    onValueChange={amount => {
                       const target = form.type === "transfer" && amount && form.exchange_rate
                         ? (Number(amount) * Number(form.exchange_rate)).toFixed(2) : form.target_amount;
                       setForm({ ...form, amount, target_amount: target });
