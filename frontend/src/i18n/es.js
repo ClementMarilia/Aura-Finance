@@ -927,4 +927,12 @@ export default {
   "Você não possui uma carteira na moeda deste acerto.": "No tienes una cuenta en la moneda de esta liquidación.",
   "Você pode registrar um pagamento parcial de até {amount}.": "Puedes registrar un pago parcial de hasta {amount}.",
   "Voltar": "Volver",
+  "Abrir calculadora": "Abrir calculadora",
+  "Calculadora": "Calculadora",
+  "Não é possível dividir por zero": "No se puede dividir entre cero",
+  "Cálculo inválido": "Cálculo no válido",
+  "Apagar último dígito": "Borrar el último dígito",
+  "Dividir entre pessoas": "Dividir entre personas",
+  "Dividir": "Dividir",
+  "Usar resultado": "Usar resultado",
 };

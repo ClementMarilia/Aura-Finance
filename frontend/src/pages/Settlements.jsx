@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
+import AmountInput from "@/components/AmountInput";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -563,14 +564,13 @@ export default function Settlements() {
               {paymentDialog.mode === "send" && (
                 <div className="space-y-2">
                   <Label htmlFor="settlement-amount">{tr("Valor do pagamento")}</Label>
-                  <Input
+                  <AmountInput
                     id="settlement-amount"
-                    type="number"
                     min="0.01"
                     max={paymentDialog.row.settlement_amount}
-                    step="0.01"
                     value={paymentAmount}
-                    onChange={event => setPaymentAmount(event.target.value)}
+                    currency={paymentDialog.row.currency || curr}
+                    onValueChange={setPaymentAmount}
                     data-testid="settlement-amount"
                   />
                   <p className="text-xs text-[#6B7068]">

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import AmountInput from "@/components/AmountInput";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -328,8 +329,8 @@ export default function SharedExpenses() {
                 <Input value={form.title} required data-testid="shared-title-input"
                   onChange={e => setForm({ ...form, title: e.target.value })} /></div>
               <div><Label>{tr("Valor total")}</Label>
-                <Input type="number" step="0.01" value={form.amount} required data-testid="shared-amount-input"
-                  onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
+                <AmountInput value={form.amount} currency={form.currency || curr} required data-testid="shared-amount-input"
+                  onValueChange={amount => setForm({ ...form, amount })} /></div>
               <div><Label>{tr("Data")}</Label>
                 <Input type="date" value={form.date} required data-testid="shared-date-input"
                   onChange={e => setForm({ ...form, date: e.target.value })} /></div>

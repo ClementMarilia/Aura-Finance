@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import AmountInput from "@/components/AmountInput";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -111,8 +112,8 @@ export default function Installments() {
                 <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required data-testid="inst-description-input" /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>{tr("Valor total")}</Label>
-                  <Input type="number" step="0.01" value={form.total_amount} required data-testid="inst-total-input"
-                    onChange={e => setForm({ ...form, total_amount: e.target.value })} /></div>
+                  <AmountInput value={form.total_amount} currency={form.currency || curr} required data-testid="inst-total-input"
+                    onValueChange={total_amount => setForm({ ...form, total_amount })} /></div>
                 <div><Label>{tr("Nº parcelas")}</Label>
                   <Input type="number" min="1" max="120" value={form.installments} required data-testid="inst-count-input"
                     onChange={e => setForm({ ...form, installments: e.target.value })} /></div>

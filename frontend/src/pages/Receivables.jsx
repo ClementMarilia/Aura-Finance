@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import AmountInput from "@/components/AmountInput";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -107,8 +108,8 @@ export default function Receivables() {
                   onChange={e => setForm({ ...form, person: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>{tr("Valor")}</Label>
-                  <Input type="number" step="0.01" value={form.amount} required data-testid="rec-amount-input"
-                    onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
+                  <AmountInput value={form.amount} currency={form.currency || curr} required data-testid="rec-amount-input"
+                    onValueChange={amount => setForm({ ...form, amount })} /></div>
                 <div><Label>{tr("Data prevista")}</Label>
                   <Input type="date" value={form.due_date} required data-testid="rec-date-input"
                     onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>

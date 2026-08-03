@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import AmountInput from "@/components/AmountInput";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -406,8 +407,8 @@ export default function Wallets() {
               </div>
               <div>
                 <Label>{tr("Saldo")} {editing ? "" : tr("inicial")}</Label>
-                <Input type="number" step="0.01" value={form.initial_balance} disabled={!!editing} data-testid="wallet-balance-input"
-                  onChange={e => setForm({ ...form, initial_balance: e.target.value })} />
+                <AmountInput value={form.initial_balance} currency={form.currency || curr} disabled={!!editing} data-testid="wallet-balance-input"
+                  onValueChange={initial_balance => setForm({ ...form, initial_balance })} />
               </div>
             </div>
             <p className="text-xs text-[#6B7068]">
@@ -622,9 +623,8 @@ export default function Wallets() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{tr("Valor enviado")} {fromAccount ? `(${fromAccount.currency || curr})` : ""}</Label>
-                <Input type="number" step="0.01" value={transfer.amount} required data-testid="transfer-amount-input"
-                  onChange={e => {
-                    const amount = e.target.value;
+                <AmountInput value={transfer.amount} currency={fromAccount?.currency || curr} required data-testid="transfer-amount-input"
+                  onValueChange={amount => {
                     const target = amount && transfer.exchange_rate ? (Number(amount) * Number(transfer.exchange_rate)).toFixed(2) : "";
                     setTransfer({ ...transfer, amount, target_amount: target });
                   }} />
