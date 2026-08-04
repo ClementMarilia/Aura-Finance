@@ -935,4 +935,7 @@ export default {
   "Dividir entre pessoas": "Divide among people",
   "Dividir": "Divide",
   "Usar resultado": "Use result",
+  "Exportar meus dados": "Export my data",
+  "Exportando dados...": "Exporting data...",
+  "Seus dados foram exportados com segurança.": "Your data was exported securely.",
 };

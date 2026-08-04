@@ -3,9 +3,13 @@ const mockPost = jest.fn();
 jest.mock("axios", () => ({
   __esModule: true,
   default: {
+    post: jest.fn(),
     create: () => ({
       post: (...args) => mockPost(...args),
-      interceptors: { request: { use: jest.fn() } },
+      interceptors: {
+        request: { use: jest.fn() },
+        response: { use: jest.fn() },
+      },
     }),
   },
 }));

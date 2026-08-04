@@ -163,7 +163,7 @@ export default function Register() {
                 autoComplete="email" placeholder="voce@exemplo.com"
                 onChange={(e) => setForm({ ...form, email: e.target.value })} />
               <Field id="reg-password" label={tr("Senha")} type="password" value={form.password} testid="register-password-input"
-                autoComplete="new-password" minLength={4} placeholder="••••••••" revealable
+                autoComplete="new-password" minLength={8} maxLength={128} placeholder="••••••••" revealable
                 onChange={(e) => setForm({ ...form, password: e.target.value })} />
 
               <div className="text-left">

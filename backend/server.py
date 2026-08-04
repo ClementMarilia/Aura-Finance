@@ -17,18 +17,21 @@ import jwt
 import unicodedata
 import statistics
 import math
+import re
+import hmac
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Literal
 from fastapi import (
     FastAPI, APIRouter, HTTPException, Depends, Request, WebSocket, BackgroundTasks,
     WebSocketDisconnect, UploadFile, File, Header, Query,
 )
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
+from fastapi.encoders import jsonable_encoder
 from fastapi.security import HTTPBearer
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
-from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from pydantic import BaseModel as PydanticBaseModel, Field, EmailStr, ConfigDict
 from collections import defaultdict
 from email_service import EmailService
 from email_templates import validate_template_placeholders
@@ -36,6 +39,14 @@ from email_templates import validate_template_placeholders
 # ---------- Config ----------
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
+JWT_ISSUER = os.environ.get("JWT_ISSUER", "crelith-finance")
+JWT_AUDIENCE = os.environ.get("JWT_AUDIENCE", "crelith-web")
+ACCESS_TOKEN_MINUTES = int(os.environ.get("ACCESS_TOKEN_MINUTES", "15"))
+REFRESH_TOKEN_DAYS = int(os.environ.get("REFRESH_TOKEN_DAYS", "30"))
+SESSION_IDLE_MINUTES = int(os.environ.get("SESSION_IDLE_MINUTES", "30"))
+MAX_SIMULTANEOUS_SESSIONS = int(os.environ.get("MAX_SIMULTANEOUS_SESSIONS", "5"))
+REFRESH_COOKIE_NAME = "crelith_refresh"
+MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(2 * 1024 * 1024)))
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
@@ -86,6 +97,135 @@ SUPPORTED_CURRENCIES = ("EUR", "BRL", "USD", "CHF")
 PRIVACY_NOTICE_VERSION = "2026-07-23"
 FX_API_URL = "https://api.frankfurter.dev/v2/rates"
 _fx_cache = {}
+
+
+class BaseModel(PydanticBaseModel):
+    """Secure default for every API input model.
+
+    Unknown client-controlled fields are rejected instead of being silently
+    ignored, which prevents mass-assignment mistakes as models evolve.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+def request_ip(request: Optional[Request]) -> str:
+    if request is None:
+        return "unknown"
+    forwarded = request.headers.get("x-forwarded-for", "")
+    return (forwarded.split(",")[0].strip() if forwarded else "") or (
+        request.client.host if request.client else "unknown"
+    )
+
+
+def security_hash(value: str) -> str:
+    return hmac.new(
+        JWT_SECRET.encode(), value.encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def request_metadata(request: Optional[Request]) -> dict:
+    if request is None:
+        return {"ip_hash": "unknown", "user_agent": "unknown"}
+    return {
+        "ip_hash": security_hash(request_ip(request)),
+        "user_agent": request.headers.get("user-agent", "unknown")[:300],
+    }
+
+
+async def audit_event(
+    event: str,
+    request: Optional[Request] = None,
+    *,
+    user_id: Optional[str] = None,
+    outcome: str = "success",
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    changes: Optional[dict] = None,
+) -> None:
+    """Store a minimized, append-only security/audit event.
+
+    Callers must pass only non-secret, strictly necessary changes. Tokens,
+    passwords and complete financial payloads are intentionally unsupported.
+    """
+    try:
+        safe_changes = {}
+        for key, value in (changes or {}).items():
+            if not any(marker in key.lower() for marker in {
+                "password", "token", "cookie", "secret", "authorization",
+                "amount", "balance", "notes",
+            }):
+                safe_changes[key[:80]] = str(value)[:300]
+        await db.audit_events.insert_one({
+            "id": new_id(),
+            "event": event[:100],
+            "user_id": user_id,
+            "outcome": outcome,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "changes": safe_changes or None,
+            "correlation_id": (
+                getattr(getattr(request, "state", None), "correlation_id", None)
+                if request else None
+            ),
+            **request_metadata(request),
+            "created_at": datetime.now(timezone.utc),
+        })
+    except Exception:
+        logger.exception("Could not persist security audit event: %s", event)
+
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    correlation_id = request.headers.get("x-request-id", "")
+    if not re.fullmatch(r"[A-Za-z0-9._-]{8,100}", correlation_id):
+        correlation_id = new_id()
+    request.state.correlation_id = correlation_id
+
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit():
+        limit = 6 * 1024 * 1024 if request.url.path.endswith("/receipt") else MAX_REQUEST_BYTES
+        if int(content_length) > limit:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Requisição muito grande", "request_id": correlation_id},
+                headers={"X-Request-ID": correlation_id},
+            )
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = correlation_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/api/") else "no-cache"
+    if os.environ.get("ENVIRONMENT", "production").lower() == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if (
+        request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        and response.status_code < 400
+        and not request.url.path.startswith("/api/auth/")
+    ):
+        actor_id = None
+        authorization = request.headers.get("authorization", "")
+        if authorization.startswith("Bearer "):
+            try:
+                actor_id = decode_access_token(authorization[7:]).get("sub")
+            except jwt.InvalidTokenError:
+                pass
+        route = request.scope.get("route")
+        await audit_event(
+            "api_mutation",
+            request,
+            user_id=actor_id,
+            outcome="success",
+            changes={
+                "method": request.method,
+                "route": getattr(route, "path", request.url.path),
+                "status": response.status_code,
+            },
+        )
+    return response
 
 
 def normalize_currency(value: Optional[str], fallback: str = "EUR") -> str:
@@ -253,6 +393,25 @@ MIME_TYPES = {
     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
     "gif": "image/gif", "webp": "image/webp", "pdf": "application/pdf",
 }
+
+
+def verified_upload_type(data: bytes, extension: str) -> Optional[str]:
+    signatures = {
+        "jpg": lambda b: b.startswith(b"\xff\xd8\xff"),
+        "jpeg": lambda b: b.startswith(b"\xff\xd8\xff"),
+        "png": lambda b: b.startswith(b"\x89PNG\r\n\x1a\n"),
+        "gif": lambda b: b.startswith((b"GIF87a", b"GIF89a")),
+        "pdf": lambda b: b.startswith(b"%PDF-"),
+        "webp": lambda b: len(b) >= 12 and b[:4] == b"RIFF" and b[8:12] == b"WEBP",
+    }
+    validator = signatures.get(extension)
+    return MIME_TYPES.get(extension) if validator and validator(data) else None
+
+
+def safe_original_filename(filename: Optional[str]) -> str:
+    basename = (filename or "arquivo").replace("\\", "/").rsplit("/", 1)[-1]
+    cleaned = re.sub(r"[^A-Za-z0-9._ -]", "_", basename).strip(" .")
+    return (cleaned or "arquivo")[:180]
 
 
 def init_storage():
@@ -503,24 +662,150 @@ async def run_idempotent_create(
 
 
 def hash_password(pw: str) -> str:
+    if len(pw.encode("utf-8")) > 72:
+        raise HTTPException(400, "A senha deve ter no máximo 72 bytes")
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(pw: str, hashed: str) -> bool:
+    if len(pw.encode("utf-8")) > 72:
+        return False
     try:
         return bcrypt.checkpw(pw.encode(), hashed.encode())
     except Exception:
         return False
 
 
-def create_token(user_id: str, email: str, session_version: int = 0) -> str:
+def create_token(
+    user_id: str,
+    email: str,
+    session_version: int = 0,
+    session_id: Optional[str] = None,
+) -> str:
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": user_id,
-        "email": email,
         "ver": session_version,
-        "exp": datetime.now(timezone.utc) + timedelta(days=7),
+        "sid": session_id,
+        "jti": new_id(),
+        "type": "access",
+        "iss": JWT_ISSUER,
+        "aud": JWT_AUDIENCE,
+        "iat": now,
+        "nbf": now,
+        "exp": now + timedelta(minutes=ACCESS_TOKEN_MINUTES),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def decode_access_token(token: str) -> dict:
+    payload = jwt.decode(
+        token,
+        JWT_SECRET,
+        algorithms=[JWT_ALGORITHM],
+        audience=JWT_AUDIENCE,
+        issuer=JWT_ISSUER,
+        options={"require": ["sub", "exp", "iat", "type"]},
+    )
+    if payload.get("type") != "access":
+        raise jwt.InvalidTokenError("wrong token type")
+    return payload
+
+
+def hash_refresh_token(token: str) -> str:
+    return hmac.new(
+        JWT_SECRET.encode(), token.encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def refresh_cookie_samesite() -> str:
+    return os.environ.get("REFRESH_COOKIE_SAMESITE", "lax").lower()
+
+
+def set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    secure_cookie = os.environ.get("ENVIRONMENT", "production").lower() == "production"
+    response.set_cookie(
+        REFRESH_COOKIE_NAME,
+        refresh_token,
+        max_age=REFRESH_TOKEN_DAYS * 86400,
+        httponly=True,
+        secure=secure_cookie,
+        samesite=refresh_cookie_samesite(),
+        path="/api/auth",
+    )
+
+
+def clear_refresh_cookie(response: Response) -> None:
+    secure_cookie = os.environ.get("ENVIRONMENT", "production").lower() == "production"
+    response.delete_cookie(
+        REFRESH_COOKIE_NAME,
+        httponly=True,
+        secure=secure_cookie,
+        samesite=refresh_cookie_samesite(),
+        path="/api/auth",
+    )
+
+
+def require_trusted_browser_request(request: Request) -> None:
+    origin = (request.headers.get("origin") or "").rstrip("/")
+    if origin not in configured_cors_origins():
+        raise HTTPException(status_code=403, detail="Origem não autorizada")
+    if request.headers.get("x-requested-with") != "CrelithFinance":
+        raise HTTPException(status_code=403, detail="Requisição não autorizada")
+
+
+async def create_session(user: dict, request: Request) -> tuple[str, str]:
+    now = datetime.now(timezone.utc)
+    session_id = new_id()
+    refresh_token = secrets.token_urlsafe(64)
+    await db.auth_sessions.insert_one({
+        "id": session_id,
+        "family_id": new_id(),
+        "user_id": user["id"],
+        "refresh_token_hash": hash_refresh_token(refresh_token),
+        "previous_token_hashes": [],
+        "session_version": int(user.get("session_version", 0)),
+        "created_at": now,
+        "last_seen_at": now,
+        "expires_at": now + timedelta(days=REFRESH_TOKEN_DAYS),
+        "revoked_at": None,
+        **request_metadata(request),
+    })
+
+    active = await db.auth_sessions.find(
+        {"user_id": user["id"], "revoked_at": None},
+        {"id": 1, "_id": 0},
+    ).sort("created_at", -1).to_list(MAX_SIMULTANEOUS_SESSIONS + 20)
+    stale_ids = [row["id"] for row in active[MAX_SIMULTANEOUS_SESSIONS:]]
+    if stale_ids:
+        await db.auth_sessions.update_many(
+            {"id": {"$in": stale_ids}, "revoked_at": None},
+            {"$set": {"revoked_at": now, "revoked_reason": "session_limit"}},
+        )
+
+    access_token = create_token(
+        user["id"], user["email"], int(user.get("session_version", 0)), session_id
+    )
+    return access_token, refresh_token
+
+
+async def active_session(session_id: Optional[str], user: dict) -> Optional[dict]:
+    if not session_id:
+        return None
+    session = await db.auth_sessions.find_one({
+        "id": session_id,
+        "user_id": user["id"],
+        "revoked_at": None,
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+        "last_seen_at": {
+            "$gt": datetime.now(timezone.utc) - timedelta(minutes=SESSION_IDLE_MINUTES)
+        },
+    })
+    if not session:
+        return None
+    if int(session.get("session_version", 0)) != int(user.get("session_version", 0)):
+        return None
+    return session
 
 
 def account_status(user: dict) -> str:
@@ -574,7 +859,7 @@ async def get_current_user(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Não autenticado")
     token = auth[7:]
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = decode_access_token(token)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Sessão expirada")
     except jwt.InvalidTokenError:
@@ -584,6 +869,10 @@ async def get_current_user(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
     if int(payload.get("ver", 0)) != int(user.get("session_version", 0)):
         raise HTTPException(status_code=401, detail="Sessão invalidada")
+    session_id = payload.get("sid")
+    if session_id and not await active_session(session_id, user):
+        raise HTTPException(status_code=401, detail="Sessão invalidada")
+    user["_session_id"] = session_id
     return ensure_active_user(user)
 
 
@@ -620,9 +909,9 @@ def month_end_date(year: int, month: int) -> date:
 
 # ---------- Models ----------
 class RegisterIn(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=120)
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8, max_length=128)
     currency: str = "EUR"
     language: Literal["pt", "it", "en", "es"] = "pt"
     privacy_acknowledged: Literal[True]
@@ -630,7 +919,7 @@ class RegisterIn(BaseModel):
 
 class LoginIn(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1, max_length=128)
 
 
 class UserOut(BaseModel):
@@ -681,8 +970,8 @@ class UpdateProfileIn(BaseModel):
 
 
 class ChangePasswordIn(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class PasswordResetRequestIn(BaseModel):
@@ -1031,15 +1320,176 @@ async def register(
     }
 
 
+LOGIN_ATTEMPT_WINDOW_MINUTES = 30
+LOGIN_FAILURE_LIMIT = 5
+
+
+async def login_guard(email: str, request: Request) -> dict:
+    key = security_hash(f"{email}:{request_ip(request)}")
+    now = datetime.now(timezone.utc)
+    attempt = await db.login_attempts.find_one({"key": key}) or {}
+    locked_until = attempt.get("locked_until")
+    if locked_until and locked_until > now:
+        await audit_event("login_blocked", request, outcome="blocked")
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde e tente novamente.")
+    return {"key": key, "attempt": attempt}
+
+
+async def record_login_failure(guard: dict, request: Request) -> None:
+    now = datetime.now(timezone.utc)
+    previous = guard["attempt"]
+    first_at = previous.get("first_at")
+    if not first_at or first_at < now - timedelta(minutes=LOGIN_ATTEMPT_WINDOW_MINUTES):
+        failures = 1
+        first_at = now
+    else:
+        failures = int(previous.get("failures", 0)) + 1
+    lock_minutes = min(15, 2 ** max(0, failures - LOGIN_FAILURE_LIMIT)) if failures >= LOGIN_FAILURE_LIMIT else 0
+    await db.login_attempts.update_one(
+        {"key": guard["key"]},
+        {"$set": {
+            "failures": failures,
+            "first_at": first_at,
+            "last_at": now,
+            "locked_until": now + timedelta(minutes=lock_minutes) if lock_minutes else None,
+            "expires_at": now + timedelta(hours=24),
+        }},
+        upsert=True,
+    )
+    await audit_event("login_failed", request, outcome="failure")
+    await asyncio.sleep(min(2.0, 0.15 * failures))
+
+
 @api.post("/auth/login")
-async def login(payload: LoginIn):
+async def login(
+    payload: LoginIn,
+    request: Request = None,
+    response: Response = None,
+):
     email = payload.email.lower()
+    guard = await login_guard(email, request) if request is not None else None
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user["password_hash"]):
+        if guard:
+            await record_login_failure(guard, request)
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
     ensure_active_user(user)
-    token = create_token(user["id"], email, int(user.get("session_version", 0)))
+    if request is not None and response is not None:
+        token, refresh_token = await create_session(user, request)
+        set_refresh_cookie(response, refresh_token)
+        await db.login_attempts.delete_one({"key": guard["key"]})
+        await audit_event("login", request, user_id=user["id"])
+    else:
+        # Direct function calls are retained for isolated unit tests only.
+        token = create_token(user["id"], email, int(user.get("session_version", 0)))
     return {"token": token, "user": public_user(user)}
+
+
+@api.post("/auth/refresh")
+async def refresh_session(request: Request, response: Response):
+    require_trusted_browser_request(request)
+    raw_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="Sessão expirada")
+
+    token_hash = hash_refresh_token(raw_token)
+    now = datetime.now(timezone.utc)
+    session = await db.auth_sessions.find_one({
+        "$or": [
+            {"refresh_token_hash": token_hash},
+            {"previous_token_hashes": token_hash},
+        ]
+    })
+    if not session:
+        clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Sessão expirada")
+    if token_hash in (session.get("previous_token_hashes") or []):
+        last_rotated_at = session.get("last_rotated_at")
+        if last_rotated_at and last_rotated_at > now - timedelta(seconds=5):
+            raise HTTPException(status_code=409, detail="A sessão já foi renovada")
+        await db.auth_sessions.update_many(
+            {"family_id": session["family_id"], "revoked_at": None},
+            {"$set": {"revoked_at": now, "revoked_reason": "refresh_reuse"}},
+        )
+        clear_refresh_cookie(response)
+        await audit_event("refresh_token_reuse", request, user_id=session.get("user_id"), outcome="blocked")
+        raise HTTPException(status_code=401, detail="Sessão invalidada")
+    if (
+        session.get("revoked_at")
+        or session.get("expires_at") <= now
+        or session.get("last_seen_at", session.get("created_at"))
+        <= now - timedelta(minutes=SESSION_IDLE_MINUTES)
+    ):
+        clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Sessão expirada")
+
+    user = await db.users.find_one({"id": session["user_id"]})
+    if not user or int(session.get("session_version", 0)) != int(user.get("session_version", 0)):
+        clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Sessão invalidada")
+    ensure_active_user(user)
+
+    refresh_window_at = session.get("refresh_window_at")
+    refresh_count = int(session.get("refresh_count", 0))
+    if not refresh_window_at or refresh_window_at <= now - timedelta(minutes=1):
+        refresh_window_at = now
+        refresh_count = 0
+    if refresh_count >= 20:
+        await audit_event("refresh_rate_limited", request, user_id=user["id"], outcome="blocked")
+        raise HTTPException(status_code=429, detail="Muitas renovações de sessão")
+
+    replacement = secrets.token_urlsafe(64)
+    rotated = await db.auth_sessions.update_one(
+        {"id": session["id"], "refresh_token_hash": token_hash, "revoked_at": None},
+        {"$set": {
+            "refresh_token_hash": hash_refresh_token(replacement),
+            "last_seen_at": now,
+            "last_rotated_at": now,
+            "refresh_window_at": refresh_window_at,
+            "refresh_count": refresh_count + 1,
+            **request_metadata(request),
+        }, "$push": {"previous_token_hashes": {"$each": [token_hash], "$slice": -5}}},
+    )
+    if rotated.modified_count != 1:
+        fresh = await db.auth_sessions.find_one({"id": session["id"]})
+        if fresh and fresh.get("last_rotated_at") and fresh["last_rotated_at"] > now - timedelta(seconds=5):
+            raise HTTPException(status_code=409, detail="A sessão já foi renovada")
+        await db.auth_sessions.update_many(
+            {"family_id": session["family_id"], "revoked_at": None},
+            {"$set": {"revoked_at": now, "revoked_reason": "refresh_reuse"}},
+        )
+        clear_refresh_cookie(response)
+        await audit_event("refresh_token_reuse", request, user_id=session.get("user_id"), outcome="blocked")
+        raise HTTPException(status_code=401, detail="Sessão invalidada")
+    set_refresh_cookie(response, replacement)
+    token = create_token(user["id"], user["email"], int(user.get("session_version", 0)), session["id"])
+    return {"token": token, "user": public_user(user)}
+
+
+@api.post("/auth/logout")
+async def logout(request: Request, response: Response, user=Depends(get_current_user)):
+    if user.get("_session_id"):
+        await db.auth_sessions.update_one(
+            {"id": user["_session_id"], "user_id": user["id"]},
+            {"$set": {"revoked_at": datetime.now(timezone.utc), "revoked_reason": "logout"}},
+        )
+    clear_refresh_cookie(response)
+    await ws_manager.disconnect_user(user["id"], code=4003)
+    await audit_event("logout", request, user_id=user["id"])
+    return {"ok": True}
+
+
+@api.post("/auth/logout-all")
+async def logout_all(request: Request, response: Response, user=Depends(get_current_user)):
+    now = datetime.now(timezone.utc)
+    await db.auth_sessions.update_many(
+        {"user_id": user["id"], "revoked_at": None},
+        {"$set": {"revoked_at": now, "revoked_reason": "logout_all"}},
+    )
+    clear_refresh_cookie(response)
+    await ws_manager.disconnect_user(user["id"], code=4003)
+    await audit_event("logout_all", request, user_id=user["id"])
+    return {"ok": True}
 
 
 @api.get("/auth/me")
@@ -1119,7 +1569,17 @@ async def change_password(payload: ChangePasswordIn, user=Depends(get_current_us
         {"user_id": user["id"], "used_at": None},
         {"$set": {"used_at": now_iso(), "invalidated_reason": "password_changed"}},
     )
+    auth_sessions = getattr(db, "auth_sessions", None)
+    if auth_sessions is not None:
+        await auth_sessions.update_many(
+            {"user_id": user["id"], "revoked_at": None},
+            {"$set": {
+                "revoked_at": datetime.now(timezone.utc),
+                "revoked_reason": "password_changed",
+            }},
+        )
     await ws_manager.disconnect_user(user["id"], code=4003)
+    await audit_event("password_changed", user_id=user["id"])
     return {"ok": True}
 
 
@@ -1281,7 +1741,17 @@ async def confirm_password_reset(payload: PasswordResetIn):
         {"user_id": token_doc["user_id"], "used_at": None},
         {"$set": {"used_at": used_at, "invalidated_reason": "password_reset"}},
     )
+    auth_sessions = getattr(db, "auth_sessions", None)
+    if auth_sessions is not None:
+        await auth_sessions.update_many(
+            {"user_id": token_doc["user_id"], "revoked_at": None},
+            {"$set": {
+                "revoked_at": datetime.now(timezone.utc),
+                "revoked_reason": "password_reset",
+            }},
+        )
     await ws_manager.disconnect_user(token_doc["user_id"], code=4003)
+    await audit_event("password_reset", user_id=token_doc["user_id"])
     return {"ok": True}
 
 
@@ -1764,6 +2234,9 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.insight_history.delete_many({"user_id": user_id})
     await db.files.delete_many({"user_id": user_id})
     await db.websocket_tickets.delete_many({"user_id": user_id})
+    auth_sessions = getattr(db, "auth_sessions", None)
+    if auth_sessions is not None:
+        await auth_sessions.delete_many({"user_id": user_id})
     await db.password_reset_tokens.delete_many({"user_id": user_id})
     await db.password_reset_requests.delete_many({"user_id": user_id})
     await db.email_delivery_logs.delete_many({"user_id": user_id})
@@ -1771,6 +2244,84 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.groups.update_many(
         {"member_ids": user_id},
         {"$pull": {"member_ids": user_id, "admin_ids": user_id}},
+    )
+
+
+@api.get("/auth/account/export")
+async def export_own_data(request: Request, user=Depends(get_current_user)):
+    now = datetime.now(timezone.utc)
+    recent = await db.data_export_requests.count_documents({
+        "user_id": user["id"],
+        "created_at": {"$gt": now - timedelta(minutes=15)},
+    })
+    if recent:
+        await audit_event("data_export_rate_limited", request, user_id=user["id"], outcome="blocked")
+        raise HTTPException(429, "Aguarde 15 minutos antes de gerar outra exportação")
+    await db.data_export_requests.insert_one({
+        "id": new_id(),
+        "user_id": user["id"],
+        "created_at": now,
+        "expires_at": now + timedelta(days=1),
+    })
+
+    collection_filters = {
+        "people": {"owner_user_id": user["id"]},
+        "categories": {"user_id": user["id"]},
+        "accounts": {"user_id": user["id"]},
+        "account_adjustments": {"user_id": user["id"]},
+        "transactions": {"user_id": user["id"]},
+        "goals": {"user_id": user["id"]},
+        "goal_events": {"user_id": user["id"]},
+        "recurrences": {"user_id": user["id"]},
+        "installments": {"user_id": user["id"]},
+        "installment_purchases": {"user_id": user["id"]},
+        "receivables": {"user_id": user["id"]},
+        "notifications": {"user_id": user["id"]},
+        "groups": {"member_ids": user["id"]},
+        "shared_expenses": {"participant_ids": user["id"]},
+        "settlement_payments": {"$or": [
+            {"debtor_id": user["id"]}, {"creditor_id": user["id"]},
+        ]},
+        "settlement_history": {"$or": [
+            {"debtor_id": user["id"]}, {"creditor_id": user["id"]},
+        ]},
+    }
+    exported = {}
+    for collection_name, owner_filter in collection_filters.items():
+        exported[collection_name] = await db[collection_name].find(
+            owner_filter, {"_id": 0}
+        ).to_list(20000)
+
+    for expense in exported["shared_expenses"]:
+        if expense.get("payer_id") != user["id"]:
+            expense.pop("account_id", None)
+        if expense.get("creator_id") != user["id"]:
+            expense.pop("category_id", None)
+    for payment in exported["settlement_payments"]:
+        if payment.get("debtor_id") != user["id"]:
+            payment.pop("payer_account_id", None)
+        if payment.get("creditor_id") != user["id"]:
+            payment.pop("receiver_account_id", None)
+
+    profile = {
+        key: user.get(key)
+        for key in (
+            "id", "name", "email", "currency", "language", "role", "status",
+            "created_at", "privacy_acknowledged_at", "privacy_notice_version",
+        )
+    }
+    await audit_event("data_exported", request, user_id=user["id"])
+    return JSONResponse(
+        content=jsonable_encoder({
+            "export_version": 1,
+            "generated_at": now,
+            "profile": profile,
+            "data": exported,
+        }),
+        headers={
+            "Content-Disposition": f'attachment; filename="crelith-export-{now.date().isoformat()}.json"',
+            "Cache-Control": "private, no-store",
+        },
     )
 
 
@@ -1785,6 +2336,7 @@ async def account_deletion_impact(user=Depends(get_current_user)):
 @api.delete("/auth/account")
 async def delete_own_account(
     payload: AccountDeletionIn,
+    request: Request = None,
     user=Depends(get_current_user),
 ):
     candidate = await db.users.find_one({"id": user["id"]})
@@ -1823,6 +2375,7 @@ async def delete_own_account(
         )
 
     try:
+        await audit_event("account_deletion_started", request, user_id=user["id"])
         locked_candidate = {**candidate, "deletion_in_progress": True}
         recheck = await build_account_deletion_impact(locked_candidate)
         if not recheck["can_delete"]:
@@ -1863,6 +2416,7 @@ async def delete_own_account(
         )
 
     logger.info("Self-service account deletion completed: user=%s", user["id"])
+    await audit_event("account_deleted", request, user_id=user["id"])
     return {"ok": True}
 
 
@@ -2104,6 +2658,9 @@ async def delete_admin_user(
         await db.insight_history.delete_many({"user_id": user_id})
         await db.files.delete_many({"user_id": user_id})
         await db.websocket_tickets.delete_many({"user_id": user_id})
+        auth_sessions = getattr(db, "auth_sessions", None)
+        if auth_sessions is not None:
+            await auth_sessions.delete_many({"user_id": user_id})
         await db.password_reset_tokens.delete_many({"user_id": user_id})
         await db.password_reset_requests.delete_many({"user_id": user_id})
         await db.email_delivery_logs.delete_many({"user_id": user_id})
@@ -3382,21 +3939,35 @@ async def upload_receipt(tid: str, file: UploadFile = File(...), user=Depends(ge
     if ext not in MIME_TYPES:
         raise HTTPException(400, "Formato não suportado (use JPG, PNG, WEBP, GIF ou PDF)")
     data = await file.read()
+    if not data:
+        raise HTTPException(400, "Arquivo vazio")
     if len(data) > 5 * 1024 * 1024:
         raise HTTPException(400, "Arquivo muito grande (máx 5MB)")
-    content_type = file.content_type or MIME_TYPES[ext]
+    content_type = verified_upload_type(data, ext)
+    if not content_type or (file.content_type and file.content_type != content_type):
+        raise HTTPException(400, "O conteúdo do arquivo não corresponde ao formato informado")
+    original_filename = safe_original_filename(file.filename)
     path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
     result = await asyncio.to_thread(_put_object, path, data, content_type)
     fid = new_id()
     await db.files.insert_one({
         "id": fid, "user_id": user["id"], "storage_path": result["path"],
-        "original_filename": file.filename, "content_type": content_type,
+        "original_filename": original_filename, "content_type": content_type,
         "size": result.get("size", len(data)), "is_deleted": False,
         "created_at": now_iso(),
     })
     receipt = {"file_id": fid, "path": result["path"],
-               "filename": file.filename, "content_type": content_type}
-    await db.transactions.update_one({"id": tid}, {"$set": {"receipt": receipt}})
+               "filename": original_filename, "content_type": content_type}
+    updated = await db.transactions.update_one(
+        {"id": tid, "user_id": user["id"]},
+        {"$set": {"receipt": receipt}},
+    )
+    if updated.modified_count != 1:
+        await db.files.update_one(
+            {"id": fid, "user_id": user["id"]},
+            {"$set": {"is_deleted": True}},
+        )
+        raise HTTPException(409, "Não foi possível vincular o comprovante")
     return receipt
 
 
@@ -3405,32 +3976,38 @@ async def delete_receipt(tid: str, user=Depends(get_current_user)):
     tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
     if not tx or not tx.get("receipt"):
         raise HTTPException(404, "Sem comprovante")
-    await db.files.update_one({"id": tx["receipt"]["file_id"]}, {"$set": {"is_deleted": True}})
-    await db.transactions.update_one({"id": tid}, {"$unset": {"receipt": ""}})
+    await db.files.update_one(
+        {"id": tx["receipt"]["file_id"], "user_id": user["id"]},
+        {"$set": {"is_deleted": True}},
+    )
+    await db.transactions.update_one(
+        {"id": tid, "user_id": user["id"]}, {"$unset": {"receipt": ""}}
+    )
     return {"ok": True}
 
 
-async def _user_from_token(token: str):
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except Exception:
-        return None
-    user = await db.users.find_one({"id": payload.get("sub")}, {"_id": 0})
-    if not user or account_status(user) != "active":
-        return None
-    return user
-
-
 @api.get("/files/{path:path}")
-async def download_file(path: str, authorization: str = Header(None), auth: str = Query(None)):
-    token = authorization[7:] if (authorization or "").startswith("Bearer ") else auth
-    if not token or not await _user_from_token(token):
-        raise HTTPException(401, "Não autenticado")
-    record = await db.files.find_one({"storage_path": path, "is_deleted": False}, {"_id": 0})
+async def download_file(path: str, user=Depends(get_current_user)):
+    if ".." in path or not path.startswith(f"{APP_NAME}/uploads/{user['id']}/"):
+        raise HTTPException(404, "Arquivo não encontrado")
+    record = await db.files.find_one({
+        "storage_path": path,
+        "user_id": user["id"],
+        "is_deleted": False,
+    }, {"_id": 0})
     if not record:
         raise HTTPException(404, "Arquivo não encontrado")
     data, ct = await asyncio.to_thread(_get_object, path)
-    return Response(content=data, media_type=record.get("content_type", ct))
+    filename = safe_original_filename(record.get("original_filename"))
+    return Response(
+        content=data,
+        media_type=record.get("content_type", ct),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 # ---------- Recurrences ----------
@@ -4067,7 +4644,16 @@ async def update_group_member_role(
         update = {"$addToSet": {"admin_ids": uid}}
     else:
         update = {"$pull": {"admin_ids": uid}}
-    await db.groups.update_one({"id": gid}, update)
+    await db.groups.update_one(
+        {
+            "id": gid,
+            "$or": [
+                {"creator_id": user["id"]},
+                {"admin_ids": user["id"]},
+            ],
+        },
+        update,
+    )
 
     try:
         await push_notification(
@@ -4089,10 +4675,9 @@ async def update_group_member_role(
 
 @api.delete("/groups/{gid}")
 async def delete_group(gid: str, user=Depends(get_current_user)):
-    g = await db.groups.find_one({"id": gid})
-    if not g or g.get("creator_id") != user["id"]:
-        raise HTTPException(403, "Sem permissão")
-    await db.groups.delete_one({"id": gid})
+    deleted = await db.groups.delete_one({"id": gid, "creator_id": user["id"]})
+    if deleted.deleted_count != 1:
+        raise HTTPException(404, "Grupo não encontrado")
     return {"ok": True}
 
 
@@ -5180,11 +5765,9 @@ async def ws_notifications(websocket: WebSocket):
 
 @api.put("/shared-expenses/{sid}")
 async def update_shared(sid: str, payload: SharedExpenseIn, user=Depends(get_current_user)):
-    se = await db.shared_expenses.find_one({"id": sid})
+    se = await db.shared_expenses.find_one({"id": sid, "creator_id": user["id"]})
     if not se:
         raise HTTPException(404, "Não encontrado")
-    if se["creator_id"] != user["id"]:
-        raise HTTPException(403, "Apenas o criador pode editar")
     payment_count = await db.settlement_payments.count_documents({
         "expense_id": sid,
         "status": {
@@ -5229,7 +5812,7 @@ async def update_shared(sid: str, payload: SharedExpenseIn, user=Depends(get_cur
     for p in splits:
         p["paid_back"] = existing_paid.get(participant_reference(p), False)
     await db.shared_expenses.update_one(
-        {"id": sid},
+        {"id": sid, "creator_id": user["id"]},
         {"$set": {
             "title": payload.title, "amount": payload.amount, "date": payload.date,
             "category": payload.category, "category_id": payload.category_id,
@@ -5269,11 +5852,16 @@ async def update_shared(sid: str, payload: SharedExpenseIn, user=Depends(get_cur
 
 @api.delete("/shared-expenses/{sid}")
 async def delete_shared(sid: str, user=Depends(get_current_user)):
-    se = await db.shared_expenses.find_one({"id": sid})
+    ownership = {
+        "id": sid,
+        "$or": [
+            {"creator_id": user["id"]},
+            {"payer_id": user["id"]},
+        ],
+    }
+    se = await db.shared_expenses.find_one(ownership)
     if not se:
         raise HTTPException(404, "Não encontrado")
-    if se["creator_id"] != user["id"] and se["payer_id"] != user["id"]:
-        raise HTTPException(403, "Apenas o criador ou o pagador pode excluir")
     payment_count = await db.settlement_payments.count_documents({
         "expense_id": sid,
         "status": {
@@ -5291,7 +5879,9 @@ async def delete_shared(sid: str, user=Depends(get_current_user)):
             409,
             "Esta despesa possui acertos financeiros e não pode ser excluída",
         )
-    await db.shared_expenses.delete_one({"id": sid})
+    deleted = await db.shared_expenses.delete_one(ownership)
+    if deleted.deleted_count != 1:
+        raise HTTPException(409, "A despesa foi alterada; atualize e tente novamente")
     await db.transactions.delete_many({
         "shared_expense_id": sid,
         "source": "shared_expense",
@@ -8892,6 +9482,11 @@ async def delete_goal(gid: str, user=Depends(get_current_user)):
 # ---------- Seed Demo ----------
 @app.on_event("startup")
 async def startup():
+    if os.environ.get("ENVIRONMENT", "production").lower() == "production":
+        if len(JWT_SECRET.encode()) < 32:
+            raise RuntimeError("JWT_SECRET must contain at least 32 bytes in production")
+        if "*" in configured_cors_origins():
+            raise RuntimeError("Wildcard CORS is forbidden in production")
     try:
         init_storage()
         logger.info("Object storage initialized")
@@ -9007,6 +9602,20 @@ async def startup():
         "created_at",
         expireAfterSeconds=86400,
     )
+    await db.auth_sessions.create_index("id", unique=True)
+    await db.auth_sessions.create_index(
+        [("user_id", 1), ("revoked_at", 1), ("created_at", -1)]
+    )
+    await db.auth_sessions.create_index("expires_at", expireAfterSeconds=0)
+    await db.login_attempts.create_index("key", unique=True)
+    await db.login_attempts.create_index("expires_at", expireAfterSeconds=0)
+    await db.audit_events.create_index([("user_id", 1), ("created_at", -1)])
+    await db.audit_events.create_index(
+        "created_at", expireAfterSeconds=int(os.environ.get("AUDIT_RETENTION_DAYS", "365")) * 86400
+    )
+    await db.data_export_requests.create_index("expires_at", expireAfterSeconds=0)
+    await db.data_export_requests.create_index([("user_id", 1), ("created_at", -1)])
+    await db.files.create_index([("user_id", 1), ("storage_path", 1)])
     await db.email_templates.create_index("id", unique=True)
 
     # Backfill: garantir categorias padrão de receita para usuários existentes
@@ -9119,8 +9728,13 @@ app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=configured_cors_origins(),
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization", "Content-Type", "Idempotency-Key",
+        "X-Requested-With", "X-Request-ID",
+    ],
+    expose_headers=["X-Request-ID"],
+    max_age=600,
 )
 
 

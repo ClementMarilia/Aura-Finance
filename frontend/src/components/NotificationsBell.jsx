@@ -38,8 +38,6 @@ export default function NotificationsBell() {
 
   useEffect(() => {
     loadCount();
-    const token = localStorage.getItem("token");
-    if (!token) return;
     const base = process.env.REACT_APP_BACKEND_URL || "";
     const wsUrl = `${base.replace(/^http/, "ws")}/api/ws/notifications`;
     const maxReconnectAttempts = 5;
@@ -63,7 +61,6 @@ export default function NotificationsBell() {
         ticket = response.data.ticket;
       } catch (error) {
         if (error?.response?.status === 401) {
-          localStorage.removeItem("token");
           window.location.assign("/login");
           return;
         }
@@ -93,7 +90,6 @@ export default function NotificationsBell() {
       ws.onclose = (event) => {
         if (closed) return;
         if (event.code === 4001) {
-          localStorage.removeItem("token");
           window.location.assign("/login");
           return;
         }
