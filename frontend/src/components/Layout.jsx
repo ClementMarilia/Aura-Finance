@@ -22,6 +22,7 @@ const nav = [
   { to: "/parcelamentos", icon: CreditCard, label: tr("Parcelamentos") },
   { to: "/contas-a-receber", icon: HandCoins, label: tr("Contas a Receber") },
   { to: "/orcamento", icon: PiggyBank, label: tr("Orçamento") },
+  { to: "/fluxo-de-caixa", icon: FileBarChart, label: tr("Fluxo de caixa") },
   { to: "/carteiras", icon: Wallet, label: tr("Carteiras") },
   { to: "/extrato-financeiro", icon: ReceiptText, label: tr("Extrato financeiro") },
   { to: "/metas", icon: Target, label: tr("Metas") },
@@ -103,7 +104,6 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen flex" style={{ background: "var(--bg)" }}>
-      {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-64 border-r p-4"
         style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
         <div className="flex items-center justify-center py-4 mb-4">
@@ -120,9 +120,7 @@ export default function Layout() {
         </nav>
       </aside>
 
-      {/* Main */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Desktop header — glass, avatar/menu sempre visível no topo direito */}
         <header className="hidden md:flex items-center justify-end gap-2 px-6 py-3 border-b sticky top-0 z-20 backdrop-blur-xl"
           style={{ background: "color-mix(in srgb, var(--surface) 72%, transparent)", borderColor: "var(--border)" }}
           data-testid="desktop-header">
@@ -131,7 +129,6 @@ export default function Layout() {
           <UserMenu pendingUserCount={pendingUserCount} />
         </header>
 
-        {/* Mobile header — glass */}
         <header className="md:hidden flex items-center justify-between px-4 py-3 border-b sticky top-0 z-20 backdrop-blur-xl"
           style={{ background: "color-mix(in srgb, var(--surface) 72%, transparent)", borderColor: "var(--border)" }}>
           <Logo variant="full" className="h-9 w-auto" />
@@ -146,7 +143,6 @@ export default function Layout() {
           <Outlet />
         </div>
 
-        {/* Bottom mobile nav — 4 primary + Mais */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t flex justify-around py-2 z-30 backdrop-blur-xl"
           style={{ background: "color-mix(in srgb, var(--surface) 88%, transparent)", borderColor: "var(--border)" }}>
           {primaryMobile.map((n) => (
@@ -178,7 +174,6 @@ export default function Layout() {
           </button>
         </nav>
 
-        {/* Full menu drawer (mobile) */}
         <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
           <SheetContent side="right" className="w-[86%] max-w-sm overflow-y-auto p-0" data-testid="mobile-more-sheet">
             <SheetHeader className="px-5 pt-5 pb-3">
