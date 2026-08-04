@@ -119,7 +119,14 @@ def create_health_router(
             for item in installments
         ]
 
-        def converted(document: dict) -> float:
+        def converted(document: dict, _target_currency: str | None = None) -> float:
+            """Convert a financial document to the authenticated user's base currency.
+
+            ``build_projection`` supplies the target currency as its second
+            callback argument.  The health endpoint always uses ``base_currency``
+            resolved from the authenticated user, so the explicit callback value
+            is intentionally ignored while keeping the shared engine contract.
+            """
             enriched = dict(document)
             if not enriched.get("currency"):
                 enriched["currency"] = account_currencies.get(
