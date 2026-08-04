@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
@@ -29,6 +29,8 @@ import ProjectedCashFlow from "@/pages/ProjectedCashFlow";
 import InstallPrompt from "@/components/InstallPrompt";
 import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
 import { translate as tr } from "@/i18n";
+
+const FinancialCalendar = lazy(() => import("@/pages/FinancialCalendar"));
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -70,6 +72,11 @@ function App() {
             <Route path="contas-a-receber" element={<Receivables />} />
             <Route path="orcamento" element={<Budget />} />
             <Route path="fluxo-de-caixa" element={<ProjectedCashFlow />} />
+            <Route path="calendario-financeiro" element={(
+              <Suspense fallback={<div className="p-8 text-[#6B7068]">{tr("Carregando calendário...")}</div>}>
+                <FinancialCalendar />
+              </Suspense>
+            )} />
             <Route path="despesas-compartilhadas" element={<SharedExpenses />} />
             <Route path="pessoas" element={<People />} />
             <Route path="grupos" element={<Groups />} />
