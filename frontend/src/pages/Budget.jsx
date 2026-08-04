@@ -12,11 +12,16 @@ export default function Budget() {
   const now = new Date();
   const [period, setPeriod] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 });
   const [data, setData] = useState(null);
+  const { year, month } = period;
 
   useEffect(() => {
+    let active = true;
     setData(null);
-    api.get("/dashboard", { params: period }).then(r => setData(r.data));
-  }, [period.year, period.month]);
+    api.get("/dashboard", { params: { year, month } }).then(r => {
+      if (active) setData(r.data);
+    });
+    return () => { active = false; };
+  }, [year, month]);
 
   const b = data?.budget;
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -23,6 +23,23 @@ function readSavedPeriod() {
   try { return JSON.parse(localStorage.getItem(PERIOD_KEY)) || null; } catch { return null; }
 }
 
+export function transactionFiltersFromSearchParams(searchParams, savedPeriod = null, date = new Date()) {
+  const params = typeof searchParams === "string" ? new URLSearchParams(searchParams) : searchParams;
+  return {
+    status: params.get("status") || "",
+    type: params.get("type") || "",
+    category_id: params.get("category_id") || "",
+    year: params.get("year") || savedPeriod?.year || String(date.getFullYear()),
+    month: params.get("month") || savedPeriod?.month || String(date.getMonth() + 1),
+    account_id: params.get("account_id") || "",
+    currency: params.get("currency") || "",
+  };
+}
+
+export function transactionQueryParams(filters) {
+  return Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
+}
+
 export default function Transactions() {
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
@@ -32,19 +49,9 @@ export default function Transactions() {
   const [people, setPeople] = useState([]);
   const now = new Date();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [filter, setFilter] = useState(() => {
-    const saved = readSavedPeriod();
-    const d = new Date();
-    return {
-      status: searchParams.get("status") || "",
-      type: searchParams.get("type") || "",
-      category_id: searchParams.get("category_id") || "",
-      year: searchParams.get("year") || saved?.year || String(d.getFullYear()),
-      month: searchParams.get("month") || saved?.month || String(d.getMonth() + 1),
-      account_id: searchParams.get("account_id") || "",
-      currency: searchParams.get("currency") || "",
-    };
-  });
+  const [filter, setFilter] = useState(() => (
+    transactionFiltersFromSearchParams(searchParams, readSavedPeriod())
+  ));
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
@@ -56,6 +63,16 @@ export default function Transactions() {
   const [uploadingId, setUploadingId] = useState(null);
   const fileInputRef = useRef(null);
   const pendingUploadTx = useRef(null);
+  const loadRequestRef = useRef(0);
+  const {
+    status: filterStatus,
+    type: filterType,
+    category_id: filterCategoryId,
+    year: filterYear,
+    month: filterMonth,
+    account_id: filterAccountId,
+    currency: filterCurrency,
+  } = filter;
 
   function defaultForm() {
     return {
@@ -81,11 +98,23 @@ export default function Transactions() {
     };
   }
 
-  const load = () => {
-    const params = {};
-    Object.entries(filter).forEach(([k, v]) => { if (v) params[k] = v; });
-    api.get("/transactions", { params }).then(r => { setItems(r.data); setSelected([]); });
-  };
+  const load = useCallback(() => {
+    const requestId = ++loadRequestRef.current;
+    const params = transactionQueryParams({
+      status: filterStatus,
+      type: filterType,
+      category_id: filterCategoryId,
+      year: filterYear,
+      month: filterMonth,
+      account_id: filterAccountId,
+      currency: filterCurrency,
+    });
+    return api.get("/transactions", { params }).then(r => {
+      if (requestId !== loadRequestRef.current) return;
+      setItems(r.data);
+      setSelected([]);
+    });
+  }, [filterStatus, filterType, filterCategoryId, filterYear, filterMonth, filterAccountId, filterCurrency]);
 
   useEffect(() => {
     api.get("/categories").then(r => setCats(r.data));
@@ -171,22 +200,15 @@ export default function Transactions() {
     });
     return () => { active = false; };
   }, [open, editing, form.type, form.account_id, form.from_account_id, form.to_account_id, form.date, sourceCurrency, targetCurrency, sourceAccount, targetAccount, rateContext, editingRateContext]);
-  useEffect(() => { load(); }, [filter.status, filter.type, filter.category_id, filter.year, filter.month, filter.account_id, filter.currency]);
+  useEffect(() => {
+    load();
+    return () => { loadRequestRef.current += 1; };
+  }, [load]);
 
   // React to URL changes (when user navigates from another page like Dashboard)
   const sp = searchParams.toString();
   useEffect(() => {
-    const saved = readSavedPeriod();
-    const d = new Date();
-    setFilter({
-      status: searchParams.get("status") || "",
-      type: searchParams.get("type") || "",
-      category_id: searchParams.get("category_id") || "",
-      year: searchParams.get("year") || saved?.year || String(d.getFullYear()),
-      month: searchParams.get("month") || saved?.month || String(d.getMonth() + 1),
-      account_id: searchParams.get("account_id") || "",
-      currency: searchParams.get("currency") || "",
-    });
+    setFilter(transactionFiltersFromSearchParams(sp, readSavedPeriod()));
   }, [sp]);
 
   // Persist last month/year selection so it is kept across navigation
