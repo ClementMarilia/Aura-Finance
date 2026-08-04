@@ -31,6 +31,7 @@ import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
 import { translate as tr } from "@/i18n";
 
 const FinancialCalendar = lazy(() => import("@/pages/FinancialCalendar"));
+const FinancialHealth = lazy(() => import("@/pages/FinancialHealth"));
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -75,6 +76,11 @@ function App() {
             <Route path="calendario-financeiro" element={(
               <Suspense fallback={<div className="p-8 text-[#6B7068]">{tr("Carregando calendário...")}</div>}>
                 <FinancialCalendar />
+              </Suspense>
+            )} />
+            <Route path="saude-financeira" element={(
+              <Suspense fallback={<div className="p-8 text-[#6B7068]">{tr("Calculando saúde financeira...")}</div>}>
+                <FinancialHealth />
               </Suspense>
             )} />
             <Route path="despesas-compartilhadas" element={<SharedExpenses />} />

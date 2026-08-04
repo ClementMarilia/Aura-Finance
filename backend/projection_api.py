@@ -8,6 +8,7 @@ from typing import Callable
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from projection_engine import SUPPORTED_RANGES, build_projection, projection_window
+from health_api import create_health_router
 
 
 def create_projection_router(
@@ -115,4 +116,15 @@ def create_projection_router(
         result["currency"] = base_currency
         return result
 
+    # Projection and health share the audited balance/currency dependencies.
+    # Nesting both in this modular analytics router keeps every supported ASGI
+    # entrypoint identical without adding more wiring to the legacy monolith.
+    router.include_router(create_health_router(
+        db=db,
+        get_current_user=get_current_user,
+        load_account_balance_breakdowns=load_account_balance_breakdowns,
+        amount_in_currency=amount_in_currency,
+        normalize_currency=normalize_currency,
+        prefix="",
+    ))
     return router

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
   Users, FolderOpen, Scale, FileBarChart, Wallet, Bell, Target, Repeat, Settings,
   Menu, UserCircle, LogOut, ShieldCheck,
-  ReceiptText, CalendarDays,
+  ReceiptText, CalendarDays, HeartPulse,
 } from "lucide-react";
 import NotificationsBell from "@/components/NotificationsBell";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -24,6 +24,7 @@ const nav = [
   { to: "/orcamento", icon: PiggyBank, label: tr("Orçamento") },
   { to: "/fluxo-de-caixa", icon: FileBarChart, label: tr("Fluxo de caixa") },
   { to: "/calendario-financeiro", icon: CalendarDays, label: tr("Calendário financeiro") },
+  { to: "/saude-financeira", icon: HeartPulse, label: tr("Saúde financeira") },
   { to: "/carteiras", icon: Wallet, label: tr("Carteiras") },
   { to: "/extrato-financeiro", icon: ReceiptText, label: tr("Extrato financeiro") },
   { to: "/metas", icon: Target, label: tr("Metas") },
