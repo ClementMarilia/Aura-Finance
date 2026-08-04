@@ -1,15 +1,23 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import api from "@/lib/api";
-import { fmtMoney } from "@/lib/api";
+import api, { fmtMoney, formatApiError } from "@/lib/api";
 import { formatInsight, formatInsightEvidence, insightCategory } from "@/lib/insights";
+import {
+  DASHBOARD_WIDGETS, DEFAULT_DASHBOARD_WIDGETS,
+  hasDashboardWidget, normalizeDashboardWidgets,
+} from "@/lib/dashboardWidgets";
 import { useAuth } from "@/context/AuthContext";
 import { getMonthNames, translate as tr } from "@/i18n";
+import { toast } from "sonner";
 import {
   TrendingUp, TrendingDown, Wallet, Clock, HandCoins, CreditCard,
   Lightbulb, AlertTriangle, Info, CheckCircle2, Repeat, PiggyBank, ChevronRight,
-  ChevronDown, X, ThumbsUp, History
+  ChevronDown, X, ThumbsUp, History, Settings2, RotateCcw
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   PieChart, Pie, Cell, Legend, AreaChart, Area
@@ -23,6 +31,10 @@ export default function Dashboard() {
   const [insights, setInsights] = useState(null);
   const [projection, setProjection] = useState(null);
   const [accounts, setAccounts] = useState([]);
+  const [widgets, setWidgets] = useState(null);
+  const [draftWidgets, setDraftWidgets] = useState([]);
+  const [customizerOpen, setCustomizerOpen] = useState(false);
+  const [savingWidgets, setSavingWidgets] = useState(false);
   const [expandedInsight, setExpandedInsight] = useState(null);
   const [showInsightHistory, setShowInsightHistory] = useState(false);
   const [insightHistory, setInsightHistory] = useState(null);
@@ -40,8 +52,16 @@ export default function Dashboard() {
   }, [period.year, period.month]);
 
   useEffect(() => {
-    api.get("/dashboard", { params: period }).then(r => setData(r.data));
+    api.get("/dashboard", {
+      params: { year: period.year, month: period.month },
+    }).then(r => setData(r.data));
   }, [period.year, period.month]);
+
+  useEffect(() => {
+    api.get("/dashboard/preferences")
+      .then((response) => setWidgets(normalizeDashboardWidgets(response.data?.widgets)))
+      .catch(() => setWidgets([...DEFAULT_DASHBOARD_WIDGETS]));
+  }, []);
 
   const now = new Date();
   const isCurrentPeriod = (
@@ -50,18 +70,57 @@ export default function Dashboard() {
   );
 
   useEffect(() => {
-    if (isCurrentPeriod) {
+    if (!widgets) return;
+    if (isCurrentPeriod && hasDashboardWidget(widgets, "insights")) {
       setInsights(null);
       api.get("/insights").then(r => setInsights(r.data || [])).catch(() => setInsights([]));
     } else {
       setInsights([]);
     }
-  }, [isCurrentPeriod, user?.currency]);
+  }, [isCurrentPeriod, user?.currency, widgets]);
 
   useEffect(() => {
-    api.get("/reports/projection", { params: { months: 6 } }).then(r => setProjection(r.data)).catch(() => {});
-    api.get("/accounts").then(r => setAccounts(r.data || [])).catch(() => {});
-  }, [user?.currency]);
+    if (!widgets) return;
+    if (hasDashboardWidget(widgets, "projection")) {
+      api.get("/reports/projection", { params: { months: 6 } }).then(r => setProjection(r.data)).catch(() => {});
+    } else {
+      setProjection(null);
+    }
+    if (hasDashboardWidget(widgets, "accounts")) {
+      api.get("/accounts").then(r => setAccounts(r.data || [])).catch(() => {});
+    } else {
+      setAccounts([]);
+    }
+  }, [user?.currency, widgets]);
+
+  const openCustomizer = () => {
+    setDraftWidgets([...(widgets || DEFAULT_DASHBOARD_WIDGETS)]);
+    setCustomizerOpen(true);
+  };
+
+  const toggleDraftWidget = (widgetId, enabled) => {
+    setDraftWidgets((current) => normalizeDashboardWidgets(
+      enabled
+        ? [...current, widgetId]
+        : current.filter((id) => id !== widgetId)
+    ));
+  };
+
+  const saveWidgetPreferences = async () => {
+    setSavingWidgets(true);
+    try {
+      const response = await api.put("/dashboard/preferences", { widgets: draftWidgets });
+      const saved = normalizeDashboardWidgets(response.data?.widgets);
+      setWidgets(saved);
+      setDraftWidgets(saved);
+      setCustomizerOpen(false);
+      toast.success(tr("Dashboard atualizado"));
+    } catch (error) {
+      toast.error(formatApiError(error));
+    } finally {
+      setSavingWidgets(false);
+    }
+  };
 
   const dismissInsight = async (insightId) => {
     const previous = insights;
@@ -110,48 +169,55 @@ export default function Dashboard() {
   const patrimonio = accounts.reduce((s, a) => s + (a.balance_base ?? a.balance ?? 0), 0);
   const ym = `year=${period.year}&month=${period.month}`;
 
-  if (!data) return <div className="text-[#6B7068]">{tr("Carregando painel...")}</div>;
+  if (!data || !widgets) return <div className="text-[#6B7068]">{tr("Carregando painel...")}</div>;
 
   const stats = [
     {
+      id: "income",
       label: tr("Receita do mês"), value: data.income, icon: TrendingUp,
       accent: "text-emerald-600", bg: "bg-emerald-50",
       to: `/lancamentos?type=income&${ym}`,
     },
     {
+      id: "expense",
       label: tr("Despesa do mês"), value: data.expense, icon: TrendingDown,
       accent: "text-rose-600", bg: "bg-rose-50",
       to: `/lancamentos?type=expense&${ym}`,
     },
     {
+      id: "balance",
       label: tr("Saldo atual"), value: data.balance, icon: Wallet,
       accent: "text-[#061B4A]", bg: "bg-[#F1EFE7]",
       to: `/extrato-financeiro`,
     },
     {
+      id: "pending_payable",
       label: tr("Contas pendentes"), value: data.pending_payable, icon: Clock,
       accent: "text-amber-700", bg: "bg-amber-50",
       hint: data.shared_payable > 0 ? `Inclui ${fmtMoney(data.shared_payable, curr)} de despesas compartilhadas` : null,
       to: `/lancamentos?type=expense&status=pending&${ym}`,
     },
     {
+      id: "receivable",
       label: tr("A receber"), value: data.receivable_total, icon: HandCoins,
       accent: "text-blue-600", bg: "bg-blue-50",
       hint: data.shared_receivable > 0 ? `Inclui ${fmtMoney(data.shared_receivable, curr)} de despesas compartilhadas` : null,
       to: `/contas-a-receber`,
     },
     {
+      id: "future_installments",
       label: tr("Parcelas futuras"), value: data.future_installments_total, icon: CreditCard,
       accent: "text-[#D96C5B]", bg: "bg-orange-50",
       to: `/parcelamentos`,
     },
     {
+      id: "fixed_monthly",
       label: tr("Gasto fixo mensal"), value: data.fixed_monthly_expense || 0, icon: Repeat,
       accent: "text-[#061B4A]", bg: "bg-[#E7FAF5]",
       hint: data.fixed_monthly_income > 0 ? `Receita fixa: ${fmtMoney(data.fixed_monthly_income, curr)}` : tr("Média das recorrências ativas"),
       to: `/recorrencias`,
     },
-  ];
+  ].filter((item) => hasDashboardWidget(widgets, item.id));
 
   return (
     <div className="space-y-6" data-testid="dashboard-root">
@@ -164,7 +230,15 @@ export default function Dashboard() {
             {months[period.month - 1]} de {period.year}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={openCustomizer}
+            className="inline-flex items-center gap-2 rounded-xl border border-[#E5E4E0] bg-white px-3 py-2 text-sm font-medium text-[#061B4A] hover:bg-[#F8F7F3]"
+            data-testid="dashboard-customize"
+          >
+            <Settings2 size={16} /> {tr("Personalizar")}
+          </button>
           <select value={period.month} onChange={(e) => setPeriod({ ...period, month: +e.target.value })}
             data-testid="dashboard-month-select"
             className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
@@ -178,8 +252,72 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <Dialog open={customizerOpen} onOpenChange={setCustomizerOpen}>
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto" data-testid="dashboard-customizer">
+          <DialogHeader>
+            <DialogTitle>{tr("Personalizar dashboard")}</DialogTitle>
+            <DialogDescription>
+              {tr("Escolha os widgets que deseja visualizar. A configuração será salva na sua conta.")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="divide-y divide-[#E5E4E0] rounded-xl border border-[#E5E4E0]">
+            {DASHBOARD_WIDGETS.map((widget) => {
+              const enabled = draftWidgets.includes(widget.id);
+              return (
+                <label key={widget.id} className="flex cursor-pointer items-center justify-between gap-4 p-3">
+                  <span className="text-sm font-medium text-[#1A1C1A]">{tr(widget.label)}</span>
+                  <Switch
+                    checked={enabled}
+                    onCheckedChange={(checked) => toggleDraftWidget(widget.id, checked)}
+                    className="data-[state=checked]:bg-[#1268F4] data-[state=unchecked]:bg-[#D6D3CA]"
+                    aria-label={tr(widget.label)}
+                    data-testid={`dashboard-widget-${widget.id}`}
+                  />
+                </label>
+              );
+            })}
+          </div>
+          <DialogFooter className="gap-2 sm:space-x-0">
+            <button
+              type="button"
+              onClick={() => setDraftWidgets([...DEFAULT_DASHBOARD_WIDGETS])}
+              disabled={savingWidgets}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#E5E4E0] px-4 py-2 text-sm font-medium text-[#061B4A] hover:bg-[#F8F7F3] disabled:opacity-60"
+              data-testid="dashboard-reset-widgets"
+            >
+              <RotateCcw size={15} /> {tr("Restaurar padrão")}
+            </button>
+            <button
+              type="button"
+              onClick={saveWidgetPreferences}
+              disabled={savingWidgets}
+              className="rounded-xl bg-[#061B4A] px-4 py-2 text-sm font-medium text-white hover:bg-[#0B2D73] disabled:opacity-60"
+              data-testid="dashboard-save-widgets"
+            >
+              {savingWidgets ? tr("Salvando...") : tr("Salvar configuração")}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {widgets.length === 0 && (
+        <div className="card-soft py-12 text-center" data-testid="dashboard-empty-widgets">
+          <Settings2 size={28} className="mx-auto text-[#6B7068]" />
+          <h2 className="mt-3 text-lg font-semibold" style={{ fontFamily: "Outfit" }}>
+            {tr("Seu dashboard está vazio")}
+          </h2>
+          <p className="mx-auto mt-1 max-w-md text-sm text-[#6B7068]">
+            {tr("Escolha pelo menos um widget para acompanhar suas finanças aqui.")}
+          </p>
+          <button type="button" onClick={openCustomizer}
+            className="mt-4 rounded-xl bg-[#061B4A] px-4 py-2 text-sm font-medium text-white hover:bg-[#0B2D73]">
+            {tr("Escolher widgets")}
+          </button>
+        </div>
+      )}
+
       {/* Hero balance */}
-      <Link
+      {hasDashboardWidget(widgets, "balance_summary") && <Link
         to={`/extrato-financeiro`}
         data-testid="hero-balance-link"
         className="card-soft bg-gradient-to-br from-[#061B4A] to-[#1268F4] text-white border-transparent block hover:brightness-110 transition cursor-pointer"
@@ -196,10 +334,10 @@ export default function Dashboard() {
           <span>{tr("Receita:")} <strong>{fmtMoney(data.income, curr)}</strong></span>
           <span>{tr("Despesa:")} <strong>{fmtMoney(data.expense, curr)}</strong></span>
         </div>
-      </Link>
+      </Link>}
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      {stats.length > 0 && <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {stats.map((s) => (
           <Link
             key={s.label}
@@ -216,10 +354,10 @@ export default function Dashboard() {
             {s.hint && <div className="text-xs text-[#6B7068] mt-1.5">{s.hint}</div>}
           </Link>
         ))}
-      </div>
+      </div>}
 
       {/* Account balances */}
-      {accounts.length > 0 && (
+      {hasDashboardWidget(widgets, "accounts") && accounts.length > 0 && (
         <div data-testid="account-balances">
           <div className="flex items-center gap-2 mb-3">
             <Wallet size={18} className="text-[#061B4A]" />
@@ -260,8 +398,13 @@ export default function Dashboard() {
       )}
 
       {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="card-soft lg:col-span-2">
+      {(hasDashboardWidget(widgets, "evolution") || hasDashboardWidget(widgets, "categories")) && (
+      <div className={`grid grid-cols-1 gap-6 ${
+        hasDashboardWidget(widgets, "evolution") && hasDashboardWidget(widgets, "categories")
+          ? "lg:grid-cols-3"
+          : "lg:grid-cols-1"
+      }`}>
+        {hasDashboardWidget(widgets, "evolution") && <div className={`card-soft ${hasDashboardWidget(widgets, "categories") ? "lg:col-span-2" : ""}`}>
           <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: "Outfit" }}>{tr("Evolução (6 meses)")}</h3>
           <div style={{ width: "100%", height: 260 }}>
             <ResponsiveContainer>
@@ -277,9 +420,9 @@ export default function Dashboard() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </div>}
 
-        <div className="card-soft">
+        {hasDashboardWidget(widgets, "categories") && <div className="card-soft">
           <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: "Outfit" }}>{tr("Gastos por categoria")}</h3>
           {data.category_breakdown.length === 0 ? (
             <div className="text-sm text-[#6B7068] py-12 text-center">{tr("Sem despesas neste período")}</div>
@@ -299,12 +442,17 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
           )}
-        </div>
-      </div>
+        </div>}
+      </div>)}
 
       {/* Insights + Projection */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card-soft" data-testid="insights-section">
+      {(hasDashboardWidget(widgets, "insights") || hasDashboardWidget(widgets, "projection")) && (
+      <div className={`grid grid-cols-1 gap-6 ${
+        hasDashboardWidget(widgets, "insights") && hasDashboardWidget(widgets, "projection")
+          ? "lg:grid-cols-2"
+          : "lg:grid-cols-1"
+      }`}>
+        {hasDashboardWidget(widgets, "insights") && <div className="card-soft" data-testid="insights-section">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <h3 className="text-lg font-semibold flex items-center gap-2" style={{ fontFamily: "Outfit" }}>
@@ -480,9 +628,9 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-        </div>
+        </div>}
 
-        <div className="card-soft" data-testid="projection-section">
+        {hasDashboardWidget(widgets, "projection") && <div className="card-soft" data-testid="projection-section">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Projeção de saldo")}</h3>
             {projection && (
@@ -511,11 +659,11 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
           )}
-        </div>
-      </div>
+        </div>}
+      </div>)}
 
       {/* Budget */}
-      <div className="card-soft">
+      {hasDashboardWidget(widgets, "budget") && <div className="card-soft">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-4">
           <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Orçamento 50/20/10/10/10")}</h3>
           <div className="text-sm text-[#6B7068]">Base: {fmtMoney(data.budget.income, curr)}</div>
@@ -533,7 +681,7 @@ export default function Dashboard() {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
