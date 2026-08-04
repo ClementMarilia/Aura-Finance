@@ -70,9 +70,6 @@ def create_projection_router(
             },
             {"_id": 0},
         ).to_list(20000)
-        adjustments = await db.account_adjustments.find(
-            {"user_id": user_id}, {"_id": 0}
-        ).to_list(10000)
         receivables = await db.receivables.find(
             {
                 "user_id": user_id,
@@ -88,13 +85,9 @@ def create_projection_router(
             {"user_id": user_id, "active": True}, {"_id": 0}
         ).to_list(1000)
 
-        breakdowns = await load_account_balance_breakdowns(
-            accounts,
-            user,
-            transactions=transactions,
-            installments=installments,
-            adjustments=adjustments,
-        )
+        # Reuse the audited wallet-balance implementation instead of trusting
+        # or recalculating a balance supplied by the browser.
+        breakdowns = await load_account_balance_breakdowns(accounts, user)
         current_balance = round(sum(
             amount_in_currency(
                 {
