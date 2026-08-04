@@ -233,7 +233,7 @@ sudo supervisorctl restart all
 - **Frontend** roda em `:3000` com hot-reload (CRA + craco).
 - **Dependências**:
   - Backend: `pip install -r backend/requirements.txt`
-  - Frontend: `cd frontend && yarn install` (sempre **yarn**, nunca npm)
+  - Frontend: `cd frontend && yarn install --frozen-lockfile` (sempre **Yarn 1.22.22**, nunca npm)
 
 > Nunca inicie servers manualmente com `uvicorn` ou `npm start` — use `supervisorctl`.
 
@@ -377,10 +377,13 @@ WS     /api/ws/notifications
 
 ## Testes
 
-- `pytest` no backend (`backend/tests/` e `tests/`).
-- Relatórios em `/app/test_reports/iteration_*.json`.
-- O arquivo `test_result.md` é o **estado vivo** do projeto: tarefas, status (`working` / `needs_retesting`), prioridade, comunicação main ↔ testing agent. **Não editar o bloco Testing Protocol.**
-- Frontend validado por testing agent (auto_frontend_testing_agent) em todas as entregas — PWA, dark mode, deep-links do dashboard, confirmação de pagamento, banner de acertos, UserMenu.
+- O workflow `.github/workflows/ci.yml` executa automaticamente em pull requests e pushes para `main`.
+- Backend isolado: `cd backend && pip install -r requirements-dev.txt && pytest`.
+- Os oito arquivos em `backend/tests/external/` são ignorados por padrão, antes da importação. A execução exige autorização, credenciais descartáveis e `RUN_EXTERNAL_TESTS=1 pytest tests/external`.
+- Frontend: `cd frontend && yarn install --frozen-lockfile && yarn test --watchAll=false --runInBand`.
+- O piso inicial de cobertura do frontend é 5% para statements/branches/lines e 3% para functions. É baixo, mas bloqueia regressão enquanto a cobertura cresce nas próximas sprints.
+- O CI também valida traduções, build de produção, artefatos PWA e vulnerabilidades altas/críticas de dependências de produção com `yarn audit:production`.
+- Alterações em `frontend/package.json` devem incluir o `frontend/yarn.lock` atualizado; o CI rejeita divergências.
 
 ---
 
