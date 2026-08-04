@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -91,3 +93,34 @@ def test_health_api_query_keeps_old_overdue_bills_in_scope():
     installment_query = database.installments.queries[0]
     assert any(branch.get("status") == "pending" for branch in transaction_query["$or"])
     assert any(branch.get("status") == "pending" for branch in installment_query["$or"])
+
+
+def test_health_api_calculates_projection_when_future_events_exist():
+    database = FakeDatabase()
+    future_date = (date.today() + timedelta(days=1)).isoformat()
+    database.transactions.documents = [{
+        "id": "future-expense",
+        "user_id": "authenticated-user",
+        "type": "expense",
+        "status": "pending",
+        "date": future_date,
+        "amount": 75,
+        "account_id": "wallet",
+        "currency": "EUR",
+    }]
+    database.recurrences.documents = [{
+        "id": "future-income",
+        "user_id": "authenticated-user",
+        "type": "income",
+        "active": True,
+        "next_run": future_date,
+        "frequency": "monthly",
+        "amount": 100,
+        "account_id": "wallet",
+        "currency": "EUR",
+    }]
+
+    response = make_client(database).get("/api/financial-health")
+
+    assert response.status_code == 200
+    assert response.json()["factors"]

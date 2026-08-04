@@ -80,21 +80,35 @@ function factorExplanation(factor, currency) {
   }
 }
 
+export function isFinancialHealthPayload(value) {
+  return Boolean(
+    value
+    && Number.isFinite(Number(value.score))
+    && typeof value.level === "string"
+    && value.summary
+    && typeof value.summary === "object"
+    && Array.isArray(value.factors)
+  );
+}
+
 export default function FinancialHealth() {
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isPending, isFetching, isError, refetch } = useQuery({
     queryKey: ["financial-health"],
     queryFn: async () => (await api.get("/financial-health")).data,
     staleTime: 60_000,
   });
 
+  const hasValidData = isFinancialHealthPayload(data);
   const chartColor = data?.score >= 65 ? "#16805D" : data?.score >= 45 ? "#E5A83B" : "#D96C5B";
   const sortedFactors = useMemo(() => [...(data?.factors || [])].sort((a, b) => {
     const priority = { critical: 0, warning: 1, unavailable: 2, good: 3 };
     return priority[a.status] - priority[b.status];
   }), [data?.factors]);
 
-  if (isLoading) return <div className="p-8 text-[#6B7068]">{tr("Calculando saúde financeira...")}</div>;
-  if (isError) return (
+  if (isPending || (!hasValidData && isFetching)) {
+    return <div className="p-8 text-[#6B7068]">{tr("Calculando saúde financeira...")}</div>;
+  }
+  if (isError || !hasValidData) return (
     <section className="rounded-2xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
       <h1 className="font-semibold text-[#1A1C1A]">{tr("Não foi possível calcular sua saúde financeira.")}</h1>
       <p className="mt-1 text-sm text-[#6B7068]">{tr("Atualize os dados e tente novamente.")}</p>
