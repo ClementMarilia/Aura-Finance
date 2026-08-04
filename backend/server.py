@@ -9544,6 +9544,9 @@ async def startup():
     )
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
     await db.transactions.create_index([("user_id", 1), ("person_id", 1)])
+    await db.installments.create_index([("user_id", 1), ("due_date", 1)])
+    await db.receivables.create_index([("user_id", 1), ("due_date", 1)])
+    await db.recurrences.create_index([("user_id", 1), ("active", 1), ("next_run", 1)])
     await db.transactions.create_index(
         [
             ("settlement_payment_id", 1),
@@ -9752,11 +9755,19 @@ app.include_router(api)
 # registering modular routers here prevents production from silently exposing a
 # different API surface than ``app:app``.
 from projection_api import create_projection_router  # noqa: E402
+from timeline_api import create_timeline_router  # noqa: E402
 
 app.include_router(create_projection_router(
     db=db,
     get_current_user=get_current_user,
     load_account_balance_breakdowns=load_account_balance_breakdowns,
+    amount_in_currency=amount_in_currency,
+    normalize_currency=normalize_currency,
+))
+
+app.include_router(create_timeline_router(
+    db=db,
+    get_current_user=get_current_user,
     amount_in_currency=amount_in_currency,
     normalize_currency=normalize_currency,
 ))

@@ -80,6 +80,20 @@ def test_all_supported_entrypoints_expose_projected_cash_flow():
     assert "GET" in projection_routes[0].methods
 
 
+def test_all_supported_entrypoints_expose_financial_calendar():
+    assert production_app.app is server.app
+    calendar_routes = [
+        route for route in server.app.routes
+        if getattr(route, "path", None) == "/api/calendar"
+    ]
+
+    assert len(calendar_routes) == 1
+    assert "GET" in calendar_routes[0].methods
+
+    response = TestClient(server.app).get("/api/calendar")
+    assert response.status_code == 401
+
+
 def test_render_uses_modular_application_entrypoint():
     render_config = Path(__file__).resolve().parents[2] / "render.yaml"
     assert "startCommand: uvicorn app:app" in render_config.read_text()

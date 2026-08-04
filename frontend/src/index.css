@@ -150,6 +150,12 @@ html.dark {
   .pill-paid { @apply bg-emerald-50 text-emerald-700; }
   .pill-pending { @apply bg-amber-50 text-amber-700; }
   .pill-cancelled { @apply bg-gray-100 text-gray-500; }
+  .field-control {
+    @apply h-10 w-full rounded-xl border px-3 text-sm;
+    background-color: var(--surface);
+    border-color: var(--border);
+    color: var(--text-main);
+  }
 }
 
 /* ============================================================
