@@ -63,8 +63,10 @@ source of authority.
 
 Application code cannot guarantee these controls by itself:
 
-- Enable encrypted automated MongoDB backups in the production provider.
-- Define retention and copy isolation, then record a successful restoration test.
+- Activate the encrypted daily MongoDB backup workflow documented in
+  `docs/BACKUP_AND_RESTORE.md`, using a dedicated read-only credential.
+- Run the workflow against production and record the first successful isolated
+  restoration. Implementation alone is not evidence that production can recover.
 - Add a scheduled dependency vulnerability scan after a reproducible frontend
   lockfile is adopted.
 - Add 2FA/passkeys and a user-facing connected-device/session screen.

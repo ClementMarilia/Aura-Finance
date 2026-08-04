@@ -403,6 +403,13 @@ WS     /api/ws/notifications
 
 O endpoint `/api/health` confirma a conexão da API com o MongoDB sem expor credenciais ou detalhes do banco.
 
+### Backup de produção
+
+O workflow `Production database backup` cria diariamente um `mongodump`
+criptografado, restaura-o em um MongoDB efêmero separado e guarda por 30 dias o
+artefato com a evidência do teste. Configuração, ativação e recuperação de
+desastre estão em [`docs/BACKUP_AND_RESTORE.md`](docs/BACKUP_AND_RESTORE.md).
+
 > O backfill das categorias de receita roda automaticamente no próximo boot do backend em produção (idempotente).
 
 ---
