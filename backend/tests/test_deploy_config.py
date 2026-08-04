@@ -18,6 +18,7 @@ os.environ["CORS_ORIGINS"] = (
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import server  # noqa: E402
+import app as production_app  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -66,3 +67,19 @@ def test_cors_allows_production_and_blocks_unknown_origins():
     )
     assert blocked.status_code == 400
     assert "access-control-allow-origin" not in blocked.headers
+
+
+def test_all_supported_entrypoints_expose_projected_cash_flow():
+    assert production_app.app is server.app
+    projection_routes = [
+        route for route in server.app.routes
+        if getattr(route, "path", None) == "/api/projections"
+    ]
+
+    assert len(projection_routes) == 1
+    assert "GET" in projection_routes[0].methods
+
+
+def test_render_uses_modular_application_entrypoint():
+    render_config = Path(__file__).resolve().parents[2] / "render.yaml"
+    assert "startCommand: uvicorn app:app" in render_config.read_text()

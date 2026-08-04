@@ -2,7 +2,7 @@ import asyncio
 import inspect
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -98,6 +98,56 @@ def test_refresh_cookie_is_httponly_secure_in_production(monkeypatch):
     assert "secure" in cookie
     assert "samesite=none" in cookie
     assert "path=/api/auth" in cookie
+
+
+def test_refresh_accepts_naive_utc_datetimes_from_mongodb(monkeypatch):
+    raw_token = "existing-refresh-token"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    session = {
+        "id": "session-1",
+        "family_id": "family-1",
+        "user_id": "user-1",
+        "refresh_token_hash": server.hash_refresh_token(raw_token),
+        "previous_token_hashes": [],
+        "session_version": 0,
+        "created_at": now - timedelta(minutes=5),
+        "last_seen_at": now - timedelta(minutes=1),
+        "expires_at": now + timedelta(days=30),
+        "revoked_at": None,
+    }
+    user = {
+        "id": "user-1",
+        "name": "User",
+        "email": "user@example.com",
+        "status": "active",
+        "session_version": 0,
+    }
+    auth_sessions = SimpleNamespace(
+        find_one=AsyncMock(side_effect=[session]),
+        update_one=AsyncMock(return_value=SimpleNamespace(modified_count=1)),
+    )
+    users = SimpleNamespace(find_one=AsyncMock(return_value=user))
+    monkeypatch.setattr(
+        server,
+        "db",
+        SimpleNamespace(auth_sessions=auth_sessions, users=users),
+    )
+    request = SimpleNamespace(
+        cookies={server.REFRESH_COOKIE_NAME: raw_token},
+        headers={
+            "origin": "https://www.crelithtech.com",
+            "x-requested-with": "CrelithFinance",
+            "user-agent": "pytest",
+        },
+        client=SimpleNamespace(host="127.0.0.1"),
+    )
+    response = Response()
+
+    result = asyncio.run(server.refresh_session(request, response))
+
+    assert result["user"]["id"] == "user-1"
+    assert result["token"]
+    assert "crelith_refresh=" in response.headers["set-cookie"]
 
 
 def test_safe_filename_removes_path_and_control_characters():
