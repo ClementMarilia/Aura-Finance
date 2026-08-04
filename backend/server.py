@@ -9756,6 +9756,7 @@ app.include_router(api)
 # different API surface than ``app:app``.
 from projection_api import create_projection_router  # noqa: E402
 from timeline_api import create_timeline_router  # noqa: E402
+from dashboard_preferences_api import create_dashboard_preferences_router  # noqa: E402
 
 app.include_router(create_projection_router(
     db=db,
@@ -9770,6 +9771,11 @@ app.include_router(create_timeline_router(
     get_current_user=get_current_user,
     amount_in_currency=amount_in_currency,
     normalize_currency=normalize_currency,
+))
+
+app.include_router(create_dashboard_preferences_router(
+    db=db,
+    get_current_user=get_current_user,
 ))
 
 app.add_middleware(
