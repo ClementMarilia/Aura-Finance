@@ -25,6 +25,7 @@ import Wallets from "@/pages/Wallets";
 import AdminUsers from "@/pages/AdminUsers";
 import People from "@/pages/People";
 import FinancialStatement from "@/pages/FinancialStatement";
+import ProjectedCashFlow from "@/pages/ProjectedCashFlow";
 import InstallPrompt from "@/components/InstallPrompt";
 import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
 import { translate as tr } from "@/i18n";
@@ -68,6 +69,7 @@ function App() {
             <Route path="parcelamentos" element={<Installments />} />
             <Route path="contas-a-receber" element={<Receivables />} />
             <Route path="orcamento" element={<Budget />} />
+            <Route path="fluxo-de-caixa" element={<ProjectedCashFlow />} />
             <Route path="despesas-compartilhadas" element={<SharedExpenses />} />
             <Route path="pessoas" element={<People />} />
             <Route path="grupos" element={<Groups />} />
