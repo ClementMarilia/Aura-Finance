@@ -935,4 +935,7 @@ export default {
   "Dividir entre pessoas": "Dividi tra persone",
   "Dividir": "Dividi",
   "Usar resultado": "Usa il risultato",
+  "Exportar meus dados": "Esporta i miei dati",
+  "Exportando dados...": "Esportazione dati...",
+  "Seus dados foram exportados com segurança.": "I tuoi dati sono stati esportati in sicurezza.",
 };

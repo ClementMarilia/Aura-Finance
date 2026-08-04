@@ -79,7 +79,7 @@ export default function Profile() {
             <Input type="password" value={pw.current_password} required data-testid="profile-current-password"
               onChange={e => setPw({ ...pw, current_password: e.target.value })} /></div>
           <div><Label>{tr("Nova senha")}</Label>
-            <Input type="password" value={pw.new_password} required minLength={4} data-testid="profile-new-password"
+            <Input type="password" value={pw.new_password} required minLength={8} maxLength={128} data-testid="profile-new-password"
               onChange={e => setPw({ ...pw, new_password: e.target.value })} /></div>
           <Button type="submit" data-testid="profile-change-password-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
             {tr("Alterar senha")}

@@ -1,5 +1,10 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import api, { formatApiError } from "@/lib/api";
+import api, {
+  clearAccessToken,
+  formatApiError,
+  refreshAccessToken,
+  setAccessToken,
+} from "@/lib/api";
 import { syncLanguage } from "@/i18n";
 
 const AuthContext = createContext(null);
@@ -9,21 +14,20 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) { setLoading(false); return; }
-    api.get("/auth/me")
-      .then((r) => {
-        const changed = syncLanguage(r.data?.language);
-        setUser(r.data);
+    clearAccessToken();
+    refreshAccessToken()
+      .then((data) => {
+        const changed = syncLanguage(data.user?.language);
+        setUser(data.user);
         if (changed) window.location.reload();
       })
-      .catch(() => { localStorage.removeItem("token"); })
+      .catch(() => clearAccessToken())
       .finally(() => setLoading(false));
   }, []);
 
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
-    localStorage.setItem("token", data.token);
+    setAccessToken(data.token);
     syncLanguage(data.user?.language);
     setUser(data.user);
     return data.user;
@@ -34,8 +38,13 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const logout = () => {
-    localStorage.removeItem("token");
+  const logout = async () => {
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      // Local cleanup must still happen if the session already expired.
+    }
+    clearAccessToken();
     setUser(null);
   };
 

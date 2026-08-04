@@ -1,11 +1,50 @@
 import axios from "axios";
 import { getLocale, translate as tr } from "@/i18n";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Production API traffic is proxied through the official frontend domain so
+// the HttpOnly refresh cookie remains first-party. Development keeps the
+// explicitly configured backend URL.
+const BACKEND_URL = process.env.NODE_ENV === "production"
+  ? ""
+  : (process.env.REACT_APP_BACKEND_URL || "");
 export const API = `${BACKEND_URL}/api`;
 
-const api = axios.create({ baseURL: API });
+const api = axios.create({
+  baseURL: API,
+  withCredentials: true,
+  headers: { "X-Requested-With": "CrelithFinance" },
+});
 const IDEMPOTENCY_STORAGE_KEY = "crelith.pending-create-requests";
+let accessToken = null;
+let refreshPromise = null;
+
+export function setAccessToken(token) {
+  accessToken = token || null;
+}
+
+export function clearAccessToken() {
+  accessToken = null;
+  localStorage.removeItem("token"); // remove the legacy seven-day token once
+}
+
+export async function refreshAccessToken() {
+  if (!refreshPromise) {
+    const refreshRequest = () => axios.post(`${API}/auth/refresh`, null, {
+      withCredentials: true,
+      headers: { "X-Requested-With": "CrelithFinance" },
+    });
+    refreshPromise = refreshRequest().catch(async (error) => {
+      // Another browser tab may have rotated the shared HttpOnly cookie first.
+      if (error.response?.status !== 409) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return refreshRequest();
+    }).then(({ data }) => {
+      setAccessToken(data.token);
+      return data;
+    }).finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
+}
 
 export const CURRENCIES = [
   { value: "EUR", label: "EUR (€)" },
@@ -15,10 +54,29 @@ export const CURRENCIES = [
 ];
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const original = error.config;
+    const requestUrl = String(original?.url || "");
+    const skipsRefresh = requestUrl.includes("/auth/login") || requestUrl.includes("/auth/refresh");
+    if (error.response?.status === 401 && original && !original._retried && !skipsRefresh) {
+      original._retried = true;
+      try {
+        const data = await refreshAccessToken();
+        original.headers.Authorization = `Bearer ${data.token}`;
+        return api(original);
+      } catch {
+        clearAccessToken();
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 function stableSerialize(value) {
   if (Array.isArray(value)) {

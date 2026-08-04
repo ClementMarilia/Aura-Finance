@@ -100,7 +100,13 @@ def test_group_admin_can_promote_member_without_global_role_change(monkeypatch):
 
     assert result == {"ok": True, "role": "admin"}
     groups.update_one.assert_awaited_once_with(
-        {"id": "group-1"},
+        {
+            "id": "group-1",
+            "$or": [
+                {"creator_id": "admin"},
+                {"admin_ids": "admin"},
+            ],
+        },
         {"$addToSet": {"admin_ids": "member"}},
     )
     assert notify.await_args.args[5] == {

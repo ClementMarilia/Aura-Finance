@@ -75,6 +75,7 @@ export default function Settings() {
   const [deleteForm, setDeleteForm] = useState({ password: "", confirmation: "" });
   const [loadingDeleteImpact, setLoadingDeleteImpact] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
   const [emailSettings, setEmailSettings] = useState(null);
   const [emailSettingsLoading, setEmailSettingsLoading] = useState(false);
   const [emailSettingsSaving, setEmailSettingsSaving] = useState(false);
@@ -202,6 +203,27 @@ export default function Settings() {
       setDeleteOpen(false);
     } finally {
       setLoadingDeleteImpact(false);
+    }
+  };
+
+  const exportAccountData = async () => {
+    if (exportingData) return;
+    setExportingData(true);
+    try {
+      const response = await api.get("/auth/account/export", { responseType: "blob" });
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `crelith-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.success(tr("Seus dados foram exportados com segurança."));
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setExportingData(false);
     }
   };
 
@@ -701,16 +723,29 @@ export default function Settings() {
             <UserX size={20} />
           </div>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={openAccountDeletion}
-          data-testid="delete-own-account"
-          className="mt-4 rounded-xl border-rose-300 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
-        >
-          <Trash2 size={16} className="mr-2" />
-          {tr("Excluir minha conta")}
-        </Button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={exportAccountData}
+            disabled={exportingData}
+            data-testid="export-own-data"
+            className="rounded-xl"
+          >
+            <DownloadCloud size={16} className="mr-2" />
+            {exportingData ? tr("Exportando dados...") : tr("Exportar meus dados")}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={openAccountDeletion}
+            data-testid="delete-own-account"
+            className="rounded-xl border-rose-300 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+          >
+            <Trash2 size={16} className="mr-2" />
+            {tr("Excluir minha conta")}
+          </Button>
+        </div>
       </div>
 
       <ConfirmDialog
