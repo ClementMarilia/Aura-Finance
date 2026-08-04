@@ -1,19 +1,8 @@
-"""Application entrypoint with modular feature routers."""
+"""Compatibility entrypoint for the production ASGI application.
 
-from server import (
-    app,
-    db,
-    get_current_user,
-    load_account_balance_breakdowns,
-    amount_in_currency,
-    normalize_currency,
-)
-from projection_api import create_projection_router
+Feature routers are registered by ``server`` so both the historical
+``server:app`` command and the preferred ``app:app`` command expose the same
+API surface.
+"""
 
-app.include_router(create_projection_router(
-    db=db,
-    get_current_user=get_current_user,
-    load_account_balance_breakdowns=load_account_balance_breakdowns,
-    amount_in_currency=amount_in_currency,
-    normalize_currency=normalize_currency,
-))
+from server import app

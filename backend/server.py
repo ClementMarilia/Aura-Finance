@@ -718,6 +718,21 @@ def hash_refresh_token(token: str) -> str:
     ).hexdigest()
 
 
+def as_utc_datetime(value: Optional[datetime]) -> Optional[datetime]:
+    """Normalize MongoDB datetimes before comparing them with aware UTC values.
+
+    PyMongo returns BSON datetimes as naive UTC values unless the client is
+    explicitly configured as timezone-aware. Authentication records created by
+    earlier deployments therefore need to remain valid after the security
+    hardening rollout.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def refresh_cookie_samesite() -> str:
     return os.environ.get("REFRESH_COOKIE_SAMESITE", "lax").lower()
 
@@ -1404,7 +1419,7 @@ async def refresh_session(request: Request, response: Response):
         clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="Sessão expirada")
     if token_hash in (session.get("previous_token_hashes") or []):
-        last_rotated_at = session.get("last_rotated_at")
+        last_rotated_at = as_utc_datetime(session.get("last_rotated_at"))
         if last_rotated_at and last_rotated_at > now - timedelta(seconds=5):
             raise HTTPException(status_code=409, detail="A sessão já foi renovada")
         await db.auth_sessions.update_many(
@@ -1414,11 +1429,16 @@ async def refresh_session(request: Request, response: Response):
         clear_refresh_cookie(response)
         await audit_event("refresh_token_reuse", request, user_id=session.get("user_id"), outcome="blocked")
         raise HTTPException(status_code=401, detail="Sessão invalidada")
+    expires_at = as_utc_datetime(session.get("expires_at"))
+    last_seen_at = as_utc_datetime(
+        session.get("last_seen_at", session.get("created_at"))
+    )
     if (
         session.get("revoked_at")
-        or session.get("expires_at") <= now
-        or session.get("last_seen_at", session.get("created_at"))
-        <= now - timedelta(minutes=SESSION_IDLE_MINUTES)
+        or expires_at is None
+        or expires_at <= now
+        or last_seen_at is None
+        or last_seen_at <= now - timedelta(minutes=SESSION_IDLE_MINUTES)
     ):
         clear_refresh_cookie(response)
         raise HTTPException(status_code=401, detail="Sessão expirada")
@@ -1429,7 +1449,7 @@ async def refresh_session(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Sessão invalidada")
     ensure_active_user(user)
 
-    refresh_window_at = session.get("refresh_window_at")
+    refresh_window_at = as_utc_datetime(session.get("refresh_window_at"))
     refresh_count = int(session.get("refresh_count", 0))
     if not refresh_window_at or refresh_window_at <= now - timedelta(minutes=1):
         refresh_window_at = now
@@ -1452,7 +1472,10 @@ async def refresh_session(request: Request, response: Response):
     )
     if rotated.modified_count != 1:
         fresh = await db.auth_sessions.find_one({"id": session["id"]})
-        if fresh and fresh.get("last_rotated_at") and fresh["last_rotated_at"] > now - timedelta(seconds=5):
+        fresh_last_rotated_at = as_utc_datetime(
+            fresh.get("last_rotated_at") if fresh else None
+        )
+        if fresh_last_rotated_at and fresh_last_rotated_at > now - timedelta(seconds=5):
             raise HTTPException(status_code=409, detail="A sessão já foi renovada")
         await db.auth_sessions.update_many(
             {"family_id": session["family_id"], "revoked_at": None},
@@ -9723,6 +9746,20 @@ async def startup():
 
 # ---------- App wiring ----------
 app.include_router(api)
+
+# Keep the historical ``server:app`` entrypoint fully functional. Some Render
+# services predate render.yaml and may retain a dashboard-level start command;
+# registering modular routers here prevents production from silently exposing a
+# different API surface than ``app:app``.
+from projection_api import create_projection_router  # noqa: E402
+
+app.include_router(create_projection_router(
+    db=db,
+    get_current_user=get_current_user,
+    load_account_balance_breakdowns=load_account_balance_breakdowns,
+    amount_in_currency=amount_in_currency,
+    normalize_currency=normalize_currency,
+))
 
 app.add_middleware(
     CORSMiddleware,
