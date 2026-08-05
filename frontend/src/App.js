@@ -3,35 +3,43 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
-import Login from "@/pages/Login";
-import Register from "@/pages/Register";
-import ResetPassword from "@/pages/ResetPassword";
-import Layout from "@/components/Layout";
-import Dashboard from "@/pages/Dashboard";
-import Transactions from "@/pages/Transactions";
-import Installments from "@/pages/Installments";
-import Receivables from "@/pages/Receivables";
-import Budget from "@/pages/Budget";
-import SharedExpenses from "@/pages/SharedExpenses";
-import Groups from "@/pages/Groups";
-import Settlements from "@/pages/Settlements";
-import Reports from "@/pages/Reports";
-import Profile from "@/pages/Profile";
-import Settings from "@/pages/Settings";
-import Notifications from "@/pages/Notifications";
-import Goals from "@/pages/Goals";
-import Recurrences from "@/pages/Recurrences";
-import Wallets from "@/pages/Wallets";
-import AdminUsers from "@/pages/AdminUsers";
-import People from "@/pages/People";
-import FinancialStatement from "@/pages/FinancialStatement";
-import ProjectedCashFlow from "@/pages/ProjectedCashFlow";
 import InstallPrompt from "@/components/InstallPrompt";
 import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
 import { translate as tr } from "@/i18n";
 
+const Login = lazy(() => import("@/pages/Login"));
+const Register = lazy(() => import("@/pages/Register"));
+const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
+const Layout = lazy(() => import("@/components/Layout"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const Transactions = lazy(() => import("@/pages/Transactions"));
+const Installments = lazy(() => import("@/pages/Installments"));
+const Receivables = lazy(() => import("@/pages/Receivables"));
+const Budget = lazy(() => import("@/pages/Budget"));
+const SharedExpenses = lazy(() => import("@/pages/SharedExpenses"));
+const Groups = lazy(() => import("@/pages/Groups"));
+const Settlements = lazy(() => import("@/pages/Settlements"));
+const Reports = lazy(() => import("@/pages/Reports"));
+const Profile = lazy(() => import("@/pages/Profile"));
+const Settings = lazy(() => import("@/pages/Settings"));
+const Notifications = lazy(() => import("@/pages/Notifications"));
+const Goals = lazy(() => import("@/pages/Goals"));
+const Recurrences = lazy(() => import("@/pages/Recurrences"));
+const Wallets = lazy(() => import("@/pages/Wallets"));
+const AdminUsers = lazy(() => import("@/pages/AdminUsers"));
+const People = lazy(() => import("@/pages/People"));
+const FinancialStatement = lazy(() => import("@/pages/FinancialStatement"));
+const ProjectedCashFlow = lazy(() => import("@/pages/ProjectedCashFlow"));
 const FinancialCalendar = lazy(() => import("@/pages/FinancialCalendar"));
 const FinancialHealth = lazy(() => import("@/pages/FinancialHealth"));
+
+function RouteLoading() {
+  return (
+    <div className="p-8 text-[#6B7068]" role="status" aria-live="polite">
+      {tr("Carregando...")}
+    </div>
+  );
+}
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -62,42 +70,36 @@ function App() {
         <Toaster position="top-right" richColors />
         <InstallPrompt />
         <PWAUpdatePrompt />
-        <Routes>
-          <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
-          <Route path="/cadastro" element={<PublicOnly><Register /></PublicOnly>} />
-          <Route path="/redefinir-senha" element={<ResetPassword />} />
-          <Route path="/" element={<Protected><Layout /></Protected>}>
-            <Route index element={<Dashboard />} />
-            <Route path="lancamentos" element={<Transactions />} />
-            <Route path="parcelamentos" element={<Installments />} />
-            <Route path="contas-a-receber" element={<Receivables />} />
-            <Route path="orcamento" element={<Budget />} />
-            <Route path="fluxo-de-caixa" element={<ProjectedCashFlow />} />
-            <Route path="calendario-financeiro" element={(
-              <Suspense fallback={<div className="p-8 text-[#6B7068]">{tr("Carregando calendário...")}</div>}>
-                <FinancialCalendar />
-              </Suspense>
-            )} />
-            <Route path="saude-financeira" element={(
-              <Suspense fallback={<div className="p-8 text-[#6B7068]">{tr("Calculando saúde financeira...")}</div>}>
-                <FinancialHealth />
-              </Suspense>
-            )} />
-            <Route path="despesas-compartilhadas" element={<SharedExpenses />} />
-            <Route path="pessoas" element={<People />} />
-            <Route path="grupos" element={<Groups />} />
-            <Route path="acertos" element={<Settlements />} />
-            <Route path="relatorios" element={<Reports />} />
-            <Route path="perfil" element={<Profile />} />
-            <Route path="configuracoes" element={<Settings />} />
-            <Route path="notificacoes" element={<Notifications />} />
-            <Route path="metas" element={<Goals />} />
-            <Route path="recorrencias" element={<Recurrences />} />
-            <Route path="carteiras" element={<Wallets />} />
-            <Route path="extrato-financeiro" element={<FinancialStatement />} />
-            <Route path="admin/usuarios" element={<AdminOnly><AdminUsers /></AdminOnly>} />
-          </Route>
-        </Routes>
+        <Suspense fallback={<RouteLoading />}>
+          <Routes>
+            <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
+            <Route path="/cadastro" element={<PublicOnly><Register /></PublicOnly>} />
+            <Route path="/redefinir-senha" element={<ResetPassword />} />
+            <Route path="/" element={<Protected><Layout /></Protected>}>
+              <Route index element={<Dashboard />} />
+              <Route path="lancamentos" element={<Transactions />} />
+              <Route path="parcelamentos" element={<Installments />} />
+              <Route path="contas-a-receber" element={<Receivables />} />
+              <Route path="orcamento" element={<Budget />} />
+              <Route path="fluxo-de-caixa" element={<ProjectedCashFlow />} />
+              <Route path="calendario-financeiro" element={<FinancialCalendar />} />
+              <Route path="saude-financeira" element={<FinancialHealth />} />
+              <Route path="despesas-compartilhadas" element={<SharedExpenses />} />
+              <Route path="pessoas" element={<People />} />
+              <Route path="grupos" element={<Groups />} />
+              <Route path="acertos" element={<Settlements />} />
+              <Route path="relatorios" element={<Reports />} />
+              <Route path="perfil" element={<Profile />} />
+              <Route path="configuracoes" element={<Settings />} />
+              <Route path="notificacoes" element={<Notifications />} />
+              <Route path="metas" element={<Goals />} />
+              <Route path="recorrencias" element={<Recurrences />} />
+              <Route path="carteiras" element={<Wallets />} />
+              <Route path="extrato-financeiro" element={<FinancialStatement />} />
+              <Route path="admin/usuarios" element={<AdminOnly><AdminUsers /></AdminOnly>} />
+            </Route>
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
   );

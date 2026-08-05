@@ -82,7 +82,10 @@ jobs:
       - name: Build production bundle
         run: yarn build
         env:
-          CI: "false"
+          CI: "true"
+
+      - name: Enforce bundle budget
+        run: yarn verify:bundle
 
       - name: Verify PWA artifacts
         run: yarn verify:pwa
