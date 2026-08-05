@@ -40,6 +40,30 @@ export function transactionQueryParams(filters) {
   return Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
 }
 
+export function transactionPayloadFromForm(form, {
+  sourceCurrency,
+  exchangeRate,
+} = {}) {
+  return {
+    type: form.type,
+    date: form.date,
+    amount: parseFloat(form.amount),
+    category_id: form.category_id || null,
+    person_id: form.type === "transfer" ? null : (form.person_id || null),
+    account_id: form.account_id || null,
+    from_account_id: form.type === "transfer" ? (form.from_account_id || null) : null,
+    to_account_id: form.type === "transfer" ? (form.to_account_id || null) : null,
+    payment_method: form.payment_method || null,
+    description: form.description,
+    notes: form.notes,
+    status: form.status,
+    currency: sourceCurrency,
+    exchange_rate: exchangeRate,
+    target_amount: form.type === "transfer" ? (parseFloat(form.target_amount) || 0) : null,
+    rate_source: form.rate_source,
+  };
+}
+
 export default function Transactions() {
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
@@ -289,19 +313,7 @@ export default function Transactions() {
         setOpen(false); setEditing(null); setForm(defaultForm()); load();
         return;
       }
-      const body = {
-        ...form,
-        amount: parseFloat(form.amount),
-        category_id: form.category_id || null,
-        person_id: form.type === "transfer" ? null : (form.person_id || null),
-        account_id: form.account_id || null,
-        from_account_id: form.type === "transfer" ? (form.from_account_id || null) : null,
-        to_account_id: form.type === "transfer" ? (form.to_account_id || null) : null,
-        currency: sourceCurrency,
-        exchange_rate: exchangeRate,
-        target_amount: form.type === "transfer" ? (parseFloat(form.target_amount) || 0) : null,
-        rate_source: form.rate_source,
-      };
+      const body = transactionPayloadFromForm(form, { sourceCurrency, exchangeRate });
       if (editing) {
         await api.put(`/transactions/${editing.id}`, body);
         toast.success(tr("Lançamento atualizado"));
