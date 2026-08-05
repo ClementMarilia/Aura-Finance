@@ -1,7 +1,23 @@
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-
 import { translate as tr } from "@/i18n";
+
+let pdfDependenciesPromise;
+
+function loadPdfDependencies() {
+  if (!pdfDependenciesPromise) {
+    pdfDependenciesPromise = Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]).then(([jspdfModule, autoTableModule]) => ({
+      jsPDF: jspdfModule.default,
+      autoTable: autoTableModule.default,
+    })).catch((error) => {
+      pdfDependenciesPromise = undefined;
+      throw error;
+    });
+  }
+  return pdfDependenciesPromise;
+}
+
 export function exportCSV(filename, headers, rows) {
   const esc = (v) => {
     const s = v == null ? "" : String(v);
@@ -17,7 +33,8 @@ export function exportCSV(filename, headers, rows) {
   URL.revokeObjectURL(url);
 }
 
-export function exportPDF(title, subtitle, headers, rows, footRow) {
+export async function exportPDF(title, subtitle, headers, rows, footRow) {
+  const { jsPDF, autoTable } = await loadPdfDependencies();
   const doc = new jsPDF();
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
@@ -42,7 +59,8 @@ export function exportPDF(title, subtitle, headers, rows, footRow) {
   doc.save(`${title.replace(/\s+/g, "_").toLowerCase()}.pdf`);
 }
 
-export function exportMonthlyReportPDF(report, ownerName) {
+export async function exportMonthlyReportPDF(report, ownerName) {
+  const { jsPDF, autoTable } = await loadPdfDependencies();
   const doc = new jsPDF();
   const { period, summary, expense_profile: profile } = report;
   const currency = report.base_currency || "EUR";
