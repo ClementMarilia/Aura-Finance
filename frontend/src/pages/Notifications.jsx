@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "@/lib/api";
-import { Bell, CheckCheck, Trash2, Check } from "lucide-react";
+import api, { formatApiError } from "@/lib/api";
+import { Bell, CheckCheck, Trash2, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { translate as tr } from "@/i18n";
@@ -20,12 +20,17 @@ const TYPE_LABEL = {
   settlement_paid: "Acerto",
   nudge: "Lembrete",
   group_added: "Grupo",
+  linked_receivable_created: "Valor a receber",
+  linked_payment_confirmation_requested: "Confirmação de pagamento",
+  linked_payment_confirmed: "Pagamento confirmado",
+  linked_payment_rejected: "Pagamento não confirmado",
 };
 
 export default function Notifications() {
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [filter, setFilter] = useState("all");
+  const [actingId, setActingId] = useState(null);
 
   const load = () => api.get("/notifications?limit=100").then(r => setItems(r.data || []));
   useEffect(() => { load(); }, []);
@@ -52,6 +57,31 @@ export default function Notifications() {
     await api.post("/notifications/read-all");
     toast.success(tr("Todas marcadas como lidas"));
     load();
+  };
+
+  const respondToPayment = async (e, n, accepted) => {
+    e.stopPropagation();
+    const transactionId = n.data?.transaction_id;
+    if (!transactionId) {
+      toast.error(tr("Lançamento vinculado não encontrado"));
+      return;
+    }
+    setActingId(n.id);
+    try {
+      if (accepted) {
+        await api.post(`/transactions/${transactionId}/pay`);
+        toast.success(tr("Recebimento confirmado"));
+      } else {
+        await api.post(`/transactions/${transactionId}/reject-payment`);
+        toast.success(tr("Pagamento marcado como não recebido"));
+      }
+      if (!n.read) await api.post(`/notifications/${n.id}/read`);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setActingId(null);
+    }
   };
 
   const shown = items.filter(n => filter === "all" || !n.read);
@@ -98,6 +128,26 @@ export default function Notifications() {
                 <span className="text-[10px] uppercase tracking-wide text-[#6B7068] bg-[#F1EFE7] rounded px-1.5 py-0.5">{TYPE_LABEL[n.type] || n.type}</span>
               </div>
               <div className="text-sm text-[#6B7068] mt-0.5">{n.message}</div>
+              {n.type === "linked_payment_confirmation_requested" && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button
+                    onClick={(e) => respondToPayment(e, n, true)}
+                    disabled={actingId === n.id}
+                    data-testid={`notif-payment-confirm-${n.id}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    <Check size={14} /> {tr("Confirmar recebimento")}
+                  </button>
+                  <button
+                    onClick={(e) => respondToPayment(e, n, false)}
+                    disabled={actingId === n.id}
+                    data-testid={`notif-payment-reject-${n.id}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#D9453B] px-3 py-1.5 text-xs font-medium text-[#D9453B] hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <X size={14} /> {tr("Não recebi")}
+                  </button>
+                </div>
+              )}
               <div className="text-[11px] text-[#6B7068] mt-1">{timeAgo(n.created_at)}</div>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
