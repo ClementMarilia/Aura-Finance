@@ -6,3 +6,7 @@ API surface.
 """
 
 from server import app
+from linked_counterparty import install_linked_counterparty_routes
+
+
+install_linked_counterparty_routes(app)
