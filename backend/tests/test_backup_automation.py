@@ -10,7 +10,6 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 BACKUP_SCRIPT = ROOT / "scripts" / "mongodb_backup.sh"
 RESTORE_SCRIPT = ROOT / "scripts" / "mongodb_restore_drill.sh"
-WORKFLOW = ROOT / ".github" / "workflows" / "production-backup.yml"
 
 
 def run_script(script, env=None):
@@ -149,20 +148,6 @@ printf '%s\n' '{"database":"crelith_restore_test","collections":{"users":2},"col
             evidence = json.loads(report.read_text(encoding="utf-8"))
             self.assertEqual(evidence["status"], "passed")
             self.assertEqual(evidence["document_count"], 2)
-
-    def test_workflow_is_scheduled_encrypted_and_restores_before_upload(self):
-        content = WORKFLOW.read_text(encoding="utf-8")
-
-        self.assertIn('cron: "17 3 * * *"', content)
-        self.assertIn("BACKUP_ENCRYPTION_PASSPHRASE", content)
-        self.assertIn("./scripts/mongodb_restore_drill.sh", content)
-        self.assertLess(
-            content.index("./scripts/mongodb_restore_drill.sh"),
-            content.index("actions/upload-artifact@v4"),
-        )
-        self.assertIn("retention-days: 30", content)
-        self.assertIn("permissions:\n  contents: read", content)
-
 
 if __name__ == "__main__":
     unittest.main()

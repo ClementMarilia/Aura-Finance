@@ -63,10 +63,9 @@ source of authority.
 
 Application code cannot guarantee these controls by itself:
 
-- Activate the encrypted daily MongoDB backup workflow documented in
-  `docs/BACKUP_AND_RESTORE.md`, using a dedicated read-only credential.
-- Run the workflow against production and record the first successful isolated
-  restoration. Implementation alone is not evidence that production can recover.
+- Production backup/restore is explicitly **deferred** while the project uses
+  the current free infrastructure. No scheduled production-backup workflow is
+  active; see `docs/BACKUP_AND_RESTORE.md` for the future activation plan.
 - Add a scheduled dependency vulnerability scan after a reproducible frontend
   lockfile is adopted.
 - Add 2FA/passkeys and a user-facing connected-device/session screen.
