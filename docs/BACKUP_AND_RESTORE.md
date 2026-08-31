@@ -1,11 +1,19 @@
 # Backup e restauração do MongoDB
 
-Este procedimento protege os dados financeiros do Crelith Finance sem depender
-de backup pago do MongoDB Atlas. O Atlas Free não oferece snapshots nativos; por
-isso a aplicação usa `mongodump` e `mongorestore`, conforme a recomendação oficial
-do MongoDB.
+## Status: ADIADO
 
-## Política
+O backup automático de produção está suspenso enquanto o Crelith Finance utiliza
+a infraestrutura gratuita atual. Não há workflow agendado de backup ativo no
+GitHub Actions e nenhum secret de backup é necessário neste momento.
+
+Os scripts `mongodb_backup.sh` e `mongodb_restore_drill.sh` permanecem no
+repositório apenas como preparação para uma futura ativação. Eles não são
+executados automaticamente.
+
+O restante deste documento descreve a política planejada para quando o backup
+de produção for formalmente reativado.
+
+## Política planejada (inativa)
 
 - Frequência: diariamente às 03:17 UTC e sob demanda.
 - Retenção: 30 dias no GitHub Actions.
@@ -20,7 +28,7 @@ O artefato contém somente o arquivo criptografado, o manifesto com SHA-256 e o
 relatório de contagens da restauração. Nenhum documento financeiro é escrito nos
 logs ou no relatório.
 
-## Secrets obrigatórios no GitHub
+## Secrets necessários somente após a reativação
 
 Em **Settings > Secrets and variables > Actions**, cadastre:
 
@@ -61,11 +69,14 @@ o plano e a infraestrutura permitirem. Se o cluster estiver liberado para toda a
 internet, a credencial exclusiva, senha forte e privilégio mínimo tornam-se gates
 obrigatórios, mas não eliminam o risco da allowlist ampla.
 
-## Primeira ativação e evidência
+## Ativação futura e evidência
+
+Antes de ativar qualquer rotina automática, a decisão deve ser revista e um novo
+workflow deve passar por PR e validação. Depois:
 
 1. Cadastre os três secrets.
-2. Abra **Actions > Production database backup > Run workflow**.
-3. Confirme que o job `Encrypted backup and isolated restore drill` ficou verde.
+2. Execute o workflow aprovado para backup e restauração isolada.
+3. Confirme que o job ficou verde.
 4. Baixe o artefato e guarde a passphrase separadamente.
 5. Abra `restore-report.json` e registre data, duração, quantidade de coleções e
    documentos na tabela abaixo.
@@ -74,8 +85,8 @@ obrigatórios, mas não eliminam o risco da allowlist ampla.
 |---|---|---|---|---:|---:|---|
 | Pendente | Pendente | Pendente | Pendente | Pendente | Pendente | Pendente |
 
-Enquanto essa linha continuar como `Pendente`, o controle está implementado,
-mas o P0.1 ainda não está validado em produção.
+Enquanto essa linha continuar como `Pendente`, o P0.1 permanece adiado e não
+validado em produção.
 
 ## Recuperação de desastre
 
