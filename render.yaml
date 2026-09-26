@@ -37,8 +37,6 @@ services:
         value: "false"
       - key: CORS_ORIGINS
         value: https://www.crelithtech.com,https://crelithtech.com,https://aura-finance-inky.vercel.app
-      - key: EMERGENT_LLM_KEY
-        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM_NAME

@@ -32,7 +32,7 @@ Crelith Finance é um **PWA (Progressive Web App)** em pt-BR de finanças pessoa
 - **Parcelamentos**: criação automática de N parcelas; saldo só debita quando a parcela é confirmada; pendentes rolam para o mês seguinte.
 - **Recorrências** (semanal / mensal / anual) com materialização **idempotente**; editar atualiza apenas pendentes; deletar remove só futuros.
 - **Contas a Receber** com confirmação que gera receita e credita a carteira.
-- **Comprovantes / anexos** em transações (upload via Emergent Object Storage).
+- **Comprovantes / anexos** em transações (armazenados no próprio MongoDB via GridFS, bucket `receipts`).
 - **Bulk delete** em Lançamentos com checkboxes.
 
 ### Categorias customizáveis
@@ -209,7 +209,6 @@ No mobile, o avatar aparece compacto (só a inicial), mas o dropdown é o mesmo.
 | `JWT_SECRET` | Segredo para assinatura dos tokens JWT. |
 | `ADMIN_EMAILS` | E-mails, separados por vírgula, autorizados a aprovar usuários. |
 | `SEED_DEMO` | `true` para seed automático no startup (3 usuários demo, grupo Casa, despesa Mercado €222). |
-| `EMERGENT_LLM_KEY` | (opcional) usado para Emergent Object Storage de anexos. |
 
 ### `frontend/.env`
 | Variável | Descrição |
@@ -402,7 +401,7 @@ WS     /api/ws/notifications
 2. A Vercel gera o preview do frontend usando `frontend/vercel.json`.
 3. Após validação, faça merge na `main` para publicar o frontend de produção.
 4. O backend usa `render.yaml`, executa `uvicorn` e valida `/api/health` antes de receber tráfego.
-5. Configure `REACT_APP_BACKEND_URL` na Vercel. Configure `MONGO_URL`, `DB_NAME`, `JWT_SECRET`, `ADMIN_EMAILS`, `CORS_ORIGINS`, `SEED_DEMO` e, quando necessário, `EMERGENT_LLM_KEY` no Render.
+5. Configure `REACT_APP_BACKEND_URL` na Vercel. Configure `MONGO_URL`, `DB_NAME`, `JWT_SECRET`, `ADMIN_EMAILS`, `CORS_ORIGINS`, `SEED_DEMO` no Render.
 
 O endpoint `/api/health` confirma a conexão da API com o MongoDB sem expor credenciais ou detalhes do banco.
 
@@ -421,7 +420,7 @@ somente para futura ativação, conforme [`docs/BACKUP_AND_RESTORE.md`](docs/BAC
 
 - **Não modificar** `.env`, portas (`8001`/`3000`) nem `MONGO_URL` / `REACT_APP_BACKEND_URL`.
 - Todas as rotas do backend **precisam** começar com `/api` (ingress redireciona).
-- Para anexos, o backend usa **Emergent Object Storage** quando `EMERGENT_LLM_KEY` está presente; `GET /api/files/{path}` aceita Bearer ou `?auth=`.
+- Anexos ficam no próprio MongoDB (GridFS, coleções `receipts.files`/`receipts.chunks`); não há serviço externo de armazenamento. `GET /api/files/{path}` aceita Bearer ou `?auth=`. Blobs órfãos (comprovante removido, lançamento ou conta excluídos) são limpos em segundo plano a cada boot.
 
 ---
 

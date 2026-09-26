@@ -2,13 +2,16 @@ import asyncio
 import inspect
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-import requests
+from bson import ObjectId
 from fastapi import HTTPException
+from gridfs.errors import NoFile
+from pymongo.errors import ServerSelectionTimeoutError
 
 os.environ.setdefault("JWT_SECRET", "test-secret-for-object-storage")
 os.environ.setdefault(
@@ -23,29 +26,63 @@ import app as production_app  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\nrest"
 USER = {"id": "user-1"}
+BACKEND = Path(__file__).resolve().parents[1]
 
 
-class FakeResponse:
-    def __init__(self, status_code=200, payload=None, content=b"", headers=None):
-        self.status_code = status_code
-        self._payload = payload
-        self.content = content
-        self.headers = headers or {}
+class FakeBucket:
+    def __init__(self, fail=False):
+        self.blobs = {}
+        self.fail = fail
 
-    def json(self):
-        if self._payload is None:
-            raise ValueError("no json")
-        return self._payload
+    def _check(self):
+        if self.fail:
+            raise ServerSelectionTimeoutError("mongo down")
 
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise requests.HTTPError(f"HTTP {self.status_code}")
+    async def upload_from_stream(self, filename, data, metadata=None):
+        self._check()
+        blob_id = ObjectId()
+        self.blobs[blob_id] = (filename, data)
+        return blob_id
+
+    async def _stream(self, data):
+        return SimpleNamespace(read=AsyncMock(return_value=data))
+
+    async def open_download_stream(self, blob_id):
+        self._check()
+        if blob_id not in self.blobs:
+            raise NoFile(blob_id)
+        return await self._stream(self.blobs[blob_id][1])
+
+    async def open_download_stream_by_name(self, filename):
+        self._check()
+        for name, data in self.blobs.values():
+            if name == filename:
+                return await self._stream(data)
+        raise NoFile(filename)
+
+    async def delete(self, blob_id):
+        self._check()
+        if blob_id not in self.blobs:
+            raise NoFile(blob_id)
+        del self.blobs[blob_id]
 
 
-@pytest.fixture(autouse=True)
-def storage_state(monkeypatch):
-    monkeypatch.setattr(server, "_storage_key", None)
-    monkeypatch.setattr(server, "EMERGENT_KEY", "emergent-key")
+class AsyncCursor:
+    def __init__(self, items):
+        self.items = list(items)
+
+    def __aiter__(self):
+        async def gen():
+            for item in self.items:
+                yield item
+        return gen()
+
+
+@pytest.fixture
+def bucket(monkeypatch):
+    fake = FakeBucket()
+    monkeypatch.setattr(server, "receipts_bucket", lambda: fake)
+    return fake
 
 
 def fake_upload(filename="receipt.png", data=PNG, content_type="image/png"):
@@ -54,156 +91,162 @@ def fake_upload(filename="receipt.png", data=PNG, content_type="image/png"):
     return SimpleNamespace(filename=filename, content_type=content_type, read=read)
 
 
-def test_startup_never_contacts_object_storage():
+def upload_db(modified_count=1):
+    files = SimpleNamespace(insert_one=AsyncMock(), update_one=AsyncMock())
+    transactions = SimpleNamespace(
+        find_one=AsyncMock(return_value={"id": "tx-1", "user_id": "user-1"}),
+        update_one=AsyncMock(return_value=SimpleNamespace(modified_count=modified_count)),
+    )
+    return SimpleNamespace(files=files, transactions=transactions)
+
+
+def test_no_emergent_dependency_remains_in_backend():
+    for path in BACKEND.glob("*.py"):
+        text = path.read_text().lower()
+        assert "emergent" not in text, path.name
+    assert not hasattr(server, "STORAGE_URL")
+    assert not hasattr(server, "init_storage")
+
+
+def test_startup_never_blocks_on_receipt_storage():
     source = inspect.getsource(server.startup)
-    assert "init_storage" not in source
-    assert "_put_object" not in source
-    assert "_get_object" not in source
+    assert "await purge_orphan_receipt_blobs" not in source
+    assert "create_task(_purge_orphan_receipt_blobs_safely())" in source
 
 
 def test_production_entrypoint_runs_unmodified_startup():
     assert production_app.app is server.app
     assert server.startup in server.app.router.on_startup
-    assert server.init_storage.__module__ == "server"
 
 
-def test_missing_key_fails_without_network(monkeypatch):
-    monkeypatch.setattr(server, "EMERGENT_KEY", None)
-    monkeypatch.setattr(
-        server.requests, "post",
-        lambda *a, **k: pytest.fail("must not call storage without a key"),
-    )
-    with pytest.raises(server.StorageUnavailable):
-        server.init_storage()
+def test_receipts_use_the_application_database(monkeypatch):
+    monkeypatch.setattr(server, "db", server.client[os.environ["DB_NAME"]])
+
+    async def build():
+        return server.receipts_bucket()
+
+    bucket = asyncio.run(build())
+    assert type(bucket).__name__ == "AsyncIOMotorGridFSBucket"
 
 
-def test_network_failure_is_typed_and_not_cached(monkeypatch):
-    calls = []
+def test_upload_then_download_round_trip(monkeypatch, bucket):
+    fake_db = upload_db()
+    monkeypatch.setattr(server, "db", fake_db)
 
-    def post(*args, **kwargs):
-        calls.append(1)
-        if len(calls) == 1:
-            raise requests.ConnectionError("down")
-        return FakeResponse(payload={"storage_key": "k1"})
+    receipt = asyncio.run(server.upload_receipt("tx-1", fake_upload(), USER))
 
-    monkeypatch.setattr(server.requests, "post", post)
-    with pytest.raises(server.StorageUnavailable):
-        server.init_storage()
-    assert server._storage_key is None
-    assert server.init_storage() == "k1"
-    assert server.init_storage() == "k1"
-    assert len(calls) == 2
+    record = fake_db.files.insert_one.await_args.args[0]
+    assert receipt["path"] == record["storage_path"]
+    assert receipt["path"].startswith(f"{server.APP_NAME}/uploads/user-1/")
+    assert ObjectId(record["blob_id"]) in bucket.blobs
+    assert record["size"] == len(PNG)
 
-
-@pytest.mark.parametrize("payload", [None, {}, {"storage_key": ""}, ["x"]])
-def test_malformed_init_response_is_unavailable(monkeypatch, payload):
-    monkeypatch.setattr(server.requests, "post", lambda *a, **k: FakeResponse(payload=payload))
-    with pytest.raises(server.StorageUnavailable):
-        server.init_storage()
-    assert server._storage_key is None
+    fake_db.files.find_one = AsyncMock(return_value=record)
+    response = asyncio.run(server.download_file(receipt["path"], USER))
+    assert response.body == PNG
+    assert response.media_type == "image/png"
 
 
-def test_rejected_key_is_refreshed_once(monkeypatch):
-    keys = iter(["stale", "fresh"])
-    monkeypatch.setattr(
-        server.requests, "post",
-        lambda *a, **k: FakeResponse(payload={"storage_key": next(keys)}),
-    )
-    seen = []
-
-    def request(method, url, headers=None, **kwargs):
-        seen.append(headers["X-Storage-Key"])
-        if headers["X-Storage-Key"] == "stale":
-            return FakeResponse(status_code=401)
-        return FakeResponse(content=b"data", headers={"Content-Type": "image/png"})
-
-    monkeypatch.setattr(server.requests, "request", request)
-    assert server._get_object("p") == (b"data", "image/png")
-    assert seen == ["stale", "fresh"]
-    assert server._storage_key == "fresh"
-
-
-def test_get_object_distinguishes_missing_from_unavailable(monkeypatch):
-    monkeypatch.setattr(server, "_storage_key", "k")
-    monkeypatch.setattr(server.requests, "request", lambda *a, **k: FakeResponse(status_code=404))
-    with pytest.raises(server.StorageObjectNotFound):
-        server._get_object("p")
-
-    monkeypatch.setattr(server.requests, "request", lambda *a, **k: FakeResponse(status_code=502))
-    with pytest.raises(server.StorageUnavailable):
-        server._get_object("p")
-
-    def timeout(*a, **k):
-        raise requests.Timeout("slow")
-
-    monkeypatch.setattr(server.requests, "request", timeout)
-    with pytest.raises(server.StorageUnavailable):
-        server._get_object("p")
-
-
-def test_put_object_falls_back_to_requested_path(monkeypatch):
-    monkeypatch.setattr(server, "_storage_key", "k")
-    monkeypatch.setattr(server.requests, "request", lambda *a, **k: FakeResponse(payload=None))
-    assert server._put_object("a/b.png", PNG, "image/png") == {
-        "path": "a/b.png", "size": len(PNG),
-    }
-
-
-def test_upload_returns_503_and_writes_nothing_when_storage_is_down(monkeypatch):
-    files = SimpleNamespace(insert_one=AsyncMock(), update_one=AsyncMock())
-    transactions = SimpleNamespace(
-        find_one=AsyncMock(return_value={"id": "tx-1", "user_id": "user-1"}),
-        update_one=AsyncMock(),
-    )
-    monkeypatch.setattr(server, "db", SimpleNamespace(files=files, transactions=transactions))
-
-    def down(*a, **k):
-        raise requests.ConnectionError("down")
-
-    monkeypatch.setattr(server.requests, "post", down)
+def test_upload_returns_503_and_writes_nothing_when_mongo_is_down(monkeypatch):
+    fake_db = upload_db()
+    monkeypatch.setattr(server, "db", fake_db)
+    monkeypatch.setattr(server, "receipts_bucket", lambda: FakeBucket(fail=True))
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(server.upload_receipt("tx-1", fake_upload(), USER))
 
     assert exc.value.status_code == 503
-    files.insert_one.assert_not_awaited()
-    transactions.update_one.assert_not_awaited()
+    fake_db.files.insert_one.assert_not_awaited()
+    fake_db.transactions.update_one.assert_not_awaited()
 
 
-def test_upload_success_links_receipt(monkeypatch):
-    files = SimpleNamespace(insert_one=AsyncMock(), update_one=AsyncMock())
-    transactions = SimpleNamespace(
-        find_one=AsyncMock(return_value={"id": "tx-1", "user_id": "user-1"}),
-        update_one=AsyncMock(return_value=SimpleNamespace(modified_count=1)),
-    )
-    monkeypatch.setattr(server, "db", SimpleNamespace(files=files, transactions=transactions))
-    monkeypatch.setattr(server, "_storage_key", "k")
-    monkeypatch.setattr(
-        server.requests, "request",
-        lambda method, url, **k: FakeResponse(payload={"path": url.split("/objects/", 1)[1], "size": 12}),
-    )
+def test_failed_link_discards_uploaded_blob(monkeypatch, bucket):
+    monkeypatch.setattr(server, "db", upload_db(modified_count=0))
 
-    receipt = asyncio.run(server.upload_receipt("tx-1", fake_upload(), USER))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(server.upload_receipt("tx-1", fake_upload(), USER))
 
-    assert receipt["path"].startswith(f"{server.APP_NAME}/uploads/user-1/")
-    assert receipt["content_type"] == "image/png"
-    files.insert_one.assert_awaited_once()
+    assert exc.value.status_code == 409
+    assert bucket.blobs == {}
 
 
 @pytest.mark.parametrize(
-    ("failure", "status"),
-    [(FakeResponse(status_code=404), 404), (FakeResponse(status_code=500), 503)],
+    ("record", "status"),
+    [
+        ({"blob_id": str(ObjectId())}, 404),
+        ({}, 404),  # legacy receipt stored on the removed external provider
+        ({"blob_id": "not-an-object-id"}, 404),
+    ],
 )
-def test_download_maps_storage_failures(monkeypatch, failure, status):
+def test_download_of_missing_blob_is_404(monkeypatch, bucket, record, status):
     path = f"{server.APP_NAME}/uploads/user-1/x.png"
-    files = SimpleNamespace(find_one=AsyncMock(return_value={
-        "storage_path": path, "original_filename": "x.png", "content_type": "image/png",
-    }))
-    monkeypatch.setattr(server, "db", SimpleNamespace(files=files))
-    monkeypatch.setattr(server, "_storage_key", "k")
-    monkeypatch.setattr(server.requests, "request", lambda *a, **k: failure)
+    record = {"storage_path": path, "original_filename": "x.png",
+              "content_type": "image/png", **record}
+    monkeypatch.setattr(server, "db", SimpleNamespace(
+        files=SimpleNamespace(find_one=AsyncMock(return_value=record))))
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(server.download_file(path, USER))
 
     assert exc.value.status_code == status
+
+
+def test_download_returns_503_when_mongo_is_down(monkeypatch):
+    path = f"{server.APP_NAME}/uploads/user-1/x.png"
+    record = {"storage_path": path, "blob_id": str(ObjectId())}
+    monkeypatch.setattr(server, "db", SimpleNamespace(
+        files=SimpleNamespace(find_one=AsyncMock(return_value=record))))
+    monkeypatch.setattr(server, "receipts_bucket", lambda: FakeBucket(fail=True))
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(server.download_file(path, USER))
+
+    assert exc.value.status_code == 503
+
+
+def test_delete_receipt_removes_blob(monkeypatch, bucket):
+    blob_id = asyncio.run(bucket.upload_from_stream("p", PNG))
+    fake_db = SimpleNamespace(
+        transactions=SimpleNamespace(
+            find_one=AsyncMock(return_value={"id": "tx-1", "receipt": {"file_id": "f-1"}}),
+            update_one=AsyncMock(),
+        ),
+        files=SimpleNamespace(
+            find_one=AsyncMock(return_value={"blob_id": str(blob_id)}),
+            update_one=AsyncMock(),
+        ),
+    )
+    monkeypatch.setattr(server, "db", fake_db)
+
+    assert asyncio.run(server.delete_receipt("tx-1", USER)) == {"ok": True}
+    assert bucket.blobs == {}
+
+
+def test_blob_delete_failures_never_propagate(monkeypatch):
+    monkeypatch.setattr(server, "receipts_bucket", lambda: FakeBucket(fail=True))
+    asyncio.run(server.delete_receipt_blob(str(ObjectId())))
+    asyncio.run(server.delete_receipt_blob("garbage"))
+    asyncio.run(server.delete_receipt_blob(None))
+
+
+def test_orphan_sweep_keeps_active_and_recent_blobs(monkeypatch, bucket):
+    active = asyncio.run(bucket.upload_from_stream("active", PNG))
+    orphan = asyncio.run(bucket.upload_from_stream("orphan", PNG))
+    recent = asyncio.run(bucket.upload_from_stream("recent", PNG))
+    old = datetime.now(timezone.utc) - timedelta(days=2)
+    blobs_meta = {active: old, orphan: old, recent: datetime.now(timezone.utc)}
+
+    def blob_find(query, projection):
+        cutoff = query["uploadDate"]["$lt"]
+        return AsyncCursor({"_id": b} for b, when in blobs_meta.items() if when < cutoff)
+
+    class DB(SimpleNamespace):
+        def __getitem__(self, name):
+            assert name == "receipts.files"
+            return SimpleNamespace(find=blob_find)
+
+    files = SimpleNamespace(find=lambda *a, **k: AsyncCursor([{"blob_id": str(active)}]))
+    monkeypatch.setattr(server, "db", DB(files=files))
+
+    assert asyncio.run(server.purge_orphan_receipt_blobs()) == 1
+    assert set(bucket.blobs) == {active, recent}
