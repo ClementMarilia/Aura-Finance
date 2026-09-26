@@ -4208,6 +4208,28 @@ async def list_purchases(
     return purchases
 
 
+def installment_amounts(total: float, count: int) -> List[float]:
+    """Split a purchase into `count` parcels that add up exactly to `total`.
+
+    Rounding every parcel the same way loses or invents cents (100 / 3 gave
+    33.33 x 3 = 99.99). Working in whole cents, the leftover cents go one
+    each to the first parcels, so parcels never differ by more than 1 cent.
+    """
+    total_cents = int(round(total * 100))
+    base, remainder = divmod(total_cents, count)
+    return [(base + (1 if i < remainder else 0)) / 100 for i in range(count)]
+
+
+def installment_due_date(first: date, offset: int) -> date:
+    """Same day of month as the first parcel, clamped to the month's last day
+    (Jan 31 -> Feb 28/29 -> Mar 31 -> Apr 30), never a fixed 28."""
+    month_index = first.month - 1 + offset
+    year = first.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(first.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
 @api.post("/installments/purchases")
 async def create_purchase(
     payload: InstallmentPurchaseIn,
@@ -4216,7 +4238,7 @@ async def create_purchase(
 ):
     async def create():
         pid = new_id()
-        per = round(payload.total_amount / payload.installments, 2)
+        amounts = installment_amounts(payload.total_amount, payload.installments)
         base_date = datetime.fromisoformat(payload.first_date)
         currencies = await account_currency_map(user)
         base_currency = normalize_currency(user.get("currency"))
@@ -4233,17 +4255,11 @@ async def create_purchase(
         inst_docs = []
         try:
             for i in range(payload.installments):
-                m = base_date.month - 1 + i
-                y = base_date.year + m // 12
-                mm = m % 12 + 1
-                try:
-                    d = base_date.replace(year=y, month=mm)
-                except ValueError:
-                    d = base_date.replace(year=y, month=mm, day=28)
+                d = installment_due_date(base_date.date(), i)
                 inst_docs.append({
                     "id": new_id(), "purchase_id": pid, "user_id": user["id"],
                     "number": i + 1, "total": payload.installments,
-                    "amount": per, "due_date": d.date().isoformat(),
+                    "amount": amounts[i], "due_date": d.isoformat(),
                     "status": "pending", "paid_at": None,
                 })
             if inst_docs:
@@ -4318,8 +4334,20 @@ async def mark_installment(iid: str, user=Depends(get_current_user)):
 
 @api.delete("/installments/purchases/{pid}")
 async def delete_purchase(pid: str, user=Depends(get_current_user)):
+    purchase = await db.installment_purchases.find_one({"id": pid, "user_id": user["id"]}, {"_id": 0, "id": 1})
+    if not purchase:
+        raise HTTPException(404, "Parcelamento não encontrado")
+    # Paid parcels already left a wallet; deleting them would silently put
+    # that money back into the balance.
+    paid = await db.installments.count_documents({"purchase_id": pid, "status": "paid"})
+    if paid:
+        raise HTTPException(
+            409,
+            f"Este parcelamento tem {paid} parcela(s) paga(s). Excluí-lo devolveria esse "
+            "valor ao saldo da carteira. Desmarque as parcelas pagas antes de excluir.",
+        )
     await db.installment_purchases.delete_one({"id": pid, "user_id": user["id"]})
-    await db.installments.delete_many({"purchase_id": pid})
+    await db.installments.delete_many({"purchase_id": pid, "user_id": user["id"]})
     return {"ok": True}
 
 
