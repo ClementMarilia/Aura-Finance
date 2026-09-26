@@ -182,6 +182,10 @@ html.dark .border-\[\#E5E4E0\] { border-color: var(--border) !important; }
 html.dark .divide-\[\#E5E4E0\] > :not([hidden]) ~ :not([hidden]) { border-color: var(--border) !important; }
 html.dark .border-\[\#D6D3CA\] { border-color: var(--border) !important; }
 
+/* Switches: "ligado" em azul-marinho sumia no fundo escuro */
+html.dark .data-\[state\=checked\]\:bg-\[\#061B4A\][data-state="checked"] { background-color: var(--primary) !important; }
+html.dark .data-\[state\=unchecked\]\:bg-\[\#D6D3CA\][data-state="unchecked"] { background-color: var(--border) !important; }
+
 /* Textos */
 html.dark .text-\[\#1A1C1A\] { color: var(--text-main) !important; }
 html.dark .text-\[\#6B7068\] { color: var(--text-muted) !important; }

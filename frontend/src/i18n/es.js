@@ -1131,4 +1131,5 @@ export default {
   "{own} cobrança(s) · {shared} pendência(s) compartilhada(s)": "{own} cobro(s) · {shared} pendiente(s) compartido(s)",
   "Recebido, mas sem carteira: edite a cobrança e escolha uma para o saldo refletir.": "Cobrado, pero sin cartera: edítalo y elige una para que el saldo lo refleje.",
   "saldo {amount}": "saldo {amount}",
+  "Nova categoria": "Nueva categoría",
 };

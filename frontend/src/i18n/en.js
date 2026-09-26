@@ -1131,4 +1131,5 @@ export default {
   "{own} cobrança(s) · {shared} pendência(s) compartilhada(s)": "{own} receivable(s) · {shared} shared pending item(s)",
   "Recebido, mas sem carteira: edite a cobrança e escolha uma para o saldo refletir.": "Received, but without a wallet: edit it and choose one so the balance reflects it.",
   "saldo {amount}": "balance {amount}",
+  "Nova categoria": "New category",
 };
