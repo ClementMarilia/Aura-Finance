@@ -8,11 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Repeat, Plus, Pencil, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { Repeat, Plus, Trash2, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { defaultAccountFor } from "@/lib/accounts";
 
 import { translate as tr } from "@/i18n";
+import { useThemedColor } from "@/lib/colors";
 const FREQ_LABEL = {
   weekly: tr("Semanal"),
   monthly: tr("Mensal"),
@@ -21,13 +23,19 @@ const FREQ_LABEL = {
   yearly: tr("Anual"),
 };
 
+// Average monthly weight of each frequency (a weekly bill happens ~4.33x a month).
+const FACTOR = { weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, semiannual: 1 / 6, yearly: 1 / 12 };
+
+const today = () => new Date().toISOString().slice(0, 10);
+
 const emptyForm = {
   type: "expense", amount: "", category_id: "", person_id: "", account_id: "", payment_method: "",
-  description: "", frequency: "monthly", next_run: new Date().toISOString().slice(0, 10), active: true,
+  description: "", frequency: "monthly", next_run: today(), active: true,
   currency: "EUR",
 };
 
 export default function Recurrences() {
+  const themed = useThemedColor();
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
   const [items, setItems] = useState([]);
@@ -38,7 +46,6 @@ export default function Recurrences() {
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
-  const [expanded, setExpanded] = useState({});
   const [currencyFilter, setCurrencyFilter] = useState("");
 
   const load = () => api.get("/recurrences", {
@@ -57,14 +64,27 @@ export default function Recurrences() {
     }).then(r => setItems(r.data || []));
   }, [currencyFilter]);
 
-  const FACTOR = { weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, semiannual: 1 / 6, yearly: 1 / 12 };
   const monthly = (type) => items
     .filter(r => r.active && r.type === type)
     .reduce((s, r) => s + (r.base_amount ?? r.amount) * (FACTOR[r.frequency] || 1), 0);
   const fixedExpense = monthly("expense");
   const fixedIncome = monthly("income");
 
-  const openNew = () => { setEditing(null); setForm({ ...emptyForm, currency: curr }); setOpen(true); };
+  // Active first, soonest next; paused ones at the end.
+  const sorted = [...items].sort((a, b) => (
+    (b.active - a.active) || String(a.next_run).localeCompare(String(b.next_run))
+  ));
+  const showCurrencyFilter = currencyFilter || new Set(items.map(r => r.currency || curr)).size > 1;
+  const categoriesFor = (type) => cats.filter(c => (c.kind || "expense") === "both" || (c.kind || "expense") === type);
+
+  const openNew = () => {
+    // Recurrences generate paid entries on their own, so they must start on
+    // a wallet (same rule as Lançamentos).
+    const account = defaultAccountFor(accs, curr);
+    setEditing(null);
+    setForm({ ...emptyForm, next_run: today(), currency: account?.currency || curr, account_id: account?.id || "" });
+    setOpen(true);
+  };
   const openEdit = (r) => {
     setEditing(r);
     setForm({
@@ -97,57 +117,72 @@ export default function Recurrences() {
   };
 
   const toggle = async (r) => {
-    await api.post(`/recurrences/${r.id}/toggle`);
-    load();
+    try {
+      const response = await api.post(`/recurrences/${r.id}/toggle`);
+      toast.success(response.data?.active ? tr("Recorrência ativada") : tr("Recorrência pausada"));
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
   };
 
   const remove = async () => {
     if (!confirmDel) return;
-    await api.delete(`/recurrences/${confirmDel.id}`);
-    setConfirmDel(null);
-    toast.success(tr("Recorrência excluída"));
-    load();
+    try {
+      await api.delete(`/recurrences/${confirmDel.id}`);
+      toast.success(tr("Recorrência excluída"));
+      setOpen(false);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setConfirmDel(null);
+    }
   };
 
   return (
-    <div className="space-y-6" data-testid="recurrences-page">
+    <div className="space-y-4 md:space-y-6" data-testid="recurrences-page">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Recorrências")}</h1>
-          <p className="text-[#6B7068]">{tr("Lançamentos automáticos (aluguel, salário, assinaturas...)")}</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Recorrências")}</h1>
+          <p className="text-sm text-[#6B7068]">{tr("Lançamentos automáticos (aluguel, salário, assinaturas...)")}</p>
         </div>
-        <Button onClick={openNew} data-testid="rec-new-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
+        <Button onClick={openNew} data-testid="rec-new-btn" className="min-h-[44px] w-full sm:w-auto bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
           <Plus size={16} className="mr-1" /> {tr("Nova recorrência")}
         </Button>
       </div>
-      <div className="flex justify-end">
-        <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
-          data-testid="rec-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
-          <option value="">{tr("Todas as moedas")}</option>
-          {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
-      </div>
+      {showCurrencyFilter && (
+        <div className="flex justify-end">
+          <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
+            data-testid="rec-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+            <option value="">{tr("Todas as moedas")}</option>
+            {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+        </div>
+      )}
 
       {items.some(r => r.active) && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="rec-summary">
-          <div className="card-soft">
-            <div className="text-sm text-[#6B7068]">{tr("Gasto fixo mensal (média)")}</div>
-            <div className="money-value text-2xl font-semibold text-rose-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-expense">
-              {fmtMoney(fixedExpense, curr)}
+        <div className="card-soft p-4" data-testid="rec-summary">
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <div className="stat-label">{tr("Receita fixa")}</div>
+              <div className="money-value mt-1 text-base font-semibold text-emerald-600 sm:text-xl" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-income">
+                {fmtMoney(fixedIncome, curr)}
+              </div>
+            </div>
+            <div>
+              <div className="stat-label">{tr("Gasto fixo")}</div>
+              <div className="money-value mt-1 text-base font-semibold text-rose-600 sm:text-xl" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-expense">
+                {fmtMoney(fixedExpense, curr)}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="stat-label">{tr("Sobra fixa")}</div>
+              <div className={`money-value mt-1 text-base font-semibold sm:text-xl ${fixedIncome - fixedExpense >= 0 ? "text-[#061B4A]" : "text-rose-600"}`}
+                style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-balance">
+                {fmtMoney(fixedIncome - fixedExpense, curr)}
+              </div>
             </div>
           </div>
-          <div className="card-soft">
-            <div className="text-sm text-[#6B7068]">{tr("Receita fixa mensal (média)")}</div>
-            <div className="money-value text-2xl font-semibold text-emerald-600 mt-1" style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-income">
-              {fmtMoney(fixedIncome, curr)}
-            </div>
-          </div>
-          <div className="card-soft">
-            <div className="text-sm text-[#6B7068]">{tr("Saldo fixo estimado")}</div>
-            <div className={`money-value text-2xl font-semibold mt-1 ${fixedIncome - fixedExpense >= 0 ? "text-[#061B4A]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid="rec-fixed-balance">
-              {fmtMoney(fixedIncome - fixedExpense, curr)}
-            </div>
-          </div>
+          <div className="mt-2 text-xs text-[#6B7068]">{tr("Média por mês das recorrências ativas")}</div>
         </div>
       )}
 
@@ -158,97 +193,62 @@ export default function Recurrences() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {items.map(r => {
-          const cat = cats.find(c => c.id === r.category_id);
-          const person = people.find(item => item.id === r.person_id);
-          const isOpen = !!expanded[r.id];
-          const toggleOpen = () => setExpanded(prev => ({ ...prev, [r.id]: !prev[r.id] }));
-          return (
-            <div key={r.id} className={`card-soft ${!r.active ? "opacity-60" : ""}`} data-testid={`rec-${r.id}`}>
-              <div className="flex items-start justify-between">
-                <button onClick={toggleOpen} data-testid={`rec-toggle-card-${r.id}`} className="flex items-center gap-2 text-left flex-1">
-                  <span className="text-[#6B7068]">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${r.type === "income" ? "bg-emerald-600" : "bg-[#D96C5B]"}`}>
-                    <Repeat size={18} />
-                  </div>
-                  <div>
-                    <div className="font-semibold">{r.description || (r.type === "income" ? tr("Receita") : tr("Despesa"))}</div>
-                    <div className="text-xs text-[#6B7068]">{FREQ_LABEL[r.frequency]} · próx: {fmtDate(r.next_run)}</div>
-                  </div>
-                </button>
-                <div className="flex gap-1">
-                  <button onClick={() => openEdit(r)} data-testid={`rec-edit-${r.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"><Pencil size={14} /></button>
-                  <button onClick={() => setConfirmDel(r)} data-testid={`rec-delete-${r.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"><Trash2 size={14} /></button>
-                </div>
-              </div>
-              <div className="mt-4 flex items-center justify-between">
-                <span className={`money-value text-2xl font-semibold ${r.type === "income" ? "text-emerald-600" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }}>
-                  {r.type === "income" ? "+" : "-"}{fmtMoney(r.amount, r.currency || curr)}
-                </span>
-                <span className={`text-xs ${r.active ? "text-emerald-700" : "text-[#6B7068]"}`}>{r.active ? tr("Ativa") : tr("Pausada")}</span>
-              </div>
-              {isOpen && (
-              <div className="mt-3 border-t border-[#E5E4E0] pt-3 space-y-2" data-testid={`rec-details-${r.id}`}>
-                {cat && <div className="text-xs inline-flex items-center gap-1.5 text-[#6B7068]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{tr(cat.name)}</div>}
-                {person && (
-                  <div className="text-xs text-[#6B7068]">
-                    {tr("Pessoa")}: <span className="font-medium text-[#1A1C1A]">{person.name}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-[#6B7068]">{r.active ? "Pausar" : "Ativar"} recorrência</span>
+      {items.length > 0 && (
+        <div className="card-soft p-0 overflow-hidden">
+          <div className="divide-y divide-[#E5E4E0]">
+            {sorted.map(r => {
+              const cat = cats.find(c => c.id === r.category_id);
+              const income = r.type === "income";
+              const Icon = income ? ArrowDownLeft : ArrowUpRight;
+              return (
+                <div key={r.id} className={`flex items-center gap-2 pr-3 ${!r.active ? "opacity-60" : ""}`} data-testid={`rec-${r.id}`}>
+                  <button type="button" onClick={() => openEdit(r)} data-testid={`rec-edit-${r.id}`}
+                    aria-label={tr("Editar {name}", { name: r.description || tr("Recorrência") })}
+                    className="flex min-h-[64px] min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-[#F1EFE7] transition-colors">
+                    <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${income ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+                      <Icon size={18} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-[#1A1C1A]">
+                        {r.description || (income ? tr("Receita") : tr("Despesa"))}
+                      </span>
+                      <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-[#6B7068]">
+                        {cat && <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: themed(cat.color) }} />{tr(cat.name)} ·</span>}
+                        <span>{FREQ_LABEL[r.frequency]}</span>
+                        <span>·</span>
+                        <span>{r.active ? tr("próxima {date}", { date: fmtDate(r.next_run) }) : tr("Pausada")}</span>
+                      </span>
+                    </span>
+                    <span className={`money-value whitespace-nowrap font-semibold ${income ? "text-emerald-600" : "text-rose-600"}`}>
+                      {income ? "+" : "-"}{fmtMoney(r.amount, r.currency || curr)}
+                    </span>
+                  </button>
                   <Switch data-testid={`rec-toggle-${r.id}`} className="data-[state=checked]:bg-[#061B4A] data-[state=unchecked]:bg-[#D6D3CA]"
+                    aria-label={r.active ? tr("Pausar recorrência") : tr("Ativar recorrência")}
                     checked={r.active} onCheckedChange={() => toggle(r)} />
                 </div>
-              </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader><DialogTitle style={{ fontFamily: "Outfit" }}>{editing ? tr("Editar recorrência") : tr("Nova recorrência")}</DialogTitle></DialogHeader>
-          <form onSubmit={save} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>{tr("Tipo")}</Label>
-                <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
-                  <SelectTrigger data-testid="rec-type-select"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="expense">{tr("Despesa")}</SelectItem>
-                    <SelectItem value="income">{tr("Receita")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>{tr("Frequência")}</Label>
-                <Select value={form.frequency} onValueChange={(v) => setForm({ ...form, frequency: v })}>
-                  <SelectTrigger data-testid="rec-freq-select"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="weekly">{tr("Semanal")}</SelectItem>
-                    <SelectItem value="monthly">{tr("Mensal")}</SelectItem>
-                    <SelectItem value="quarterly">{tr("Trimestral")}</SelectItem>
-                    <SelectItem value="semiannual">{tr("Semestral")}</SelectItem>
-                    <SelectItem value="yearly">{tr("Anual")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label>{tr("Moeda")}</Label>
-              <Select value={form.currency} onValueChange={(value) => setForm({
-                ...form, currency: value,
-                account_id: accs.some(account => account.id === form.account_id && (account.currency || curr) === value)
-                  ? form.account_id : "",
-              })}>
-                <SelectTrigger data-testid="rec-currency-select"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+          <form onSubmit={save} className="min-w-0 space-y-3">
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-[#F1EFE7] p-1" role="radiogroup" aria-label={tr("Tipo")} data-testid="rec-type-select">
+              {[["expense", tr("Despesa")], ["income", tr("Receita")]].map(([value, label]) => (
+                <button key={value} type="button" role="radio" aria-checked={form.type === value}
+                  onClick={() => setForm({
+                    ...form, type: value,
+                    category_id: categoriesFor(value).some(c => c.id === form.category_id) ? form.category_id : "",
+                  })}
+                  data-testid={`rec-type-${value}`}
+                  className={`min-h-[40px] rounded-lg text-sm transition ${form.type === value ? "bg-white font-medium text-[#061B4A] shadow-sm" : "text-[#6B7068]"}`}>
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -263,13 +263,29 @@ export default function Recurrences() {
               </div>
             </div>
             <div>
-              <Label>{tr("Categoria")}</Label>
-              <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
-                <SelectTrigger data-testid="rec-category-select"><SelectValue placeholder={tr("Selecione")} /></SelectTrigger>
-                <SelectContent>
-                  {cats.map(c => <SelectItem key={c.id} value={c.id}>{tr(c.name)}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>{tr("Descrição")}</Label>
+              <Input value={form.description} data-testid="rec-description-input"
+                onChange={e => setForm({ ...form, description: e.target.value })} placeholder={tr("Ex: Aluguel, Salário, Spotify")} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>{tr("Frequência")}</Label>
+                <Select value={form.frequency} onValueChange={(v) => setForm({ ...form, frequency: v })}>
+                  <SelectTrigger data-testid="rec-freq-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(FREQ_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{tr("Categoria")}</Label>
+                <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
+                  <SelectTrigger data-testid="rec-category-select"><SelectValue placeholder={tr("Selecione")} /></SelectTrigger>
+                  <SelectContent>
+                    {categoriesFor(form.type).map(c => <SelectItem key={c.id} value={c.id}>{tr(c.name)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div>
               <Label>{tr("Carteira (de onde sai/entra o valor)")}</Label>
@@ -279,44 +295,62 @@ export default function Recurrences() {
               }}>
                 <SelectTrigger data-testid="rec-account-select"><SelectValue placeholder={tr("Selecione a carteira")} /></SelectTrigger>
                 <SelectContent>
-                  {accs.filter(a => (a.currency || curr) === form.currency).map(a => (
+                  {accs.map(a => (
                     <SelectItem key={a.id} value={a.id}>{tr(a.name)} ({a.currency || curr})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>{tr("Pessoa (opcional)")}</Label>
-              <Select
-                value={form.person_id || "__none"}
-                onValueChange={(value) => setForm({
-                  ...form,
-                  person_id: value === "__none" ? "" : value,
-                })}
-              >
-                <SelectTrigger data-testid="rec-person-select">
-                  <SelectValue placeholder={tr("Nenhuma pessoa")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none">{tr("Nenhuma pessoa")}</SelectItem>
-                  {people.map(person => (
-                    <SelectItem key={person.id} value={person.id}>
-                      {person.name}{person.external ? ` · ${tr("externa")}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-[#6B7068] mt-1">
-                {tr("A pessoa será vinculada a cada lançamento gerado.")}
-              </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>{tr("Pessoa (opcional)")}</Label>
+                <Select
+                  value={form.person_id || "__none"}
+                  onValueChange={(value) => setForm({
+                    ...form,
+                    person_id: value === "__none" ? "" : value,
+                  })}
+                >
+                  <SelectTrigger data-testid="rec-person-select">
+                    <SelectValue placeholder={tr("Nenhuma pessoa")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">{tr("Nenhuma pessoa")}</SelectItem>
+                    {people.map(person => (
+                      <SelectItem key={person.id} value={person.id}>
+                        {person.name}{person.external ? ` · ${tr("externa")}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{tr("Moeda")}</Label>
+                <Select value={form.currency} onValueChange={(value) => setForm({
+                  ...form, currency: value,
+                  account_id: accs.some(account => account.id === form.account_id && (account.currency || curr) === value)
+                    ? form.account_id : "",
+                })}>
+                  <SelectTrigger data-testid="rec-currency-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div>
-              <Label>{tr("Descrição")}</Label>
-              <Input value={form.description} data-testid="rec-description-input"
-                onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Ex: Aluguel, Salário, Spotify" />
-            </div>
-            <DialogFooter>
-              <Button type="submit" data-testid="rec-save-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">{tr("Salvar")}</Button>
+            <p className="text-xs text-[#6B7068]">
+              {form.frequency !== "weekly" && Number(form.next_run?.slice(8, 10)) > 28
+                ? tr("Nos meses mais curtos, o lançamento cai no último dia do mês e volta ao dia {day} depois.", { day: Number(form.next_run.slice(8, 10)) })
+                : tr("A pessoa será vinculada a cada lançamento gerado.")}
+            </p>
+            <DialogFooter className="grid grid-cols-2 gap-2 sm:flex sm:space-x-0">
+              {editing && (
+                <Button type="button" variant="outline" onClick={() => setConfirmDel(editing)} data-testid={`rec-delete-${editing.id}`}
+                  className="min-h-[44px] rounded-xl text-[#D9453B] hover:text-[#D9453B]">
+                  <Trash2 size={15} className="mr-1.5" /> {tr("Excluir")}
+                </Button>
+              )}
+              <Button type="submit" data-testid="rec-save-btn" className={`min-h-[44px] bg-[#061B4A] hover:bg-[#1268F4] rounded-xl ${editing ? "" : "col-span-2"}`}>{tr("Salvar")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

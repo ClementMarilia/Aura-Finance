@@ -14,6 +14,7 @@ import {
   PieChart, Pie, Cell,
 } from "recharts";
 import CustomReport from "@/components/CustomReport";
+import { useThemedColor } from "@/lib/colors";
 
 const MONTHS = getMonthNames("short");
 const MONTHS_LONG = getMonthNames("long");
@@ -22,14 +23,14 @@ const SOURCE = { manual: "Manual", recurrence: "Recorrência", installment: tr("
 
 function DeltaPill({ comparison, invert = false, label = "mês anterior" }) {
   if (!comparison || comparison.difference === 0) {
-    return <span className="text-xs text-[#6B7068]">igual ao {label}</span>;
+    return <span className="text-xs text-[#6B7068]">=<span className="hidden sm:inline"> igual ao {label}</span></span>;
   }
   const up = comparison.difference > 0;
   const good = invert ? !up : up;
-  const percent = comparison.percent == null ? "—" : `${Math.abs(comparison.percent)}%`;
+  const percent = comparison.percent == null ? "—" : `${Math.round(Math.abs(comparison.percent) * 10) / 10}%`;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${good ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
-      {up ? <TrendingUp size={12} /> : <TrendingDown size={12} />} {percent} vs {label}
+      {up ? <TrendingUp size={12} /> : <TrendingDown size={12} />} {percent}<span className="hidden sm:inline"> vs {label}</span>
     </span>
   );
 }
@@ -42,19 +43,19 @@ function SummaryCard({ label, value, currency, icon: Icon, tone, comparison, inv
     primary: "text-[#061B4A] bg-[#F1EFE7]",
   };
   return (
-    <div className="card-soft hover:shadow-md hover:-translate-y-0.5 transition-[box-shadow,transform] duration-200">
+    <div className="card-soft p-4 sm:p-6 min-w-0 hover:shadow-md hover:-translate-y-0.5 transition-[box-shadow,transform] duration-200">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="stat-label">{label}</div>
-          <div className={`money-value text-3xl font-light tracking-tight mt-2 ${tone === "red" ? "text-rose-600" : tone === "green" ? "text-emerald-600" : ""}`} style={{ fontFamily: "Outfit" }}>
+          <div className={`money-value text-xl sm:text-3xl font-light tracking-tight mt-1 sm:mt-2 truncate ${tone === "red" ? "text-rose-600" : tone === "green" ? "text-emerald-600" : ""}`} style={{ fontFamily: "Outfit" }}>
             {fmtMoney(value, currency)}
           </div>
         </div>
-        <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${tones[tone] || tones.primary}`}>
+        <span className={`hidden sm:flex w-10 h-10 rounded-xl items-center justify-center shrink-0 ${tones[tone] || tones.primary}`}>
           <Icon size={18} />
         </span>
       </div>
-      {comparison && <div className="mt-3"><DeltaPill comparison={comparison} invert={invert} label={comparisonLabel} /></div>}
+      {comparison && <div className="mt-2 sm:mt-3"><DeltaPill comparison={comparison} invert={invert} label={comparisonLabel} /></div>}
     </div>
   );
 }
@@ -77,11 +78,11 @@ function AnnualDeltaCard({ label, value, prev, currency, invert }) {
 function InsightCard({ icon: Icon, label, value, detail, tone = "primary" }) {
   const toneClass = tone === "red" ? "text-rose-600 bg-rose-50" : tone === "amber" ? "text-amber-700 bg-amber-50" : "text-[#061B4A] bg-[#F1EFE7]";
   return (
-    <div className="card-soft p-5">
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${toneClass}`}><Icon size={17} /></div>
-      <div className="stat-label mt-4">{label}</div>
-      <div className="text-xl font-medium mt-1 tabular-nums" style={{ fontFamily: "Outfit" }}>{value}</div>
-      {detail && <div className="text-xs text-[#6B7068] mt-1">{detail}</div>}
+    <div className="card-soft p-4 sm:p-5 min-w-0">
+      <div className={`hidden sm:flex w-9 h-9 rounded-xl items-center justify-center ${toneClass}`}><Icon size={17} /></div>
+      <div className="stat-label sm:mt-4 flex items-center gap-1.5"><Icon size={13} className="sm:hidden shrink-0" />{label}</div>
+      <div className="text-base sm:text-xl font-medium mt-1 tabular-nums truncate" style={{ fontFamily: "Outfit" }}>{value}</div>
+      {detail && <div className="text-xs text-[#6B7068] mt-1 line-clamp-2">{detail}</div>}
     </div>
   );
 }
@@ -213,30 +214,30 @@ export default function Reports() {
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">{tr("Relatórios")}</h1>
           <p className="text-[#6B7068] mt-1">{tr("Leitura executiva e detalhada da sua vida financeira.")}</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="p-1 rounded-xl bg-[#F1EFE7] flex" data-testid="reports-view-switch">
-            <button onClick={() => setView("monthly")} className={`px-3 py-1.5 rounded-lg text-sm transition ${view === "monthly" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Mensal")}</button>
-            <button onClick={() => setView("annual")} className={`px-3 py-1.5 rounded-lg text-sm transition ${view === "annual" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Anual")}</button>
-            <button onClick={() => setView("custom")} className={`px-3 py-1.5 rounded-lg text-sm transition ${view === "custom" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Personalizado")}</button>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="p-1 rounded-xl bg-[#F1EFE7] flex flex-1 sm:flex-none" data-testid="reports-view-switch">
+            <button onClick={() => setView("monthly")} className={`flex-1 sm:flex-none px-2 sm:px-3 py-2 sm:py-1.5 rounded-lg text-sm transition ${view === "monthly" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Mensal")}</button>
+            <button onClick={() => setView("annual")} className={`flex-1 sm:flex-none px-2 sm:px-3 py-2 sm:py-1.5 rounded-lg text-sm transition ${view === "annual" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Anual")}</button>
+            <button onClick={() => setView("custom")} className={`flex-1 sm:flex-none px-2 sm:px-3 py-2 sm:py-1.5 rounded-lg text-sm transition ${view === "custom" ? "bg-white shadow-sm font-medium" : "text-[#6B7068]"}`}>{tr("Personalizado")}</button>
           </div>
-          {view !== "custom" && <Button variant="outline" disabled={loading || (view === "monthly" ? !monthly : !annual)} onClick={view === "monthly" ? exportMonthlyCSV : exportAnnualCSV} data-testid="export-csv-btn" className="rounded-xl">
-            <FileDown size={16} className="mr-1" /> {tr("CSV")}
+          {view !== "custom" && <Button variant="outline" disabled={loading || (view === "monthly" ? !monthly : !annual)} onClick={view === "monthly" ? exportMonthlyCSV : exportAnnualCSV} data-testid="export-csv-btn" aria-label={tr("CSV")} className="rounded-xl px-3">
+            <FileDown size={16} className="sm:mr-1" /> <span className="hidden sm:inline">{tr("CSV")}</span>
           </Button>}
-          {view !== "custom" && <Button variant="outline" disabled={loading || (view === "monthly" ? !monthly : !annual)} onClick={view === "monthly" ? () => exportMonthlyReportPDF(monthly, user?.name) : exportAnnualPDF} data-testid="export-pdf-btn" className="rounded-xl">
-            <FileText size={16} className="mr-1" /> {tr("PDF")}
+          {view !== "custom" && <Button variant="outline" disabled={loading || (view === "monthly" ? !monthly : !annual)} onClick={view === "monthly" ? () => exportMonthlyReportPDF(monthly, user?.name) : exportAnnualPDF} data-testid="export-pdf-btn" aria-label={tr("PDF")} className="rounded-xl px-3">
+            <FileText size={16} className="sm:mr-1" /> <span className="hidden sm:inline">{tr("PDF")}</span>
           </Button>}
         </div>
       </div>
 
-      {view !== "custom" && <div className="card-soft py-4 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-2 text-sm font-medium"><CalendarDays size={17} className="text-[#061B4A]" /> {tr("Período do relatório")}</div>
-        <div className="flex gap-2">
+      {view !== "custom" && <div className="card-soft p-3 sm:py-4 sm:px-6 flex items-center justify-between gap-4">
+        <div className="hidden sm:flex items-center gap-2 text-sm font-medium"><CalendarDays size={17} className="text-[#061B4A]" /> {tr("Período do relatório")}</div>
+        <div className="flex gap-2 flex-1 sm:flex-none">
           {view === "monthly" && (
-            <select value={period.month} onChange={event => setPeriod({ ...period, month: Number(event.target.value) })} data-testid="reports-month-select" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+            <select value={period.month} onChange={event => setPeriod({ ...period, month: Number(event.target.value) })} data-testid="reports-month-select" aria-label={tr("Período do relatório")} className="flex-1 sm:flex-none min-h-10 bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
               {MONTHS_LONG.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}
             </select>
           )}
-          <select value={view === "monthly" ? period.year : annualYear} onChange={event => view === "monthly" ? setPeriod({ ...period, year: Number(event.target.value) }) : setAnnualYear(Number(event.target.value))} data-testid="reports-year-select" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+          <select value={view === "monthly" ? period.year : annualYear} onChange={event => view === "monthly" ? setPeriod({ ...period, year: Number(event.target.value) }) : setAnnualYear(Number(event.target.value))} data-testid="reports-year-select" aria-label={tr("Período do relatório")} className="flex-1 sm:flex-none min-h-10 bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
             {years.map(year => <option key={year} value={year}>{year}</option>)}
           </select>
         </div>
@@ -252,6 +253,7 @@ export default function Reports() {
 }
 
 function MonthlyReport({ data, currency }) {
+  const themed = useThemedColor();
   const summary = data.summary;
   const profile = data.expense_profile;
   const composition = [
@@ -263,14 +265,14 @@ function MonthlyReport({ data, currency }) {
 
   return (
     <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
         <SummaryCard label={tr("Entradas")} value={summary.income} currency={currency} icon={ArrowUpRight} tone="green" comparison={data.comparison.income} />
         <SummaryCard label={tr("Saídas")} value={summary.expense} currency={currency} icon={ArrowDownRight} tone="red" comparison={data.comparison.expense} invert />
         <SummaryCard label={summary.balance_status === "negative" ? "Saldo negativo" : tr("Saldo do mês")} value={summary.balance} currency={currency} icon={Wallet} tone={summary.balance < 0 ? "red" : "primary"} comparison={data.comparison.balance} />
         <SummaryCard label="Saldo realizado" value={summary.realized_balance} currency={currency} icon={Landmark} tone={summary.realized_balance < 0 ? "red" : "primary"} />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
         <InsightCard icon={ReceiptText} label="Maior gasto" value={data.largest_expense ? fmtMoney(data.largest_expense.base_amount, currency) : "—"} detail={data.largest_expense?.description || tr("Sem despesas no mês")} tone="red" />
         <InsightCard icon={CircleDollarSign} label={tr("Categoria líder")} value={data.top_category?.category || "—"} detail={data.top_category ? `${fmtMoney(data.top_category.amount, currency)} · ${data.top_category.percent}% das saídas` : tr("Sem despesas no mês")} />
         <InsightCard icon={TrendingUp} label={tr("Taxa de economia")} value={summary.savings_rate == null ? "—" : `${summary.savings_rate}%`} detail={summary.savings_rate == null ? "Sem entradas para calcular" : "Percentual que restou das entradas"} />
@@ -286,7 +288,7 @@ function MonthlyReport({ data, currency }) {
               <ResponsiveContainer>
                 <PieChart>
                   <Pie data={composition} dataKey="value" nameKey="name" innerRadius={58} outerRadius={92} paddingAngle={3}>
-                    {composition.map(item => <Cell key={item.name} fill={item.color} />)}
+                    {composition.map(item => <Cell key={item.name} fill={themed(item.color)} />)}
                   </Pie>
                   <Tooltip formatter={value => fmtMoney(value, currency)} />
                   <Legend />
@@ -337,10 +339,10 @@ function AnnualReport({ data, currency }) {
   }));
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4">
         <AnnualDeltaCard label="Receita anual" value={data.totals.income} prev={data.prev_totals.income} currency={currency} />
         <AnnualDeltaCard label="Despesa anual" value={data.totals.expense} prev={data.prev_totals.expense} currency={currency} invert />
-        <AnnualDeltaCard label="Saldo anual" value={data.totals.balance} prev={data.prev_totals.balance} currency={currency} />
+        <div className="col-span-2 md:col-span-1"><AnnualDeltaCard label="Saldo anual" value={data.totals.balance} prev={data.prev_totals.balance} currency={currency} /></div>
       </div>
       <div className="card-soft">
         <h3 className="text-lg font-semibold mb-4">{tr("Receita e despesa por mês")}</h3>

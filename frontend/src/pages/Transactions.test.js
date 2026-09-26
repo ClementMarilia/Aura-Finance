@@ -1,4 +1,5 @@
 import {
+  defaultAccountFor,
   transactionFiltersFromSearchParams,
   transactionPayloadFromForm,
   transactionQueryParams,
@@ -86,5 +87,27 @@ describe("transaction API payload", () => {
     expect(payload).not.toHaveProperty("repeat");
     expect(payload).not.toHaveProperty("rate_date");
     expect(payload).not.toHaveProperty("rate_estimated");
+  });
+});
+
+describe("default wallet for new entries", () => {
+  const accounts = [
+    { id: "usd", currency: "USD" },
+    { id: "eur", currency: "EUR" },
+    { id: "legacy" },
+  ];
+
+  test("prefers a wallet in the user's currency", () => {
+    expect(defaultAccountFor(accounts, "EUR").id).toBe("eur");
+  });
+
+  test("treats wallets without currency as the user's currency", () => {
+    expect(defaultAccountFor([{ id: "legacy" }], "BRL").id).toBe("legacy");
+  });
+
+  test("falls back to the first wallet, or none", () => {
+    expect(defaultAccountFor(accounts.slice(0, 2), "GBP").id).toBe("usd");
+    expect(defaultAccountFor([], "EUR")).toBeNull();
+    expect(defaultAccountFor(undefined, "EUR")).toBeNull();
   });
 });

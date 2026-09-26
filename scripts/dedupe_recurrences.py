@@ -7,10 +7,13 @@ A duplicate is more than one transaction sharing the same
 import os
 from collections import defaultdict
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-load_dotenv("/app/backend/.env")
+# Reads MONGO_URL / DB_NAME from the environment, or from backend/.env.
+load_dotenv(Path(__file__).resolve().parents[1] / "backend" / ".env")
 
 client = MongoClient(os.environ["MONGO_URL"])
 db = client[os.environ["DB_NAME"]]

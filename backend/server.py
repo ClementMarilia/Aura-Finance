@@ -23,7 +23,7 @@ from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Literal
 from fastapi import (
     FastAPI, APIRouter, HTTPException, Depends, Request, WebSocket, BackgroundTasks,
-    WebSocketDisconnect, UploadFile, File, Header, Query,
+    WebSocketDisconnect, Header, Query,
 )
 from fastapi.responses import Response, JSONResponse
 from fastapi.encoders import jsonable_encoder
@@ -184,8 +184,7 @@ async def security_middleware(request: Request, call_next):
 
     content_length = request.headers.get("content-length")
     if content_length and content_length.isdigit():
-        limit = 6 * 1024 * 1024 if request.url.path.endswith("/receipt") else MAX_REQUEST_BYTES
-        if int(content_length) > limit:
+        if int(content_length) > MAX_REQUEST_BYTES:
             return JSONResponse(
                 status_code=413,
                 content={"detail": "Requisição muito grande", "request_id": correlation_id},
@@ -383,68 +382,6 @@ async def health_check():
         logger.error("MongoDB health check failed: %s", exc)
         raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível")
     return {"status": "ok"}
-
-# ---------- Object Storage ----------
-STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
-EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
-APP_NAME = "aurea-financas"
-_storage_key = None
-MIME_TYPES = {
-    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
-    "gif": "image/gif", "webp": "image/webp", "pdf": "application/pdf",
-}
-
-
-def verified_upload_type(data: bytes, extension: str) -> Optional[str]:
-    signatures = {
-        "jpg": lambda b: b.startswith(b"\xff\xd8\xff"),
-        "jpeg": lambda b: b.startswith(b"\xff\xd8\xff"),
-        "png": lambda b: b.startswith(b"\x89PNG\r\n\x1a\n"),
-        "gif": lambda b: b.startswith((b"GIF87a", b"GIF89a")),
-        "pdf": lambda b: b.startswith(b"%PDF-"),
-        "webp": lambda b: len(b) >= 12 and b[:4] == b"RIFF" and b[8:12] == b"WEBP",
-    }
-    validator = signatures.get(extension)
-    return MIME_TYPES.get(extension) if validator and validator(data) else None
-
-
-def safe_original_filename(filename: Optional[str]) -> str:
-    basename = (filename or "arquivo").replace("\\", "/").rsplit("/", 1)[-1]
-    cleaned = re.sub(r"[^A-Za-z0-9._ -]", "_", basename).strip(" .")
-    return (cleaned or "arquivo")[:180]
-
-
-def init_storage():
-    global _storage_key
-    if _storage_key:
-        return _storage_key
-    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-    resp.raise_for_status()
-    _storage_key = resp.json()["storage_key"]
-    return _storage_key
-
-
-def _put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage()
-    resp = requests.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-
-def _get_object(path: str):
-    key = init_storage()
-    resp = requests.get(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key}, timeout=60,
-    )
-    resp.raise_for_status()
-    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
-
-
 
 # ---------- Realtime (WebSocket) ----------
 NOTIF_TYPES = ["shared_expense_added", "settlement_paid", "nudge", "group_added"]
@@ -3199,6 +3136,7 @@ async def load_account_balance_breakdown(account: dict, user: dict) -> dict:
 @api.get("/accounts")
 async def list_accounts(
     currency: Optional[str] = None,
+    include_archived: bool = False,
     user=Depends(get_current_user),
 ):
     accounts = await db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
@@ -3228,6 +3166,14 @@ async def list_accounts(
                 a["balance_base"] = round(amount_in_currency(a, base_currency, "balance"), 2)
                 a["balance_base_unavailable"] = True
         a["base_currency"] = base_currency
+        a["archived"] = bool(a.get("archived"))
+    if not include_archived:
+        # Safety net: an archived wallet that holds money again (e.g. an old
+        # entry was edited) stays visible, so no balance is ever hidden.
+        accounts = [
+            a for a in accounts
+            if not a["archived"] or abs(a["balance"]) >= 0.005
+        ]
     return accounts
 
 
@@ -3463,8 +3409,93 @@ async def update_account(aid: str, payload: AccountIn, user=Depends(get_current_
     return {"ok": True}
 
 
+# Every stored reference to a wallet. Deleting a wallet that is still
+# referenced orphans those records: they silently stop counting towards any
+# balance, and transfers become one-sided.
+ACCOUNT_REFERENCE_FIELDS = (
+    "account_id", "from_account_id", "to_account_id",
+    "payer_account_id", "receiver_account_id",
+)
+ACCOUNT_REFERENCE_COLLECTIONS = (
+    ("transactions", "lançamento(s)"),
+    ("recurrences", "recorrência(s)"),
+    ("installment_purchases", "parcelamento(s)"),
+    ("receivables", "conta(s) a receber"),
+    ("shared_expenses", "despesa(s) compartilhada(s)"),
+    ("settlement_payments", "pagamento(s) de acerto"),
+    ("goals", "meta(s)"),
+    ("account_adjustments", "conciliação(ões)"),
+)
+
+
+async def account_references(aid: str) -> list:
+    query = {"$or": [{field: aid} for field in ACCOUNT_REFERENCE_FIELDS]}
+    usage = []
+    for collection, label in ACCOUNT_REFERENCE_COLLECTIONS:
+        count = await db[collection].count_documents(query)
+        if count:
+            usage.append({"collection": collection, "label": label, "count": count})
+    return usage
+
+
+async def account_archive_blockers(aid: str, account: dict, user: dict) -> list:
+    blockers = []
+    breakdowns = await load_account_balance_breakdowns([account], user)
+    balance = breakdowns[0]["current_balance"] if breakdowns else 0
+    if abs(balance) >= 0.005:
+        blockers.append("saldo diferente de zero (transfira o saldo antes)")
+    if await db.recurrences.count_documents({"account_id": aid, "active": True}):
+        blockers.append("recorrência ativa usando esta carteira")
+    purchases = await db.installment_purchases.find(
+        {"account_id": aid}, {"_id": 0, "id": 1},
+    ).to_list(1000)
+    if purchases and await db.installments.count_documents({
+        "purchase_id": {"$in": [p["id"] for p in purchases]}, "status": "pending",
+    }):
+        blockers.append("parcelas pendentes nesta carteira")
+    return blockers
+
+
+@api.post("/accounts/{aid}/archive")
+async def archive_account(aid: str, user=Depends(get_current_user)):
+    account = await db.accounts.find_one({"id": aid, "user_id": user["id"]}, {"_id": 0})
+    if not account:
+        raise HTTPException(404, "Carteira não encontrada")
+    account["currency"] = normalize_currency(account.get("currency"), normalize_currency(user.get("currency")))
+    blockers = await account_archive_blockers(aid, account, user)
+    if blockers:
+        raise HTTPException(409, "Não é possível arquivar: " + "; ".join(blockers) + ".")
+    await db.accounts.update_one(
+        {"id": aid, "user_id": user["id"]},
+        {"$set": {"archived": True, "archived_at": now_iso()}},
+    )
+    return {"ok": True, "archived": True}
+
+
+@api.post("/accounts/{aid}/unarchive")
+async def unarchive_account(aid: str, user=Depends(get_current_user)):
+    result = await db.accounts.update_one(
+        {"id": aid, "user_id": user["id"]},
+        {"$set": {"archived": False}, "$unset": {"archived_at": ""}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, "Carteira não encontrada")
+    return {"ok": True, "archived": False}
+
+
 @api.delete("/accounts/{aid}")
 async def delete_account(aid: str, user=Depends(get_current_user)):
+    account = await db.accounts.find_one({"id": aid, "user_id": user["id"]}, {"_id": 0, "id": 1})
+    if not account:
+        raise HTTPException(404, "Carteira não encontrada")
+    usage = await account_references(aid)
+    if usage:
+        summary = ", ".join(f"{item['count']} {item['label']}" for item in usage)
+        raise HTTPException(
+            409,
+            f"Esta carteira ainda tem histórico ({summary}). Excluí-la faria esses "
+            "registros sumirem dos saldos. Você pode arquivá-la para tirá-la das listas.",
+        )
     await db.accounts.delete_one({"id": aid, "user_id": user["id"]})
     return {"ok": True}
 
@@ -3952,87 +3983,6 @@ async def bulk_delete_transactions(body: BulkDeleteIn, user=Depends(get_current_
     return {"deleted": res.deleted_count}
 
 
-# ---------- Receipts (attachments) ----------
-@api.post("/transactions/{tid}/receipt")
-async def upload_receipt(tid: str, file: UploadFile = File(...), user=Depends(get_current_user)):
-    tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
-    if not tx:
-        raise HTTPException(404, "Lançamento não encontrado")
-    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "bin"
-    if ext not in MIME_TYPES:
-        raise HTTPException(400, "Formato não suportado (use JPG, PNG, WEBP, GIF ou PDF)")
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, "Arquivo vazio")
-    if len(data) > 5 * 1024 * 1024:
-        raise HTTPException(400, "Arquivo muito grande (máx 5MB)")
-    content_type = verified_upload_type(data, ext)
-    if not content_type or (file.content_type and file.content_type != content_type):
-        raise HTTPException(400, "O conteúdo do arquivo não corresponde ao formato informado")
-    original_filename = safe_original_filename(file.filename)
-    path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
-    result = await asyncio.to_thread(_put_object, path, data, content_type)
-    fid = new_id()
-    await db.files.insert_one({
-        "id": fid, "user_id": user["id"], "storage_path": result["path"],
-        "original_filename": original_filename, "content_type": content_type,
-        "size": result.get("size", len(data)), "is_deleted": False,
-        "created_at": now_iso(),
-    })
-    receipt = {"file_id": fid, "path": result["path"],
-               "filename": original_filename, "content_type": content_type}
-    updated = await db.transactions.update_one(
-        {"id": tid, "user_id": user["id"]},
-        {"$set": {"receipt": receipt}},
-    )
-    if updated.modified_count != 1:
-        await db.files.update_one(
-            {"id": fid, "user_id": user["id"]},
-            {"$set": {"is_deleted": True}},
-        )
-        raise HTTPException(409, "Não foi possível vincular o comprovante")
-    return receipt
-
-
-@api.delete("/transactions/{tid}/receipt")
-async def delete_receipt(tid: str, user=Depends(get_current_user)):
-    tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
-    if not tx or not tx.get("receipt"):
-        raise HTTPException(404, "Sem comprovante")
-    await db.files.update_one(
-        {"id": tx["receipt"]["file_id"], "user_id": user["id"]},
-        {"$set": {"is_deleted": True}},
-    )
-    await db.transactions.update_one(
-        {"id": tid, "user_id": user["id"]}, {"$unset": {"receipt": ""}}
-    )
-    return {"ok": True}
-
-
-@api.get("/files/{path:path}")
-async def download_file(path: str, user=Depends(get_current_user)):
-    if ".." in path or not path.startswith(f"{APP_NAME}/uploads/{user['id']}/"):
-        raise HTTPException(404, "Arquivo não encontrado")
-    record = await db.files.find_one({
-        "storage_path": path,
-        "user_id": user["id"],
-        "is_deleted": False,
-    }, {"_id": 0})
-    if not record:
-        raise HTTPException(404, "Arquivo não encontrado")
-    data, ct = await asyncio.to_thread(_get_object, path)
-    filename = safe_original_filename(record.get("original_filename"))
-    return Response(
-        content=data,
-        media_type=record.get("content_type", ct),
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-Content-Type-Options": "nosniff",
-            "Cache-Control": "private, no-store",
-        },
-    )
-
-
 # ---------- Recurrences ----------
 def _add_months(d: date, n: int) -> date:
     m = d.month - 1 + n
@@ -4041,16 +3991,30 @@ def _add_months(d: date, n: int) -> date:
     return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
 
 
-def _advance(d: date, freq: str) -> date:
+MONTHS_PER_FREQUENCY = {"monthly": 1, "quarterly": 3, "semiannual": 6, "yearly": 12}
+
+
+def _advance(d: date, freq: str, anchor_day: Optional[int] = None) -> date:
+    """Next occurrence after `d`.
+
+    Month-based frequencies are computed from the recurrence's original day
+    (`anchor_day`), not from the previous, possibly clamped, date: chaining
+    from the clamped date made a rent due on the 31st drift to the 28th
+    forever after February.
+    """
     if freq == "weekly":
         return d + timedelta(days=7)
-    if freq == "yearly":
-        return _add_months(d, 12)
-    if freq == "semiannual":
-        return _add_months(d, 6)
-    if freq == "quarterly":
-        return _add_months(d, 3)
-    return _add_months(d, 1)
+    months = MONTHS_PER_FREQUENCY.get(freq, 1)
+    shifted = _add_months(d.replace(day=1), months)
+    day = anchor_day or d.day
+    return shifted.replace(day=min(day, calendar.monthrange(shifted.year, shifted.month)[1]))
+
+
+def recurrence_anchor_day(next_run: str) -> Optional[int]:
+    try:
+        return datetime.strptime(next_run, "%Y-%m-%d").day
+    except (TypeError, ValueError):
+        return None
 
 
 async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
@@ -4069,19 +4033,19 @@ async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
             nxt = datetime.strptime(r["next_run"], "%Y-%m-%d").date()
         except Exception:
             continue
+        anchor_day = r.get("anchor_day") or nxt.day
         changed = False
         guard = 0
         while nxt <= horizon and guard < 120:
             guard += 1
-            # Idempotent: never create a second transaction for the same
-            # (recurrence, date). Prevents duplicates when next_run is edited
-            # back to an already-materialized date.
-            exists = await db.transactions.find_one(
-                {"user_id": user_id, "recurrence_id": r["id"], "date": nxt.isoformat()},
-                {"_id": 1},
-            )
-            if not exists:
-                await db.transactions.insert_one({
+            # Idempotent and race-safe: one transaction per (recurrence, date).
+            # Several screens materialize at the same time; a find-then-insert
+            # let two requests both insert. The upsert is atomic per key and
+            # the unique index created at startup rejects any second copy.
+            try:
+                await db.transactions.update_one(
+                    {"user_id": user_id, "recurrence_id": r["id"], "date": nxt.isoformat()},
+                    {"$setOnInsert": {
                     "id": new_id(), "user_id": user_id, "type": r["type"],
                     "date": nxt.isoformat(), "amount": r["amount"],
                     "category_id": r.get("category_id"), "person_id": r.get("person_id"),
@@ -4097,8 +4061,12 @@ async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
                     "exchange_rate_to_base": r.get("exchange_rate_to_base"),
                     "rate_date": r.get("rate_date"),
                     "rate_source": r.get("rate_source"),
-                })
-            nxt = _advance(nxt, r["frequency"])
+                    }},
+                    upsert=True,
+                )
+            except DuplicateKeyError:
+                pass  # another request created this occurrence first
+            nxt = _advance(nxt, r["frequency"], anchor_day)
             changed = True
         if changed:
             await db.recurrences.update_one({"id": r["id"]}, {"$set": {"next_run": nxt.isoformat()}})
@@ -4158,7 +4126,11 @@ async def create_recurrence(
         if payload.rate_source:
             meta["rate_source"] = payload.rate_source
         values = payload.model_dump(exclude={"currency", "exchange_rate", "rate_source"})
-        doc = {"id": new_id(), "user_id": user["id"], **values, **meta, "created_at": now_iso()}
+        doc = {
+            "id": new_id(), "user_id": user["id"], **values, **meta,
+            "anchor_day": recurrence_anchor_day(payload.next_run),
+            "created_at": now_iso(),
+        }
         await db.recurrences.insert_one(doc)
         doc.pop("_id", None)
         await materialize_recurrences(user["id"])
@@ -4183,6 +4155,7 @@ async def update_recurrence(rid: str, payload: RecurrenceIn, user=Depends(get_cu
     if payload.rate_source:
         meta["rate_source"] = payload.rate_source
     values = payload.model_dump(exclude={"currency", "exchange_rate", "rate_source"})
+    values["anchor_day"] = recurrence_anchor_day(payload.next_run)
     res = await db.recurrences.update_one(
         {"id": rid, "user_id": user["id"]}, {"$set": {**values, **meta}})
     if res.matched_count == 0:
@@ -4258,6 +4231,28 @@ async def list_purchases(
     return purchases
 
 
+def installment_amounts(total: float, count: int) -> List[float]:
+    """Split a purchase into `count` parcels that add up exactly to `total`.
+
+    Rounding every parcel the same way loses or invents cents (100 / 3 gave
+    33.33 x 3 = 99.99). Working in whole cents, the leftover cents go one
+    each to the first parcels, so parcels never differ by more than 1 cent.
+    """
+    total_cents = int(round(total * 100))
+    base, remainder = divmod(total_cents, count)
+    return [(base + (1 if i < remainder else 0)) / 100 for i in range(count)]
+
+
+def installment_due_date(first: date, offset: int) -> date:
+    """Same day of month as the first parcel, clamped to the month's last day
+    (Jan 31 -> Feb 28/29 -> Mar 31 -> Apr 30), never a fixed 28."""
+    month_index = first.month - 1 + offset
+    year = first.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(first.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
 @api.post("/installments/purchases")
 async def create_purchase(
     payload: InstallmentPurchaseIn,
@@ -4266,7 +4261,7 @@ async def create_purchase(
 ):
     async def create():
         pid = new_id()
-        per = round(payload.total_amount / payload.installments, 2)
+        amounts = installment_amounts(payload.total_amount, payload.installments)
         base_date = datetime.fromisoformat(payload.first_date)
         currencies = await account_currency_map(user)
         base_currency = normalize_currency(user.get("currency"))
@@ -4283,17 +4278,11 @@ async def create_purchase(
         inst_docs = []
         try:
             for i in range(payload.installments):
-                m = base_date.month - 1 + i
-                y = base_date.year + m // 12
-                mm = m % 12 + 1
-                try:
-                    d = base_date.replace(year=y, month=mm)
-                except ValueError:
-                    d = base_date.replace(year=y, month=mm, day=28)
+                d = installment_due_date(base_date.date(), i)
                 inst_docs.append({
                     "id": new_id(), "purchase_id": pid, "user_id": user["id"],
                     "number": i + 1, "total": payload.installments,
-                    "amount": per, "due_date": d.date().isoformat(),
+                    "amount": amounts[i], "due_date": d.isoformat(),
                     "status": "pending", "paid_at": None,
                 })
             if inst_docs:
@@ -4368,8 +4357,20 @@ async def mark_installment(iid: str, user=Depends(get_current_user)):
 
 @api.delete("/installments/purchases/{pid}")
 async def delete_purchase(pid: str, user=Depends(get_current_user)):
+    purchase = await db.installment_purchases.find_one({"id": pid, "user_id": user["id"]}, {"_id": 0, "id": 1})
+    if not purchase:
+        raise HTTPException(404, "Parcelamento não encontrado")
+    # Paid parcels already left a wallet; deleting them would silently put
+    # that money back into the balance.
+    paid = await db.installments.count_documents({"purchase_id": pid, "status": "paid"})
+    if paid:
+        raise HTTPException(
+            409,
+            f"Este parcelamento tem {paid} parcela(s) paga(s). Excluí-lo devolveria esse "
+            "valor ao saldo da carteira. Desmarque as parcelas pagas antes de excluir.",
+        )
     await db.installment_purchases.delete_one({"id": pid, "user_id": user["id"]})
-    await db.installments.delete_many({"purchase_id": pid})
+    await db.installments.delete_many({"purchase_id": pid, "user_id": user["id"]})
     return {"ok": True}
 
 
@@ -4435,18 +4436,49 @@ async def update_receivable(rid: str, payload: ReceivableIn, user=Depends(get_cu
     )
     if not res.matched_count:
         raise HTTPException(404, "Não encontrado")
+    # An already received item has an income in a wallet; keep it in sync, or
+    # correcting the amount/wallet here would leave the wallet on the old value.
+    current = await db.receivables.find_one({"id": rid, "user_id": user["id"]}, {"_id": 0})
+    if current and current.get("status") == "received" and current.get("received_tx_id"):
+        desc = (payload.description or payload.person or "").strip()
+        await db.transactions.update_one(
+            {"id": current["received_tx_id"], "user_id": user["id"]},
+            {"$set": {
+                "amount": payload.amount,
+                "account_id": payload.account_id,
+                "description": f"Recebimento: {desc}" if desc else "Recebimento",
+                **meta,
+            }},
+        )
     return {"ok": True}
 
 
+class ReceiveIn(BaseModel):
+    # Target state. Omitted = legacy toggle. Sending it makes repeated taps
+    # (double tap on a phone, retried request) idempotent.
+    received: Optional[bool] = None
+
+
 @api.post("/receivables/{rid}/receive")
-async def receive_receivable(rid: str, user=Depends(get_current_user)):
+async def receive_receivable(rid: str, body: Optional[ReceiveIn] = None, user=Depends(get_current_user)):
     r = await db.receivables.find_one({"id": rid, "user_id": user["id"]})
     if not r:
         raise HTTPException(404, "Não encontrado")
-    new_status = "pending" if r["status"] == "received" else "received"
+    want = body.received if body and body.received is not None else r["status"] != "received"
+    new_status = "received" if want else "pending"
+    if new_status == r["status"]:
+        return {"ok": True, "status": new_status}
     if new_status == "received":
-        # Create an income transaction so it counts as receita AND credits the wallet
+        # Claim the transition atomically first: only the request that flips
+        # pending -> received creates the income, so it can never be doubled.
         tx_id = new_id()
+        claimed = await db.receivables.update_one(
+            {"id": rid, "user_id": user["id"], "status": {"$ne": "received"}},
+            {"$set": {"status": "received", "received_at": now_iso(), "received_tx_id": tx_id}},
+        )
+        if claimed.modified_count != 1:
+            return {"ok": True, "status": "received"}
+        # Create an income transaction so it counts as receita AND credits the wallet
         desc = (r.get("description") or r.get("person") or "").strip()
         await db.transactions.insert_one({
             "id": tx_id, "user_id": user["id"], "type": "income",
@@ -4465,19 +4497,15 @@ async def receive_receivable(rid: str, user=Depends(get_current_user)):
             "rate_date": r.get("rate_date"),
             "rate_source": r.get("rate_source"),
         })
-        await db.receivables.update_one(
-            {"id": rid},
-            {"$set": {"status": "received", "received_at": now_iso(), "received_tx_id": tx_id}},
-        )
     else:
-        # Reverting to pending: remove the linked income transaction
-        if r.get("received_tx_id"):
-            await db.transactions.delete_one(
-                {"id": r["received_tx_id"], "user_id": user["id"]})
-        await db.receivables.update_one(
-            {"id": rid},
+        # Reverting to pending: claim first, then remove the linked income.
+        released = await db.receivables.find_one_and_update(
+            {"id": rid, "user_id": user["id"], "status": "received"},
             {"$set": {"status": "pending", "received_at": None, "received_tx_id": None}},
         )
+        if released and released.get("received_tx_id"):
+            await db.transactions.delete_one(
+                {"id": released["received_tx_id"], "user_id": user["id"]})
     return {"ok": True, "status": new_status}
 
 
@@ -4900,14 +4928,36 @@ def compute_splits(amount: float, split_type: str, participants: List[dict]) -> 
         if out and diff:
             out[-1]["owed"] = round(out[-1]["owed"] + diff, 2)
     elif split_type == "manual":
-        for p in participants:
-            out.append({**split_base(p), "owed": float(p.get("amount") or 0)})
+        shares = [round(float(p.get("amount") or 0), 2) for p in participants]
+        if any(share < 0 for share in shares):
+            raise HTTPException(400, "Os valores da divisão não podem ser negativos")
+        # Shares that do not add up to the total would make part of the debt
+        # vanish (or invent debt that was never spent).
+        if round(abs(sum(shares) - amount), 2) > 0.01:
+            raise HTTPException(
+                400,
+                f"A soma das partes ({sum(shares):.2f}) precisa ser igual ao valor total ({amount:.2f})",
+            )
+        for p, share in zip(participants, shares):
+            out.append({**split_base(p), "owed": share})
+        diff = round(amount - sum(shares), 2)
+        if out and diff:
+            out[-1]["owed"] = round(out[-1]["owed"] + diff, 2)
     elif split_type == "percent":
-        for p in participants:
-            out.append({
-                **split_base(p),
-                "owed": round(amount * float(p.get("percent") or 0) / 100.0, 2),
-            })
+        percents = [float(p.get("percent") or 0) for p in participants]
+        if any(percent < 0 for percent in percents):
+            raise HTTPException(400, "Os percentuais da divisão não podem ser negativos")
+        if round(abs(sum(percents) - 100), 2) > 0.01:
+            raise HTTPException(
+                400,
+                f"A soma dos percentuais ({sum(percents):.2f}%) precisa ser 100%",
+            )
+        for p, percent in zip(participants, percents):
+            out.append({**split_base(p), "owed": round(amount * percent / 100.0, 2)})
+        # Same cent-rounding correction as the equal split.
+        diff = round(amount - sum(item["owed"] for item in out), 2)
+        if out and diff:
+            out[-1]["owed"] = round(out[-1]["owed"] + diff, 2)
     return out
 
 
@@ -9351,6 +9401,30 @@ async def update_goal(gid: str, payload: GoalIn, user=Depends(get_current_user))
     return await db.goals.find_one({"id": gid}, {"_id": 0})
 
 
+async def goal_money_movement(goal: dict, account_id: Optional[str], direction: str, user: dict) -> Optional[dict]:
+    """Transaction fields for money moving into ("in") or out of ("out") a goal.
+
+    - the goal's own linked wallet: no transaction. The money never leaves
+      that wallet; recording an expense/income there made its balance drop
+      on a contribution and rise on a withdrawal although nothing moved
+    - another wallet while the goal has a linked wallet: a transfer
+    - no linked wallet: the money leaves / returns to the tracked wallets
+    """
+    if not account_id:
+        return None
+    linked = goal.get("account_id")
+    if linked and linked == account_id:
+        return None
+    if linked and await db.accounts.find_one({"id": linked, "user_id": user["id"]}, {"_id": 0, "id": 1}):
+        if direction == "in":
+            return {"type": "transfer", "from_account_id": account_id, "to_account_id": linked,
+                    "account_id": None, "category_id": None}
+        return {"type": "transfer", "from_account_id": linked, "to_account_id": account_id,
+                "account_id": None, "category_id": None}
+    return {"type": "expense" if direction == "in" else "income", "account_id": account_id,
+            "from_account_id": None, "to_account_id": None, "category_id": None}
+
+
 @api.post("/goals/{gid}/contribute")
 async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current_user)):
     if body.amount <= 0:
@@ -9363,6 +9437,7 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
     )
 
     # Optionally create a real transaction so balances stay coherent
+    tx = None
     if body.from_account_id:
         src = await db.accounts.find_one({"id": body.from_account_id, "user_id": user["id"]}, {"_id": 0})
         if not src:
@@ -9372,18 +9447,8 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
                 400,
                 "A carteira do aporte deve usar a mesma moeda da meta",
             )
-        linked = goal.get("account_id")
-        if linked and linked != body.from_account_id:
-            dest = await db.accounts.find_one({"id": linked, "user_id": user["id"]}, {"_id": 0})
-            if dest:
-                tx = {"type": "transfer", "from_account_id": body.from_account_id,
-                      "to_account_id": linked, "account_id": None, "category_id": None}
-            else:
-                tx = {"type": "expense", "account_id": body.from_account_id,
-                      "from_account_id": None, "to_account_id": None, "category_id": None}
-        else:
-            tx = {"type": "expense", "account_id": body.from_account_id,
-                  "from_account_id": None, "to_account_id": None, "category_id": None}
+        tx = await goal_money_movement(goal, body.from_account_id, "in", user)
+    if tx:
         meta = await monetary_metadata(
             goal_currency,
             user.get("currency", "EUR"),
@@ -9404,8 +9469,9 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
             **meta, **tx,
         })
 
+    # Atomic: two contributions at the same time both count.
+    await db.goals.update_one({"id": gid, "user_id": user["id"]}, {"$inc": {"current_amount": round(body.amount, 2)}})
     new_amt = round(goal.get("current_amount", 0) + body.amount, 2)
-    await db.goals.update_one({"id": gid}, {"$set": {"current_amount": new_amt}})
     await db.goal_events.insert_one({
         "id": new_id(),
         "user_id": user["id"],
@@ -9439,6 +9505,7 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
         raise HTTPException(400, "Valor maior que o saldo da meta")
 
     # Optionally return the money to an account via a real transaction
+    tx = None
     if body.to_account_id:
         dest = await db.accounts.find_one({"id": body.to_account_id, "user_id": user["id"]}, {"_id": 0})
         if not dest:
@@ -9448,18 +9515,16 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
                 400,
                 "A carteira do resgate deve usar a mesma moeda da meta",
             )
-        linked = goal.get("account_id")
-        if linked and linked != body.to_account_id:
-            src = await db.accounts.find_one({"id": linked, "user_id": user["id"]}, {"_id": 0})
-            if src:
-                tx = {"type": "transfer", "from_account_id": linked,
-                      "to_account_id": body.to_account_id, "account_id": None, "category_id": None}
-            else:
-                tx = {"type": "income", "account_id": body.to_account_id,
-                      "from_account_id": None, "to_account_id": None, "category_id": None}
-        else:
-            tx = {"type": "income", "account_id": body.to_account_id,
-                  "from_account_id": None, "to_account_id": None, "category_id": None}
+        tx = await goal_money_movement(goal, body.to_account_id, "out", user)
+    # Atomic and guarded: concurrent withdrawals can never take the goal
+    # below zero. Reserve the amount before recording any money movement.
+    reserved = await db.goals.update_one(
+        {"id": gid, "user_id": user["id"], "current_amount": {"$gte": round(body.amount, 2) - 0.005}},
+        {"$inc": {"current_amount": -round(body.amount, 2)}},
+    )
+    if reserved.modified_count != 1:
+        raise HTTPException(400, "Valor maior que o saldo da meta")
+    if tx:
         meta = await monetary_metadata(
             goal_currency,
             user.get("currency", "EUR"),
@@ -9481,7 +9546,6 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
         })
 
     new_amt = round(current - body.amount, 2)
-    await db.goals.update_one({"id": gid}, {"$set": {"current_amount": new_amt}})
     await db.goal_events.insert_one({
         "id": new_id(),
         "user_id": user["id"],
@@ -9510,11 +9574,6 @@ async def startup():
             raise RuntimeError("JWT_SECRET must contain at least 32 bytes in production")
         if "*" in configured_cors_origins():
             raise RuntimeError("Wildcard CORS is forbidden in production")
-    try:
-        init_storage()
-        logger.info("Object storage initialized")
-    except Exception as e:
-        logger.error(f"Storage init failed: {e}")
     await db.users.create_index("email", unique=True)
     await db.users.create_index([("status", 1), ("created_at", -1)])
     # Keep legacy UUID-backed public IDs fast and fully compatible. MongoDB's
@@ -9563,6 +9622,20 @@ async def startup():
         [("user_id", 1), ("account_id", 1), ("date", -1)]
     )
     await db.recurrences.create_index([("user_id", 1), ("person_id", 1)])
+    # One materialized transaction per (recurrence, date). Guarded: if old
+    # duplicates exist the index cannot be built, and boot must not fail.
+    try:
+        await db.transactions.create_index(
+            [("user_id", 1), ("recurrence_id", 1), ("date", 1)],
+            unique=True,
+            partialFilterExpression={"recurrence_id": {"$type": "string"}},
+            name="unique_recurrence_occurrence",
+        )
+    except Exception as exc:
+        logger.warning(
+            "Recurrence uniqueness index not created (%s). Existing duplicates "
+            "must be removed first: python scripts/dedupe_recurrences.py", exc,
+        )
     await db.people.create_index([("owner_user_id", 1), ("name", 1)])
     await db.shared_expenses.create_index("participant_ids")
     await db.shared_expenses.create_index([("creator_id", 1), ("status", 1), ("date", -1)])
@@ -9730,6 +9803,10 @@ async def startup():
     wid = ids["Wendy"]
     cats = await db.categories.find({"user_id": wid}).to_list(50)
     cat_by_name = {c["name"]: c["id"] for c in cats}
+    # Demo entries belong to the default wallet, like entries created in the
+    # app, so wallet balances and the dashboard tell the same story.
+    wallet = await db.accounts.find_one({"user_id": wid}, {"_id": 0, "id": 1})
+    wallet_id = wallet["id"] if wallet else None
     today = datetime.now(timezone.utc).date()
     sample = [
         ("income", today.replace(day=1).isoformat(), 2500.0, None, "Salário"),
@@ -9740,7 +9817,7 @@ async def startup():
     for t, d, amt, cid, desc in sample:
         await db.transactions.insert_one({
             "id": new_id(), "user_id": wid, "type": t, "date": d,
-            "amount": amt, "category_id": cid, "account_id": None,
+            "amount": amt, "category_id": cid, "account_id": wallet_id,
             "payment_method": "Cartão", "description": desc, "notes": "",
             "status": "paid", "created_at": now_iso(),
         })

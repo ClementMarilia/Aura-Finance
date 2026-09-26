@@ -173,12 +173,18 @@ html.dark .bg-white { background-color: var(--surface) !important; }
 html.dark .bg-\[\#F9F8F6\] { background-color: var(--bg) !important; }
 html.dark .bg-\[\#F8F6EE\] { background-color: var(--surface-elevated) !important; }
 html.dark .bg-\[\#F1EFE7\] { background-color: var(--surface-muted) !important; }
+html.dark .bg-\[\#F8F7F3\] { background-color: var(--surface-muted) !important; }
 html.dark .bg-\[\#E7FAF5\] { background-color: rgba(111, 181, 151, 0.12) !important; }
 html.dark .bg-\[\#FAFAF7\] { background-color: var(--bg) !important; }
 
 /* Bordas */
 html.dark .border-\[\#E5E4E0\] { border-color: var(--border) !important; }
+html.dark .divide-\[\#E5E4E0\] > :not([hidden]) ~ :not([hidden]) { border-color: var(--border) !important; }
 html.dark .border-\[\#D6D3CA\] { border-color: var(--border) !important; }
+
+/* Switches: "ligado" em azul-marinho sumia no fundo escuro */
+html.dark .data-\[state\=checked\]\:bg-\[\#061B4A\][data-state="checked"] { background-color: var(--primary) !important; }
+html.dark .data-\[state\=unchecked\]\:bg-\[\#D6D3CA\][data-state="unchecked"] { background-color: var(--border) !important; }
 
 /* Textos */
 html.dark .text-\[\#1A1C1A\] { color: var(--text-main) !important; }
@@ -222,6 +228,7 @@ html.dark .border-amber-200 { border-color: rgba(245, 158, 11, 0.3) !important; 
 
 /* Hover muted */
 html.dark .hover\:bg-\[\#F1EFE7\]:hover { background-color: var(--surface-muted) !important; }
+html.dark .hover\:bg-\[\#F8F7F3\]:hover { background-color: var(--surface-muted) !important; }
 html.dark .hover\:bg-\[\#F8F6EE\]:hover { background-color: var(--surface-elevated) !important; }
 
 /* Pills */

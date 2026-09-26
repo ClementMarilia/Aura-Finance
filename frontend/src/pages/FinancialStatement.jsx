@@ -97,25 +97,25 @@ function MovementList({ rows, categories, baseCurrency, pending = false }) {
         return (
           <div
             key={`${entry.source || "movement"}-${entry.id}-${entry.account_id}`}
-            className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_140px_150px] md:items-center"
+            className="flex items-start gap-3 px-3 py-3 md:grid md:grid-cols-[minmax(0,1fr)_140px_150px] md:items-center md:gap-3 md:p-4"
             data-testid={`statement-entry-${entry.id}`}
           >
-            <div className="flex min-w-0 items-start gap-3">
+            <div className="flex min-w-0 flex-1 items-start gap-3">
               <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
                 positive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"
               }`}>
                 <DirectionIcon direction={entry.direction} />
               </div>
               <div className="min-w-0">
-                <p className="truncate font-medium text-[#061B4A]">
+                <p className="truncate text-sm font-medium text-[#061B4A] md:text-base">
                   {tr(entry.description || "Lançamento sem descrição")}
                 </p>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#6B7068]">
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-[#6B7068]">
                   <span>{fmtDate(entry.date)}</span>
-                  <span>•</span>
-                  <span>{tr(entry.account_name || "Carteira")}</span>
-                  {category && <><span>•</span><span>{tr(category.name)}</span></>}
-                  <span className="rounded-full bg-[#F1EFE7] px-2 py-0.5">
+                  <span>·</span>
+                  <span className="truncate">{tr(entry.account_name || "Carteira")}</span>
+                  {category && <><span className="hidden sm:inline">·</span><span className="hidden sm:inline">{tr(category.name)}</span></>}
+                  <span className="hidden rounded-full bg-[#F1EFE7] px-2 py-0.5 md:inline">
                     {tr(DIRECTION_LABELS[entry.direction] || entry.direction)}
                   </span>
                   {pending && (
@@ -131,7 +131,8 @@ function MovementList({ rows, categories, baseCurrency, pending = false }) {
               </div>
             </div>
 
-            <div className="text-sm md:text-right">
+            {/* Desktop: dedicated running-balance column. */}
+            <div className="hidden text-sm md:block md:text-right">
               <p className="text-xs text-[#6B7068]">
                 {pending ? tr("Não altera o saldo") : tr("Saldo após movimento")}
               </p>
@@ -140,8 +141,8 @@ function MovementList({ rows, categories, baseCurrency, pending = false }) {
               </p>
             </div>
 
-            <div className="md:text-right">
-              <p className={`font-semibold ${positive ? "text-emerald-700" : "text-rose-600"}`}>
+            <div className="shrink-0 text-right">
+              <p className={`money-value whitespace-nowrap text-sm font-semibold md:text-base ${positive ? "text-emerald-700" : "text-rose-600"}`}>
                 {positive ? "+" : ""}{fmtMoney(entry.amount, entry.currency)}
               </p>
               {entry.currency !== baseCurrency && entry.base_amount !== null && (
@@ -151,6 +152,12 @@ function MovementList({ rows, categories, baseCurrency, pending = false }) {
               )}
               {entry.base_amount === null && (
                 <p className="text-xs text-amber-700">{tr("Conversão indisponível")}</p>
+              )}
+              {/* Phone: running balance folded under the amount. */}
+              {!pending && (
+                <p className="whitespace-nowrap text-[11px] text-[#6B7068] md:hidden">
+                  {tr("saldo {amount}", { amount: fmtMoney(entry.running_balance, entry.currency) })}
+                </p>
               )}
             </div>
           </div>
@@ -296,22 +303,22 @@ export default function FinancialStatement() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="card-soft p-4 sm:p-5">
-          <p className="text-sm text-[#6B7068]">{tr("Saldo atual")}</p>
-          <p className={`money-value mt-1 text-xl font-semibold sm:text-2xl ${currentBalance < 0 ? "text-rose-600" : "text-[#061B4A]"}`}>
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="card-soft min-w-0 p-3 sm:p-5">
+          <p className="truncate text-[11px] text-[#6B7068] sm:text-sm">{tr("Saldo atual")}</p>
+          <p className={`money-value mt-1 truncate text-sm font-semibold sm:text-xl md:text-2xl ${currentBalance < 0 ? "text-rose-600" : "text-[#061B4A]"}`}>
             {fmtMoney(currentBalance, baseCurrency)}
           </p>
         </div>
-        <div className="card-soft p-4 sm:p-5">
-          <p className="text-sm text-[#6B7068]">{tr("Entradas no período")}</p>
-          <p className="money-value mt-1 text-xl font-semibold text-emerald-700 sm:text-2xl">
+        <div className="card-soft min-w-0 p-3 sm:p-5">
+          <p className="truncate text-[11px] text-[#6B7068] sm:text-sm">{tr("Entradas no período")}</p>
+          <p className="money-value mt-1 truncate text-sm font-semibold sm:text-xl text-emerald-700 md:text-2xl">
             {fmtMoney(totals.income, baseCurrency)}
           </p>
         </div>
-        <div className="card-soft p-4 sm:p-5">
-          <p className="text-sm text-[#6B7068]">{tr("Saídas no período")}</p>
-          <p className="money-value mt-1 text-xl font-semibold text-rose-600 sm:text-2xl">
+        <div className="card-soft min-w-0 p-3 sm:p-5">
+          <p className="truncate text-[11px] text-[#6B7068] sm:text-sm">{tr("Saídas no período")}</p>
+          <p className="money-value mt-1 truncate text-sm font-semibold sm:text-xl text-rose-600 md:text-2xl">
             {fmtMoney(totals.expense, baseCurrency)}
           </p>
         </div>

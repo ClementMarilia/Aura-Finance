@@ -18,6 +18,7 @@ import EmailTemplateEditor from "@/components/EmailTemplateEditor";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { translate as tr } from "@/i18n";
 import { useNavigate } from "react-router-dom";
+import { useThemedColor } from "@/lib/colors";
 
 const NOTIF_LABELS = {
   shared_expense_added: { title: tr("Despesas compartilhadas"), desc: tr("Quando você é adicionado a uma nova despesa.") },
@@ -51,6 +52,7 @@ const categoryNameKey = (value) => String(value || "")
   .toLocaleLowerCase();
 
 export default function Settings() {
+  const themed = useThemedColor();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const {
@@ -70,6 +72,7 @@ export default function Settings() {
   const [prefs, setPrefs] = useState(null);
   const [insightPrefs, setInsightPrefs] = useState(null);
   const [tab, setTab] = useState("expense"); // expense | income | both
+  const [catFormOpen, setCatFormOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteImpact, setDeleteImpact] = useState(null);
   const [deleteForm, setDeleteForm] = useState({ password: "", confirmation: "" });
@@ -120,11 +123,20 @@ export default function Settings() {
   const startEdit = (c) => {
     setEditing(c);
     setForm({ name: c.name, color: c.color || "#061B4A", kind: c.kind || "expense" });
+    setCatFormOpen(true);
+    // On phones the form sits far above the tapped row; bring it into view.
+    requestAnimationFrame(() => document.querySelector("[data-testid=cat-form]")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  };
+
+  const openNewCategory = () => {
+    setForm({ ...defaultCatForm(), kind: tab });
+    setCatFormOpen(true);
   };
 
   const cancelEdit = () => {
     setEditing(null);
     setForm(defaultCatForm());
+    setCatFormOpen(false);
   };
 
   const submit = async (e) => {
@@ -399,10 +411,10 @@ export default function Settings() {
       <div className="card-soft" data-testid="notif-prefs-section">
         <h3 className="text-lg font-semibold mb-1" style={{ fontFamily: "Outfit" }}>{tr("Notificações")}</h3>
         <p className="text-sm text-[#6B7068] mb-4">{tr("Escolha quais alertas você quer receber.")}</p>
-        <div className="space-y-3">
+        <div className="rounded-xl border border-[#E5E4E0] divide-y divide-[#E5E4E0]">
           {Object.entries(NOTIF_LABELS).map(([key, { title, desc }]) => (
-            <div key={key} className="flex items-center justify-between gap-4 p-3 border border-[#E5E4E0] rounded-xl">
-              <div>
+            <div key={key} className="flex items-center justify-between gap-4 p-3">
+              <div className="min-w-0">
                 <div className="text-sm font-medium text-[#1A1C1A]">{title}</div>
                 <div className="text-xs text-[#6B7068]">{desc}</div>
               </div>
@@ -431,10 +443,10 @@ export default function Settings() {
             </p>
           </div>
         </div>
-        <div className="space-y-3">
+        <div className="rounded-xl border border-[#E5E4E0] divide-y divide-[#E5E4E0]">
           {Object.entries(INSIGHT_LABELS).map(([key, { title, desc }]) => (
-            <div key={key} className="flex items-center justify-between gap-4 rounded-xl border border-[#E5E4E0] p-3">
-              <div>
+            <div key={key} className="flex items-center justify-between gap-4 p-3">
+              <div className="min-w-0">
                 <div className="text-sm font-medium text-[#1A1C1A]">{title}</div>
                 <div className="text-xs text-[#6B7068]">{desc}</div>
               </div>
@@ -452,10 +464,16 @@ export default function Settings() {
       <div className="card-soft">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Categorias")}</h3>
-          <p className="text-xs text-[#6B7068]">{tr("Crie categorias para Receitas (ex: Salário) e Despesas (ex: Gasolina).")}</p>
+          <p className="hidden sm:block text-xs text-[#6B7068]">{tr("Crie categorias para Receitas (ex: Salário) e Despesas (ex: Gasolina).")}</p>
+          {!catFormOpen && (
+            <Button type="button" onClick={openNewCategory} data-testid="settings-new-cat"
+              className="sm:hidden min-h-10 bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
+              <Plus size={16} className="mr-1" /> {tr("Nova categoria")}
+            </Button>
+          )}
         </div>
 
-        <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end mb-4" data-testid="cat-form">
+        <form onSubmit={submit} className={`${catFormOpen ? "grid" : "hidden sm:grid"} grid-cols-1 sm:grid-cols-12 gap-2 items-end mb-4 scroll-mt-24`} data-testid="cat-form">
           <div className="sm:col-span-5">
             <Label>{tr("Nome")}</Label>
             <Input value={form.name} required disabled={isSavingCategory} data-testid="settings-cat-name"
@@ -489,8 +507,8 @@ export default function Settings() {
               {editing ? <Pencil size={16} className="mr-1" /> : <Plus size={16} className="mr-1" />}
               {editing ? tr("Salvar") : tr("Adicionar")}
             </LoadingButton>
-            {editing && (
-              <Button type="button" variant="outline" onClick={cancelEdit} disabled={isSavingCategory}
+            {(editing || catFormOpen) && (
+              <Button type="button" variant="outline" onClick={cancelEdit} aria-label={tr("Cancelar")} disabled={isSavingCategory}
                 data-testid="settings-cancel-edit" className="rounded-xl">
                 <X size={16} />
               </Button>
@@ -510,7 +528,7 @@ export default function Settings() {
               type="button"
               onClick={() => setTab(t.key)}
               data-testid={`cat-tab-${t.key}`}
-              className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition ${
+              className={`px-3 sm:px-4 py-2.5 sm:py-2 text-sm font-medium -mb-px border-b-2 transition whitespace-nowrap ${
                 tab === t.key
                   ? "border-[#061B4A] text-[#061B4A]"
                   : "border-transparent text-[#6B7068] hover:text-[#061B4A]"
@@ -533,25 +551,25 @@ export default function Settings() {
             {filteredCats.map(c => {
               const kind = c.kind || "expense";
               return (
-                <div key={c.id} className="flex items-center justify-between p-3 border border-[#E5E4E0] rounded-xl" data-testid={`cat-row-${c.id}`}>
+                <div key={c.id} className="flex items-center justify-between py-1 pl-3 pr-1 border border-[#E5E4E0] rounded-xl" data-testid={`cat-row-${c.id}`}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: c.color }} />
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: themed(c.color) }} />
                     <span className="truncate">{tr(c.name)}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${KIND_BADGE[kind]}`}>
+                    <span className={`hidden sm:inline text-[10px] px-1.5 py-0.5 rounded ${KIND_BADGE[kind]}`}>
                       {KIND_LABEL[kind]}
                     </span>
                     {c.is_default && <span className="text-xs text-[#6B7068]">(padrão)</span>}
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
                     <button onClick={() => startEdit(c)} disabled={isSavingCategory}
-                      className="text-[#6B7068] hover:text-[#061B4A] p-1 disabled:pointer-events-none disabled:opacity-50"
+                      className="w-10 h-10 rounded-lg flex items-center justify-center text-[#6B7068] hover:text-[#061B4A] hover:bg-[#F1EFE7] disabled:pointer-events-none disabled:opacity-50"
                       data-testid={`cat-edit-${c.id}`} title={tr("Editar")}>
-                      <Pencil size={14} />
+                      <Pencil size={16} />
                     </button>
                     <button onClick={() => setConfirmDel(c)} disabled={isSavingCategory}
-                      className="text-[#6B7068] hover:text-[#D9453B] p-1 disabled:pointer-events-none disabled:opacity-50"
+                      className="w-10 h-10 rounded-lg flex items-center justify-center text-[#6B7068] hover:text-[#D9453B] hover:bg-[#F1EFE7] disabled:pointer-events-none disabled:opacity-50"
                       data-testid={`cat-delete-${c.id}`} title={tr("Excluir")}>
-                      <Trash2 size={14} />
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>

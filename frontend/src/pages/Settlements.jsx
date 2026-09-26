@@ -6,7 +6,9 @@ import AmountInput from "@/components/AmountInput";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, Bell, History as HistoryIcon, Search, X, Wallet, Clock, Ban } from "lucide-react";
+import { Check, Bell, History as HistoryIcon, Search, X, Wallet, Clock, Ban, ArrowRight, SlidersHorizontal, ChevronDown } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { toast } from "sonner";
 
 import { translate as tr } from "@/i18n";
@@ -46,6 +48,11 @@ export default function Settlements() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentBusy, setPaymentBusy] = useState(false);
+  const [closeDialog, setCloseDialog] = useState(null);
+  const [closeReason, setCloseReason] = useState("");
+  const [closeBusy, setCloseBusy] = useState(false);
+  const [historyFiltersOpen, setHistoryFiltersOpen] = useState(false);
+  const isDesktop = useIsDesktop();
 
   const load = () => api.get("/settlements").then(r => setData(r.data));
   const loadHistory = useCallback(async (filters = emptyHistoryFilters) => {
@@ -92,7 +99,7 @@ export default function Settlements() {
     try {
       const r = await api.post(`/settlements/nudge/${uid}`);
       toast.success(tr("Lembrete enviado para {name} ({amount})", { name, amount: fmtMoney(r.data.amount, curr) }));
-    } catch (err) { toast.error(err?.response?.data?.detail || "Erro"); }
+    } catch (err) { toast.error(formatApiError(err)); }
   };
 
   const openWalletDialog = (mode, row) => {
@@ -144,31 +151,33 @@ export default function Settlements() {
     }
   };
 
-  const closePayment = async (row, action) => {
-    const message = action === "cancel"
-      ? tr("Cancelar o registro? O app criará uma reversão na sua carteira. Faça isso somente se o pagamento não aconteceu.")
-      : tr("Rejeitar este pagamento? O débito de quem enviou será mantido e o acerto ficará em contestação.");
-    if (!window.confirm(message)) return;
-    const reason = window.prompt(
-      action === "cancel"
-        ? tr("Informe o motivo do cancelamento (opcional)")
-        : tr("Informe o motivo da contestação (opcional)"),
-      "",
-    );
-    if (reason === null) return;
+  // Cancel / reject used window.confirm + window.prompt, which render as
+  // browser pop-ups (and are blocked in some installed PWAs).
+  const closePayment = (row, action) => {
+    setCloseReason("");
+    setCloseDialog({ row, action });
+  };
+
+  const submitClosePayment = async () => {
+    if (!closeDialog || closeBusy) return;
+    const { row, action } = closeDialog;
+    setCloseBusy(true);
     try {
       await api.post(
         `/settlements/payments/${row.payment.id}/${action}`,
-        { reason },
+        { reason: closeReason },
       );
       toast.success(
         action === "cancel"
           ? tr("Pagamento cancelado com reversão registrada")
           : tr("Pagamento colocado em contestação"),
       );
+      setCloseDialog(null);
       await load();
     } catch (error) {
       toast.error(formatApiError(error));
+    } finally {
+      setCloseBusy(false);
     }
   };
 
@@ -181,6 +190,87 @@ export default function Settlements() {
       toast.error(formatApiError(error));
     }
   };
+
+  const primaryAction = "min-h-[40px] px-3 py-2 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5";
+
+  const renderRowActions = (r, i) => (
+    <>
+      {!r.payment && r.external_debtor && r.managed_by_user && (
+        <button onClick={() => confirmExternalPayment(r)} data-testid={`confirm-external-${i}`}
+          className={`${primaryAction} bg-[#061B4A] text-white hover:bg-[#1268F4]`}>
+          <Check size={14} /> {tr("Confirmar manualmente")}
+        </button>
+      )}
+      {!r.payment && !r.external_debtor && r.debtor_id === user.id && (
+        <button onClick={() => openWalletDialog("send", r)} data-testid={`send-payment-${i}`}
+          className={`${primaryAction} bg-[#061B4A] text-white hover:bg-[#1268F4]`}>
+          <Wallet size={14} /> {tr("Registrar pagamento")}
+        </button>
+      )}
+      {!r.payment && !r.external_debtor && r.creditor_id === user.id && (
+        <span className="text-xs text-[#6B7068] flex items-center gap-1"><Clock size={12} /> {tr("Aguardando pagamento")}</span>
+      )}
+      {r.payment?.status === "sent" && r.payment.is_sender && (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-amber-700 flex items-center gap-1">
+            <Clock size={12} /> {tr("Aguardando confirmação")}
+          </span>
+          <button onClick={() => closePayment(r, "cancel")}
+            className="min-h-[40px] text-xs font-medium text-rose-600 hover:underline"
+            data-testid={`cancel-payment-${i}`}>
+            {tr("Cancelar")}
+          </button>
+        </div>
+      )}
+      {r.payment?.status === "sent" && r.payment.is_receiver && (
+        <div className="grid grid-cols-2 gap-2 md:flex md:flex-wrap">
+          <button onClick={() => openWalletDialog("confirm", r)}
+            className={`${primaryAction} bg-emerald-700 text-white hover:bg-emerald-800`}
+            data-testid={`confirm-payment-${i}`}>
+            <Check size={14} /> {tr("Confirmar recebimento")}
+          </button>
+          <button onClick={() => closePayment(r, "reject")}
+            className={`${primaryAction} border border-rose-200 text-rose-700 hover:bg-rose-50`}
+            data-testid={`reject-payment-${i}`}>
+            <Ban size={14} /> {tr("Rejeitar")}
+          </button>
+        </div>
+      )}
+      {r.payment?.status === "disputed" && (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-rose-700 flex items-center gap-1">
+            <Ban size={12} /> {tr("Pagamento em contestação")}
+          </span>
+          {r.payment.is_receiver && (
+            <button onClick={() => openWalletDialog("confirm", r)}
+              className="min-h-[40px] text-xs font-medium text-emerald-700 hover:underline"
+              data-testid={`confirm-disputed-payment-${i}`}>
+              {tr("Confirmar após verificar")}
+            </button>
+          )}
+          {r.payment.is_sender && (
+            <button onClick={() => closePayment(r, "cancel")}
+              className="min-h-[40px] text-xs font-medium text-rose-600 hover:underline"
+              data-testid={`cancel-disputed-payment-${i}`}>
+              {tr("Cancelar registro")}
+            </button>
+          )}
+        </div>
+      )}
+      {["confirming", "cancelling"].includes(r.payment?.status) && (
+        <span className="text-xs text-[#6B7068] flex items-center gap-1">
+          <Clock size={12} /> {tr("Processando confirmação...")}
+        </span>
+      )}
+    </>
+  );
+
+  // Original amount when the expense was in another currency.
+  const originalAmount = (r) => (
+    r.settlement_currency && r.settlement_currency !== curr && r.settlement_amount
+      ? fmtMoney(r.settlement_amount, r.settlement_currency)
+      : null
+  );
 
   const paymentAccounts = accounts.filter(account => (
     (account.currency || curr) === paymentDialog?.row?.settlement_currency
@@ -235,14 +325,14 @@ export default function Settlements() {
                 <div className="mt-4 flex gap-2">
                   {s.net > 0 && !s.user?.external && (
                     <button onClick={() => nudge(s.user?.id, s.user?.name)} data-testid={`nudge-${s.user?.id}`}
-                      className="flex-1 px-3 py-1.5 rounded-lg text-xs border border-[#061B4A] text-[#061B4A] hover:bg-[#061B4A] hover:text-white flex items-center justify-center gap-1 transition-colors">
+                      className="flex-1 min-h-[40px] px-3 py-2 rounded-xl text-sm border border-[#061B4A] text-[#061B4A] hover:bg-[#061B4A] hover:text-white flex items-center justify-center gap-1.5 transition-colors">
                       <Bell size={12} /> {tr("Cutucar")}
                     </button>
                   )}
                   {s.net < 0 && (
-                    <div className="text-xs text-[#6B7068] flex items-center gap-1.5">
+                    <a href="#pending-settlements" className="text-xs font-medium text-[#1268F4] flex items-center gap-1.5 min-h-[32px]">
                       <Wallet size={12} /> {tr("Pague pelos lançamentos abaixo")}
-                    </div>
+                    </a>
                   )}
                 </div>
               </div>
@@ -257,28 +347,28 @@ export default function Settlements() {
             )}
             <div className="space-y-2">
               {(data.transfers || []).map((t, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-[#F1EFE7]" data-testid={`transfer-${i}`}>
-                  <div className="flex items-center gap-3 text-sm">
+                <div key={i} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#F1EFE7]" data-testid={`transfer-${i}`}>
+                  <div className="flex min-w-0 items-center gap-2 text-sm">
                     <Initials name={t.debtor?.name} color={t.debtor?.avatar_color} size={28} />
-                    <span className="font-medium">{t.debtor?.name}</span>
-                    <span className="text-[#6B7068]">paga</span>
-                    <span className="font-semibold text-[#061B4A]">{fmtMoney(t.amount, curr)}</span>
-                    <span className="text-[#6B7068]">para</span>
+                    <span className="truncate font-medium">{t.debtor?.name}</span>
+                    <ArrowRight size={14} className="flex-shrink-0 text-[#6B7068]" aria-label={tr("paga para")} />
                     <Initials name={t.creditor?.name} color={t.creditor?.avatar_color} size={28} />
-                    <span className="font-medium">{t.creditor?.name}</span>
+                    <span className="truncate font-medium">{t.creditor?.name}</span>
                   </div>
+                  <span className="whitespace-nowrap font-semibold text-[#061B4A]">{fmtMoney(t.amount, curr)}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="card-soft overflow-x-auto p-0">
+          {isDesktop ? (
+          <div className="card-soft overflow-x-auto p-0" id="pending-settlements">
             <h3 className="text-lg font-semibold p-4 pb-2" style={{ fontFamily: "Outfit" }}>{tr("Lançamentos pendentes")}</h3>
             <table className="w-full text-sm">
               <thead className="bg-[#F1EFE7] text-[#6B7068]">
                 <tr>
                   <th className="text-left py-3 px-4">{tr("Devedor")}</th>
-                  <th className="text-left py-3 px-4">Para</th>
+                  <th className="text-left py-3 px-4">{tr("Para")}</th>
                   <th className="text-left py-3 px-4">{tr("Despesa")}</th>
                   <th className="text-left py-3 px-4">{tr("Data")}</th>
                   <th className="text-right py-3 px-4">{tr("Valor")}</th>
@@ -303,81 +393,48 @@ export default function Settlements() {
                     </td>
                     <td className="py-3 px-4">{r.title}</td>
                     <td className="py-3 px-4">{fmtDate(r.date)}</td>
-                    <td className="py-3 px-4 text-right font-semibold">{fmtMoney(r.amount, curr)}</td>
+                    <td className="py-3 px-4 text-right font-semibold">
+                      {fmtMoney(r.amount, curr)}
+                      {originalAmount(r) && <div className="text-xs font-normal text-[#6B7068]">{originalAmount(r)}</div>}
+                    </td>
                     <td className="py-3 px-4 min-w-[190px]">
-                      {!r.payment && r.external_debtor && r.managed_by_user && (
-                        <button onClick={() => confirmExternalPayment(r)} data-testid={`confirm-external-${i}`}
-                          className="px-3 py-1.5 rounded-lg text-xs bg-[#061B4A] text-white hover:bg-[#1268F4] flex items-center gap-1">
-                          <Check size={12} /> {tr("Confirmar manualmente")}
-                        </button>
-                      )}
-                      {!r.payment && !r.external_debtor && r.debtor_id === user.id && (
-                        <button onClick={() => openWalletDialog("send", r)} data-testid={`send-payment-${i}`}
-                          className="px-3 py-1.5 rounded-lg text-xs bg-[#061B4A] text-white hover:bg-[#1268F4] flex items-center gap-1">
-                          <Wallet size={12} /> {tr("Registrar pagamento")}
-                        </button>
-                      )}
-                      {!r.payment && !r.external_debtor && r.creditor_id === user.id && (
-                        <span className="text-xs text-[#6B7068]">{tr("Aguardando pagamento")}</span>
-                      )}
-                      {r.payment?.status === "sent" && r.payment.is_sender && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs text-amber-700 flex items-center gap-1">
-                            <Clock size={12} /> {tr("Aguardando confirmação")}
-                          </span>
-                          <button onClick={() => closePayment(r, "cancel")}
-                            className="text-xs text-rose-600 hover:underline"
-                            data-testid={`cancel-payment-${i}`}>
-                            {tr("Cancelar")}
-                          </button>
-                        </div>
-                      )}
-                      {r.payment?.status === "sent" && r.payment.is_receiver && (
-                        <div className="flex flex-wrap gap-2">
-                          <button onClick={() => openWalletDialog("confirm", r)}
-                            className="px-3 py-1.5 rounded-lg text-xs bg-emerald-700 text-white hover:bg-emerald-800 flex items-center gap-1"
-                            data-testid={`confirm-payment-${i}`}>
-                            <Check size={12} /> {tr("Confirmar recebimento")}
-                          </button>
-                          <button onClick={() => closePayment(r, "reject")}
-                            className="px-3 py-1.5 rounded-lg text-xs border border-rose-200 text-rose-700 hover:bg-rose-50 flex items-center gap-1"
-                            data-testid={`reject-payment-${i}`}>
-                            <Ban size={12} /> {tr("Rejeitar")}
-                          </button>
-                        </div>
-                      )}
-                      {r.payment?.status === "disputed" && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs text-rose-700 flex items-center gap-1">
-                            <Ban size={12} /> {tr("Pagamento em contestação")}
-                          </span>
-                          {r.payment.is_receiver && (
-                            <button onClick={() => openWalletDialog("confirm", r)}
-                              className="text-xs text-emerald-700 hover:underline"
-                              data-testid={`confirm-disputed-payment-${i}`}>
-                              {tr("Confirmar após verificar")}
-                            </button>
-                          )}
-                          {r.payment.is_sender && (
-                            <button onClick={() => closePayment(r, "cancel")}
-                              className="text-xs text-rose-600 hover:underline"
-                              data-testid={`cancel-disputed-payment-${i}`}>
-                              {tr("Cancelar registro")}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {["confirming", "cancelling"].includes(r.payment?.status) && (
-                        <span className="text-xs text-[#6B7068] flex items-center gap-1">
-                          <Clock size={12} /> {tr("Processando confirmação...")}
-                        </span>
-                      )}
+                      {renderRowActions(r, i)}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          ) : (
+            <div className="space-y-2" id="pending-settlements" data-testid="pending-settlements-list">
+              <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Lançamentos pendentes")}</h3>
+              {data.rows.length === 0 && (
+                <div className="card-soft py-10 text-center text-[#6B7068]">{tr("Nenhum acerto pendente")}</div>
+              )}
+              {data.rows.map((r, i) => (
+                <div key={i} className="card-soft p-4 space-y-3" data-testid={`row-settlement-${i}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-[#1A1C1A]">{r.title}</div>
+                      <div className="text-xs text-[#6B7068]">{fmtDate(r.date)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="whitespace-nowrap font-semibold text-[#1A1C1A]">{fmtMoney(r.amount, curr)}</div>
+                      {originalAmount(r) && <div className="text-xs text-[#6B7068]">{originalAmount(r)}</div>}
+                    </div>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-2 text-sm">
+                    <Initials name={r.debtor?.name} color={r.debtor?.avatar_color} size={24} />
+                    <span className="truncate">{r.debtor?.name}</span>
+                    <ArrowRight size={14} className="flex-shrink-0 text-[#6B7068]" aria-label={tr("paga para")} />
+                    <Initials name={r.creditor?.name} color={r.creditor?.avatar_color} size={24} />
+                    <span className="truncate">{r.creditor?.name}</span>
+                  </div>
+                  <div className="[&>button]:w-full">{renderRowActions(r, i)}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -385,7 +442,7 @@ export default function Settlements() {
         <div className="space-y-4" data-testid="history-section">
           <form onSubmit={applyHistoryFilters} className="card-soft space-y-3" data-testid="history-filters">
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-              <div className="relative md:col-span-2">
+              <div className="relative flex gap-2 md:col-span-2">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B7068]" />
                 <Input
                   value={historyFilters.search}
@@ -394,7 +451,13 @@ export default function Settlements() {
                   className="pl-9"
                   data-testid="history-search"
                 />
+                <button type="button" onClick={() => setHistoryFiltersOpen(value => !value)}
+                  aria-expanded={historyFiltersOpen} aria-label={tr("Filtros")} data-testid="history-filters-toggle"
+                  className="md:hidden flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-[#E5E4E0] text-[#6B7068]">
+                  <SlidersHorizontal size={16} />
+                </button>
               </div>
+              <div className={`${historyFiltersOpen ? "grid" : "hidden"} md:contents grid-cols-1 gap-3`}>
               <Select value={historyFilters.period} onValueChange={value => updateHistoryFilter("period", value)}>
                 <SelectTrigger data-testid="history-period"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -421,6 +484,7 @@ export default function Settlements() {
                   {CURRENCIES.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
                 </SelectContent>
               </Select>
+              </div>
             </div>
 
             {historyFilters.period === "date" && (
@@ -472,7 +536,7 @@ export default function Settlements() {
               </div>
             )}
 
-            <div className="flex flex-wrap gap-2 justify-end">
+            <div className={`${historyFiltersOpen ? "flex" : "hidden"} md:flex flex-wrap gap-2 justify-end`}>
               <button
                 type="button"
                 onClick={clearHistoryFilters}
@@ -497,11 +561,12 @@ export default function Settlements() {
               <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Histórico de acertos")}</h3>
               <span className="text-xs text-[#6B7068]">{tr("{count} resultado(s)", { count: history.length })}</span>
             </div>
+            {isDesktop ? (
             <table className="w-full text-sm">
               <thead className="bg-[#F1EFE7] text-[#6B7068]">
                 <tr>
-                  <th className="text-left py-3 px-4">De</th>
-                  <th className="text-left py-3 px-4">Para</th>
+                  <th className="text-left py-3 px-4">{tr("De")}</th>
+                  <th className="text-left py-3 px-4">{tr("Para")}</th>
                   <th className="text-left py-3 px-4">{tr("Despesa")}</th>
                   <th className="text-left py-3 px-4">{tr("Quitado em")}</th>
                   <th className="text-right py-3 px-4">{tr("Valor")}</th>
@@ -537,6 +602,30 @@ export default function Settlements() {
                 ))}
               </tbody>
             </table>
+            ) : (
+              <div className="divide-y divide-[#E5E4E0]" data-testid="history-list">
+                {!historyLoading && history.length === 0 && (
+                  <div className="py-10 text-center text-[#6B7068]">{tr("Nenhum acerto encontrado")}</div>
+                )}
+                {history.map((h, i) => (
+                  <div key={h.id || `${h.expense_id}-${h.debtor_id}-${i}`} className="px-4 py-3" data-testid={`history-row-${i}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-[#1A1C1A]">{h.expense_title || "—"}</div>
+                        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-[#6B7068]">
+                          <span className="truncate">{h.debtor?.name}</span>
+                          <ArrowRight size={12} className="flex-shrink-0" aria-label={tr("paga para")} />
+                          <span className="truncate">{h.creditor?.name}</span>
+                          <span aria-hidden="true">·</span>
+                          <span className="whitespace-nowrap">{fmtDate(h.paid_at)}</span>
+                        </div>
+                      </div>
+                      <span className="whitespace-nowrap text-sm font-semibold text-emerald-600">{fmtMoney(h.amount, h.currency || curr)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -657,6 +746,41 @@ export default function Settlements() {
                   ? tr("Confirmar envio")
                   : tr("Confirmar recebimento")
               )}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(closeDialog)} onOpenChange={open => !open && !closeBusy && setCloseDialog(null)}>
+        <DialogContent className="max-w-md" data-testid="settlement-close-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {closeDialog?.action === "cancel" ? tr("Cancelar registro") : tr("Rejeitar")}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#6B7068]">
+            {closeDialog?.action === "cancel"
+              ? tr("Cancelar o registro? O app criará uma reversão na sua carteira. Faça isso somente se o pagamento não aconteceu.")
+              : tr("Rejeitar este pagamento? O débito de quem enviou será mantido e o acerto ficará em contestação.")}
+          </p>
+          <div className="space-y-2">
+            <Label htmlFor="settlement-close-reason">
+              {closeDialog?.action === "cancel"
+                ? tr("Informe o motivo do cancelamento (opcional)")
+                : tr("Informe o motivo da contestação (opcional)")}
+            </Label>
+            <Textarea id="settlement-close-reason" value={closeReason}
+              onChange={event => setCloseReason(event.target.value)} data-testid="settlement-close-reason" />
+          </div>
+          <DialogFooter className="gap-2">
+            <button type="button" onClick={() => setCloseDialog(null)} disabled={closeBusy}
+              className="min-h-[40px] px-4 py-2 rounded-xl text-sm border border-[#E5E4E0]">
+              {tr("Voltar")}
+            </button>
+            <button type="button" onClick={submitClosePayment} disabled={closeBusy}
+              className="min-h-[40px] px-4 py-2 rounded-xl text-sm bg-[#D9453B] text-white disabled:opacity-50"
+              data-testid="settlement-close-submit">
+              {closeBusy ? tr("Salvando...") : (closeDialog?.action === "cancel" ? tr("Cancelar registro") : tr("Rejeitar"))}
             </button>
           </DialogFooter>
         </DialogContent>
