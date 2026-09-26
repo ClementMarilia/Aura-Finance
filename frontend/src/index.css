@@ -178,6 +178,7 @@ html.dark .bg-\[\#FAFAF7\] { background-color: var(--bg) !important; }
 
 /* Bordas */
 html.dark .border-\[\#E5E4E0\] { border-color: var(--border) !important; }
+html.dark .divide-\[\#E5E4E0\] > :not([hidden]) ~ :not([hidden]) { border-color: var(--border) !important; }
 html.dark .border-\[\#D6D3CA\] { border-color: var(--border) !important; }
 
 /* Textos */
