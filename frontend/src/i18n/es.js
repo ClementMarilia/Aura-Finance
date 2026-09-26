@@ -1036,4 +1036,11 @@ export default {
   "Editar carteira": "Editar cartera",
   "Ex: Nubank, Poupança, Tesouro": "Ej: Nubank, Ahorros, Tesoro",
   "\"{name}\" será removida. Só é possível excluir carteiras sem histórico, para que nenhum lançamento suma dos saldos.": "\"{name}\" se eliminará. Solo se pueden eliminar carteras sin historial, para que ningún movimiento desaparezca de los saldos.",
+  "Carteira arquivada": "Cartera archivada",
+  "Carteira restaurada": "Cartera restaurada",
+  "Arquivadas ({count})": "Archivadas ({count})",
+  "Desarquivar": "Desarchivar",
+  "Arquivar": "Archivar",
+  "Transfira o saldo antes de arquivar": "Transfiere el saldo antes de archivar",
+  "Para arquivar, transfira o saldo desta carteira para outra antes.": "Para archivar, transfiere antes el saldo de esta cartera a otra.",
 };

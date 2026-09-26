@@ -1036,4 +1036,11 @@ export default {
   "Editar carteira": "Modifica conto",
   "Ex: Nubank, Poupança, Tesouro": "Es: Revolut, Risparmi, BTP",
   "\"{name}\" será removida. Só é possível excluir carteiras sem histórico, para que nenhum lançamento suma dos saldos.": "\"{name}\" verrà rimosso. Si possono eliminare solo i conti senza storico, così nessun movimento sparisce dai saldi.",
+  "Carteira arquivada": "Conto archiviato",
+  "Carteira restaurada": "Conto ripristinato",
+  "Arquivadas ({count})": "Archiviati ({count})",
+  "Desarquivar": "Ripristina",
+  "Arquivar": "Archivia",
+  "Transfira o saldo antes de arquivar": "Trasferisci il saldo prima di archiviare",
+  "Para arquivar, transfira o saldo desta carteira para outra antes.": "Per archiviare, trasferisci prima il saldo di questo conto su un altro.",
 };

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Pencil, Trash2, Wallet, PiggyBank, Banknote, CreditCard, TrendingUp, ArrowLeftRight, Scale, ChevronRight, ChevronDown } from "lucide-react";
+import { Plus, Pencil, Trash2, Wallet, PiggyBank, Banknote, CreditCard, TrendingUp, ArrowLeftRight, Scale, ChevronRight, ChevronDown, Archive, ArchiveRestore } from "lucide-react";
 import { toast } from "sonner";
 import {
   BALANCE_COMPONENTS,
@@ -53,6 +53,7 @@ export default function Wallets() {
   const [breakdown, setBreakdown] = useState(null);
   const [breakdownAccount, setBreakdownAccount] = useState(null);
   const [showEmpty, setShowEmpty] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [reconcileForm, setReconcileForm] = useState({ actual_balance: "", note: "" });
   const [editingReconciliation, setEditingReconciliation] = useState(null);
@@ -122,7 +123,7 @@ export default function Wallets() {
     return () => { active = false; };
   }, [transferOpen, transfer.from_account_id, transfer.to_account_id, transfer.date, fromAccount, toAccount, curr]);
 
-  const load = () => api.get("/accounts").then(r => setList(r.data || []));
+  const load = () => api.get("/accounts", { params: { include_archived: true } }).then(r => setList(r.data || []));
   useEffect(() => { load(); }, []);
 
   const openTransfer = () => {
@@ -172,19 +173,23 @@ export default function Wallets() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
+  const holdsMoney = (a) => Math.abs(Number(a.balance) || 0) >= 0.005;
+  // Archived wallets are always empty; one that holds money again stays in
+  // the main list so no balance is ever hidden.
+  const archivedList = list.filter(a => a.archived && !holdsMoney(a));
+  const currentList = list.filter(a => !a.archived || holdsMoney(a));
   const visibleList = currencyFilter
-    ? list.filter(account => (account.currency || curr) === currencyFilter)
-    : list;
+    ? currentList.filter(account => (account.currency || curr) === currencyFilter)
+    : currentList;
   // A currency filter shows the total in that currency; otherwise every wallet
   // is converted to the user's base currency.
   const totalCurrency = currencyFilter || curr;
   const total = visibleList.reduce((sum, a) => (
     sum + (currencyFilter ? (a.balance ?? 0) : (a.balance_base ?? a.balance ?? 0))
   ), 0);
-  const walletCurrencies = new Set(list.map(a => a.currency || curr));
-  const nonZero = (a) => Math.abs(Number(a.balance) || 0) >= 0.005;
-  const activeWallets = visibleList.filter(nonZero);
-  const emptyWallets = visibleList.filter(a => !nonZero(a));
+  const walletCurrencies = new Set(currentList.map(a => a.currency || curr));
+  const activeWallets = visibleList.filter(holdsMoney);
+  const emptyWallets = visibleList.filter(a => !holdsMoney(a));
   const shownWallets = showEmpty ? [...activeWallets, ...emptyWallets] : activeWallets;
 
   const openNew = () => { setEditing(null); setForm({ ...emptyForm, currency: curr }); setOpen(true); };
@@ -215,6 +220,17 @@ export default function Wallets() {
       toast.error(formatApiError(err));
     } finally {
       setConfirmDel(null);
+    }
+  };
+
+  const setArchived = async (account, archived) => {
+    try {
+      await api.post(`/accounts/${account.id}/${archived ? "archive" : "unarchive"}`);
+      toast.success(archived ? tr("Carteira arquivada") : tr("Carteira restaurada"));
+      setBreakdownOpen(false);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err));
     }
   };
 
@@ -412,6 +428,30 @@ export default function Wallets() {
         )}
       </div>
 
+      {archivedList.length > 0 && (
+        <div className="card-soft p-0 overflow-hidden" data-testid="wallets-archived">
+          <button type="button" onClick={() => setShowArchived(value => !value)} aria-expanded={showArchived}
+            data-testid="wallets-toggle-archived"
+            className="flex min-h-[52px] w-full items-center justify-between gap-2 px-4 text-sm text-[#6B7068] hover:text-[#1A1C1A]">
+            <span className="flex items-center gap-2"><Archive size={16} /> {tr("Arquivadas ({count})", { count: archivedList.length })}</span>
+            <ChevronDown size={16} className={showArchived ? "rotate-180" : ""} />
+          </button>
+          {showArchived && (
+            <div className="divide-y divide-[#E5E4E0] border-t border-[#E5E4E0]">
+              {archivedList.map(a => (
+                <div key={a.id} className="flex items-center justify-between gap-3 px-4 py-2" data-testid={`wallet-archived-${a.id}`}>
+                  <span className="min-w-0 truncate text-sm text-[#6B7068]">{tr(a.name)}</span>
+                  <button type="button" onClick={() => setArchived(a, false)} data-testid={`wallet-unarchive-${a.id}`}
+                    className="flex min-h-[40px] items-center gap-1.5 rounded-xl px-3 text-xs font-medium text-[#1268F4] hover:bg-[#F1EFE7]">
+                    <ArchiveRestore size={14} /> {tr("Desarquivar")}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle style={{ fontFamily: "Outfit" }}>{editing ? tr("Editar carteira") : tr("Nova carteira")}</DialogTitle></DialogHeader>
@@ -542,13 +582,27 @@ export default function Wallets() {
                 </div>
               </div>
 
-              <DialogFooter className="grid grid-cols-2 gap-2 sm:flex sm:space-x-0">
+              {breakdownAccount && Math.abs(Number(breakdown.current_balance) || 0) >= 0.005 && (
+                <p className="text-xs text-[#6B7068]" data-testid="wallet-archive-hint">
+                  {tr("Para arquivar, transfira o saldo desta carteira para outra antes.")}
+                </p>
+              )}
+              <DialogFooter className="grid grid-cols-3 gap-2 sm:flex sm:space-x-0">
                 {breakdownAccount && (
                   <>
                     <Button type="button" variant="outline" data-testid="wallet-breakdown-edit"
                       onClick={() => { setBreakdownOpen(false); openEdit(breakdownAccount); }}
                       className="min-h-[44px] rounded-xl">
                       <Pencil size={15} className="mr-1.5" /> {tr("Editar")}
+                    </Button>
+                    <Button type="button" variant="outline" data-testid="wallet-breakdown-archive"
+                      onClick={() => setArchived(breakdownAccount, true)}
+                      disabled={Math.abs(Number(breakdown.current_balance) || 0) >= 0.005}
+                      title={Math.abs(Number(breakdown.current_balance) || 0) >= 0.005
+                        ? tr("Transfira o saldo antes de arquivar")
+                        : tr("Arquivar")}
+                      className="min-h-[44px] rounded-xl">
+                      <Archive size={15} className="mr-1.5" /> {tr("Arquivar")}
                     </Button>
                     <Button type="button" variant="outline" data-testid="wallet-breakdown-delete"
                       onClick={() => setConfirmDel(breakdownAccount)}
@@ -561,7 +615,7 @@ export default function Wallets() {
                   type="button"
                   onClick={openReconciliation}
                   data-testid="wallet-reconcile-open"
-                  className="col-span-2 min-h-[44px] rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
+                  className="col-span-3 min-h-[44px] rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
                 >
                   <Scale size={16} className="mr-1.5" />
                   {tr("Conciliar saldo")}

@@ -1036,4 +1036,11 @@ export default {
   "Editar carteira": "Edit wallet",
   "Ex: Nubank, Poupança, Tesouro": "E.g. Nubank, Savings, Treasury",
   "\"{name}\" será removida. Só é possível excluir carteiras sem histórico, para que nenhum lançamento suma dos saldos.": "\"{name}\" will be removed. Only wallets without history can be deleted, so no entry disappears from your balances.",
+  "Carteira arquivada": "Wallet archived",
+  "Carteira restaurada": "Wallet restored",
+  "Arquivadas ({count})": "Archived ({count})",
+  "Desarquivar": "Unarchive",
+  "Arquivar": "Archive",
+  "Transfira o saldo antes de arquivar": "Transfer the balance before archiving",
+  "Para arquivar, transfira o saldo desta carteira para outra antes.": "To archive, first transfer this wallet's balance to another one.",
 };

@@ -3136,6 +3136,7 @@ async def load_account_balance_breakdown(account: dict, user: dict) -> dict:
 @api.get("/accounts")
 async def list_accounts(
     currency: Optional[str] = None,
+    include_archived: bool = False,
     user=Depends(get_current_user),
 ):
     accounts = await db.accounts.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
@@ -3165,6 +3166,14 @@ async def list_accounts(
                 a["balance_base"] = round(amount_in_currency(a, base_currency, "balance"), 2)
                 a["balance_base_unavailable"] = True
         a["base_currency"] = base_currency
+        a["archived"] = bool(a.get("archived"))
+    if not include_archived:
+        # Safety net: an archived wallet that holds money again (e.g. an old
+        # entry was edited) stays visible, so no balance is ever hidden.
+        accounts = [
+            a for a in accounts
+            if not a["archived"] or abs(a["balance"]) >= 0.005
+        ]
     return accounts
 
 
@@ -3429,6 +3438,51 @@ async def account_references(aid: str) -> list:
     return usage
 
 
+async def account_archive_blockers(aid: str, account: dict, user: dict) -> list:
+    blockers = []
+    breakdowns = await load_account_balance_breakdowns([account], user)
+    balance = breakdowns[0]["current_balance"] if breakdowns else 0
+    if abs(balance) >= 0.005:
+        blockers.append("saldo diferente de zero (transfira o saldo antes)")
+    if await db.recurrences.count_documents({"account_id": aid, "active": True}):
+        blockers.append("recorrência ativa usando esta carteira")
+    purchases = await db.installment_purchases.find(
+        {"account_id": aid}, {"_id": 0, "id": 1},
+    ).to_list(1000)
+    if purchases and await db.installments.count_documents({
+        "purchase_id": {"$in": [p["id"] for p in purchases]}, "status": "pending",
+    }):
+        blockers.append("parcelas pendentes nesta carteira")
+    return blockers
+
+
+@api.post("/accounts/{aid}/archive")
+async def archive_account(aid: str, user=Depends(get_current_user)):
+    account = await db.accounts.find_one({"id": aid, "user_id": user["id"]}, {"_id": 0})
+    if not account:
+        raise HTTPException(404, "Carteira não encontrada")
+    account["currency"] = normalize_currency(account.get("currency"), normalize_currency(user.get("currency")))
+    blockers = await account_archive_blockers(aid, account, user)
+    if blockers:
+        raise HTTPException(409, "Não é possível arquivar: " + "; ".join(blockers) + ".")
+    await db.accounts.update_one(
+        {"id": aid, "user_id": user["id"]},
+        {"$set": {"archived": True, "archived_at": now_iso()}},
+    )
+    return {"ok": True, "archived": True}
+
+
+@api.post("/accounts/{aid}/unarchive")
+async def unarchive_account(aid: str, user=Depends(get_current_user)):
+    result = await db.accounts.update_one(
+        {"id": aid, "user_id": user["id"]},
+        {"$set": {"archived": False}, "$unset": {"archived_at": ""}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, "Carteira não encontrada")
+    return {"ok": True, "archived": False}
+
+
 @api.delete("/accounts/{aid}")
 async def delete_account(aid: str, user=Depends(get_current_user)):
     account = await db.accounts.find_one({"id": aid, "user_id": user["id"]}, {"_id": 0, "id": 1})
@@ -3440,7 +3494,7 @@ async def delete_account(aid: str, user=Depends(get_current_user)):
         raise HTTPException(
             409,
             f"Esta carteira ainda tem histórico ({summary}). Excluí-la faria esses "
-            "registros sumirem dos saldos. Mova ou exclua esses registros antes.",
+            "registros sumirem dos saldos. Você pode arquivá-la para tirá-la das listas.",
         )
     await db.accounts.delete_one({"id": aid, "user_id": user["id"]})
     return {"ok": True}
