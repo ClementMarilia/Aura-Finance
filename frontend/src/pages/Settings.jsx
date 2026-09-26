@@ -18,6 +18,7 @@ import EmailTemplateEditor from "@/components/EmailTemplateEditor";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { translate as tr } from "@/i18n";
 import { useNavigate } from "react-router-dom";
+import { useThemedColor } from "@/lib/colors";
 
 const NOTIF_LABELS = {
   shared_expense_added: { title: tr("Despesas compartilhadas"), desc: tr("Quando você é adicionado a uma nova despesa.") },
@@ -51,6 +52,7 @@ const categoryNameKey = (value) => String(value || "")
   .toLocaleLowerCase();
 
 export default function Settings() {
+  const themed = useThemedColor();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const {
@@ -535,7 +537,7 @@ export default function Settings() {
               return (
                 <div key={c.id} className="flex items-center justify-between p-3 border border-[#E5E4E0] rounded-xl" data-testid={`cat-row-${c.id}`}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: c.color }} />
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: themed(c.color) }} />
                     <span className="truncate">{tr(c.name)}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${KIND_BADGE[kind]}`}>
                       {KIND_LABEL[kind]}

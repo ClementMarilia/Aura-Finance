@@ -16,6 +16,7 @@ import { exportCSV } from "@/lib/exporters";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 
 import { getMonthNames, translate as tr } from "@/i18n";
+import { useThemedColor } from "@/lib/colors";
 const STATUS_LABEL = { paid: tr("Pago"), pending: tr("Pendente"), cancelled: tr("Cancelado") };
 const TYPE_LABEL = { income: tr("Receita"), expense: tr("Despesa"), transfer: tr("Transferência") };
 const MONTHS = getMonthNames("short");
@@ -94,6 +95,7 @@ export default function Transactions() {
   const [bulkConfirm, setBulkConfirm] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const isDesktop = useIsDesktop();
+  const themed = useThemedColor();
   const loadRequestRef = useRef(0);
   const {
     status: filterStatus,
@@ -884,7 +886,7 @@ export default function Transactions() {
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-[#6B7068]">
                       {cat && (
                         <span className="inline-flex items-center gap-1">
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{tr(cat.name)}
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: themed(cat.color) }} />{tr(cat.name)}
                         </span>
                       )}
                       {cat && <span aria-hidden="true">·</span>}
@@ -952,7 +954,7 @@ export default function Transactions() {
                   </td>
                   <td className="py-3 px-4">
                     {cat ? <span className="inline-flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{tr(cat.name)}
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: themed(cat.color) }} />{tr(cat.name)}
                     </span> : "—"}
                   </td>
                   <td className="py-3 px-4 whitespace-nowrap">{t.person?.name || "—"}</td>

@@ -16,9 +16,11 @@ import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 import { translate as tr } from "@/i18n";
+import { useThemedColor } from "@/lib/colors";
 const emptyForm = { title: "", target_amount: "", current_amount: "", deadline: "", color: "#061B4A", account_id: "", currency: "EUR" };
 
 export default function Goals() {
+  const themed = useThemedColor();
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
   const [goals, setGoals] = useState([]);
@@ -153,7 +155,7 @@ export default function Goals() {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white"
-                    style={{ backgroundColor: g.color }}>
+                    style={{ backgroundColor: themed(g.color) }}>
                     <Target size={18} />
                   </div>
                   <div>
@@ -174,7 +176,7 @@ export default function Goals() {
                 <span className="text-sm text-[#6B7068]">de {fmtMoney(g.target_amount, g.currency || curr)}</span>
               </div>
               <div className="mt-2 h-2.5 bg-[#F1EFE7] rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: done ? "#2C7A51" : g.color }} />
+                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: done ? "#2C7A51" : themed(g.color) }} />
               </div>
               <div className="mt-1.5 flex items-center justify-between">
                 <span className={`text-xs font-medium ${done ? "text-emerald-600" : "text-[#6B7068]"}`}>{done ? tr("Concluída! 🎉") : `${pct}%`}</span>

@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import { fmtMoney } from "@/lib/api";
 import { translate as tr } from "@/i18n";
+import { useThemedColor } from "@/lib/colors";
 
 const heading = { fontFamily: "Outfit" };
 
@@ -218,6 +219,7 @@ export function CashflowCard({ evolution, monthLabels, currency }) {
 }
 
 export function CategoryCard({ breakdown, currency, to }) {
+  const themed = useThemedColor();
   return (
     <section className="card-soft p-4" data-testid="dashboard-categories">
       <SectionTitle>{tr("Gastos por categoria")}</SectionTitle>
@@ -230,7 +232,7 @@ export function CategoryCard({ breakdown, currency, to }) {
               <PieChart>
                 <Pie data={breakdown.items} dataKey="amount" nameKey="category"
                   innerRadius={50} outerRadius={68} paddingAngle={2} stroke="none" isAnimationActive={false}>
-                  {breakdown.items.map((item) => <Cell key={item.category} fill={item.color} />)}
+                  {breakdown.items.map((item) => <Cell key={item.category} fill={themed(item.color)} />)}
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
@@ -246,7 +248,7 @@ export function CategoryCard({ breakdown, currency, to }) {
                   <span className="w-9 flex-shrink-0 rounded-md bg-[#F1EFE7] py-0.5 text-center text-[11px] font-semibold text-[#1A1C1A]">
                     {item.percent}%
                   </span>
-                  <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: themed(item.color) }} />
                   <span className="min-w-0 flex-1 truncate text-[#1A1C1A]">{tr(item.category)}</span>
                   <span className="money-value font-medium text-[#1A1C1A]">{fmtMoney(item.amount, currency)}</span>
                 </Link>

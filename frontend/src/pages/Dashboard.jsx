@@ -21,6 +21,7 @@ import {
   ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area
 } from "recharts";
 import { monthForecast, monthOverMonth, splitAccounts, topCategories } from "@/lib/dashboardSummary";
+import { useThemedColor } from "@/lib/colors";
 import {
   AccountsCard, CashflowCard, CategoryCard, CommitmentsCard, ForecastHero, KpiTile,
 } from "@/components/dashboard/DashboardBlocks";
@@ -42,6 +43,7 @@ export default function Dashboard() {
   const [expandedInsight, setExpandedInsight] = useState(null);
   const [showInsightHistory, setShowInsightHistory] = useState(false);
   const [showAllInsights, setShowAllInsights] = useState(false);
+  const themed = useThemedColor();
   const [insightHistory, setInsightHistory] = useState(null);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
@@ -624,7 +626,7 @@ export default function Dashboard() {
               </div>
               <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#F1EFE7]">
                 <div className="h-full rounded-full"
-                  style={{ width: `${r.percent}%`, backgroundColor: ["#061B4A","#D96C5B","#E5A83B","#7EA193","#C7BCA1"][i] }} />
+                  style={{ width: `${r.percent}%`, backgroundColor: themed(["#061B4A","#D96C5B","#E5A83B","#7EA193","#C7BCA1"][i]) }} />
               </div>
             </div>
           ))}

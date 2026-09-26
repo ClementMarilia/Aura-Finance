@@ -14,6 +14,7 @@ import {
   PieChart, Pie, Cell,
 } from "recharts";
 import CustomReport from "@/components/CustomReport";
+import { useThemedColor } from "@/lib/colors";
 
 const MONTHS = getMonthNames("short");
 const MONTHS_LONG = getMonthNames("long");
@@ -252,6 +253,7 @@ export default function Reports() {
 }
 
 function MonthlyReport({ data, currency }) {
+  const themed = useThemedColor();
   const summary = data.summary;
   const profile = data.expense_profile;
   const composition = [
@@ -286,7 +288,7 @@ function MonthlyReport({ data, currency }) {
               <ResponsiveContainer>
                 <PieChart>
                   <Pie data={composition} dataKey="value" nameKey="name" innerRadius={58} outerRadius={92} paddingAngle={3}>
-                    {composition.map(item => <Cell key={item.name} fill={item.color} />)}
+                    {composition.map(item => <Cell key={item.name} fill={themed(item.color)} />)}
                   </Pie>
                   <Tooltip formatter={value => fmtMoney(value, currency)} />
                   <Legend />

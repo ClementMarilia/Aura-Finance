@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 import { translate as tr } from "@/i18n";
+import { useThemedColor } from "@/lib/colors";
 const FREQ_LABEL = {
   weekly: tr("Semanal"),
   monthly: tr("Mensal"),
@@ -28,6 +29,7 @@ const emptyForm = {
 };
 
 export default function Recurrences() {
+  const themed = useThemedColor();
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
   const [items, setItems] = useState([]);
@@ -190,7 +192,7 @@ export default function Recurrences() {
               </div>
               {isOpen && (
               <div className="mt-3 border-t border-[#E5E4E0] pt-3 space-y-2" data-testid={`rec-details-${r.id}`}>
-                {cat && <div className="text-xs inline-flex items-center gap-1.5 text-[#6B7068]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{tr(cat.name)}</div>}
+                {cat && <div className="text-xs inline-flex items-center gap-1.5 text-[#6B7068]"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: themed(cat.color) }} />{tr(cat.name)}</div>}
                 {person && (
                   <div className="text-xs text-[#6B7068]">
                     {tr("Pessoa")}: <span className="font-medium text-[#1A1C1A]">{person.name}</span>
