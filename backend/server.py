@@ -4850,14 +4850,36 @@ def compute_splits(amount: float, split_type: str, participants: List[dict]) -> 
         if out and diff:
             out[-1]["owed"] = round(out[-1]["owed"] + diff, 2)
     elif split_type == "manual":
-        for p in participants:
-            out.append({**split_base(p), "owed": float(p.get("amount") or 0)})
+        shares = [round(float(p.get("amount") or 0), 2) for p in participants]
+        if any(share < 0 for share in shares):
+            raise HTTPException(400, "Os valores da divisão não podem ser negativos")
+        # Shares that do not add up to the total would make part of the debt
+        # vanish (or invent debt that was never spent).
+        if round(abs(sum(shares) - amount), 2) > 0.01:
+            raise HTTPException(
+                400,
+                f"A soma das partes ({sum(shares):.2f}) precisa ser igual ao valor total ({amount:.2f})",
+            )
+        for p, share in zip(participants, shares):
+            out.append({**split_base(p), "owed": share})
+        diff = round(amount - sum(shares), 2)
+        if out and diff:
+            out[-1]["owed"] = round(out[-1]["owed"] + diff, 2)
     elif split_type == "percent":
-        for p in participants:
-            out.append({
-                **split_base(p),
-                "owed": round(amount * float(p.get("percent") or 0) / 100.0, 2),
-            })
+        percents = [float(p.get("percent") or 0) for p in participants]
+        if any(percent < 0 for percent in percents):
+            raise HTTPException(400, "Os percentuais da divisão não podem ser negativos")
+        if round(abs(sum(percents) - 100), 2) > 0.01:
+            raise HTTPException(
+                400,
+                f"A soma dos percentuais ({sum(percents):.2f}%) precisa ser 100%",
+            )
+        for p, percent in zip(participants, percents):
+            out.append({**split_base(p), "owed": round(amount * percent / 100.0, 2)})
+        # Same cent-rounding correction as the equal split.
+        diff = round(amount - sum(item["owed"] for item in out), 2)
+        if out and diff:
+            out[-1]["owed"] = round(out[-1]["owed"] + diff, 2)
     return out
 
 

@@ -14,6 +14,7 @@ import { Plus, Trash2, Pencil, FileDown, X, Repeat, CreditCard, Check, SlidersHo
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
+import { defaultAccountFor } from "@/lib/accounts";
 
 import { getMonthNames, translate as tr } from "@/i18n";
 import { useThemedColor } from "@/lib/colors";
@@ -66,12 +67,7 @@ export function transactionPayloadFromForm(form, {
   };
 }
 
-// New income/expense entries start on a wallet so a "paid" entry always moves
-// a wallet balance; otherwise the dashboard and the wallets disagree.
-export function defaultAccountFor(accounts, currency) {
-  if (!accounts?.length) return null;
-  return accounts.find(account => (account.currency || currency) === currency) || accounts[0];
-}
+export { defaultAccountFor };
 
 export default function Transactions() {
   const { user } = useAuth();
