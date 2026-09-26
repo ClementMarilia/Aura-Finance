@@ -9374,6 +9374,30 @@ async def update_goal(gid: str, payload: GoalIn, user=Depends(get_current_user))
     return await db.goals.find_one({"id": gid}, {"_id": 0})
 
 
+async def goal_money_movement(goal: dict, account_id: Optional[str], direction: str, user: dict) -> Optional[dict]:
+    """Transaction fields for money moving into ("in") or out of ("out") a goal.
+
+    - the goal's own linked wallet: no transaction. The money never leaves
+      that wallet; recording an expense/income there made its balance drop
+      on a contribution and rise on a withdrawal although nothing moved
+    - another wallet while the goal has a linked wallet: a transfer
+    - no linked wallet: the money leaves / returns to the tracked wallets
+    """
+    if not account_id:
+        return None
+    linked = goal.get("account_id")
+    if linked and linked == account_id:
+        return None
+    if linked and await db.accounts.find_one({"id": linked, "user_id": user["id"]}, {"_id": 0, "id": 1}):
+        if direction == "in":
+            return {"type": "transfer", "from_account_id": account_id, "to_account_id": linked,
+                    "account_id": None, "category_id": None}
+        return {"type": "transfer", "from_account_id": linked, "to_account_id": account_id,
+                "account_id": None, "category_id": None}
+    return {"type": "expense" if direction == "in" else "income", "account_id": account_id,
+            "from_account_id": None, "to_account_id": None, "category_id": None}
+
+
 @api.post("/goals/{gid}/contribute")
 async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current_user)):
     if body.amount <= 0:
@@ -9386,6 +9410,7 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
     )
 
     # Optionally create a real transaction so balances stay coherent
+    tx = None
     if body.from_account_id:
         src = await db.accounts.find_one({"id": body.from_account_id, "user_id": user["id"]}, {"_id": 0})
         if not src:
@@ -9395,18 +9420,8 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
                 400,
                 "A carteira do aporte deve usar a mesma moeda da meta",
             )
-        linked = goal.get("account_id")
-        if linked and linked != body.from_account_id:
-            dest = await db.accounts.find_one({"id": linked, "user_id": user["id"]}, {"_id": 0})
-            if dest:
-                tx = {"type": "transfer", "from_account_id": body.from_account_id,
-                      "to_account_id": linked, "account_id": None, "category_id": None}
-            else:
-                tx = {"type": "expense", "account_id": body.from_account_id,
-                      "from_account_id": None, "to_account_id": None, "category_id": None}
-        else:
-            tx = {"type": "expense", "account_id": body.from_account_id,
-                  "from_account_id": None, "to_account_id": None, "category_id": None}
+        tx = await goal_money_movement(goal, body.from_account_id, "in", user)
+    if tx:
         meta = await monetary_metadata(
             goal_currency,
             user.get("currency", "EUR"),
@@ -9427,8 +9442,9 @@ async def contribute_goal(gid: str, body: ContributeIn, user=Depends(get_current
             **meta, **tx,
         })
 
+    # Atomic: two contributions at the same time both count.
+    await db.goals.update_one({"id": gid, "user_id": user["id"]}, {"$inc": {"current_amount": round(body.amount, 2)}})
     new_amt = round(goal.get("current_amount", 0) + body.amount, 2)
-    await db.goals.update_one({"id": gid}, {"$set": {"current_amount": new_amt}})
     await db.goal_events.insert_one({
         "id": new_id(),
         "user_id": user["id"],
@@ -9462,6 +9478,7 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
         raise HTTPException(400, "Valor maior que o saldo da meta")
 
     # Optionally return the money to an account via a real transaction
+    tx = None
     if body.to_account_id:
         dest = await db.accounts.find_one({"id": body.to_account_id, "user_id": user["id"]}, {"_id": 0})
         if not dest:
@@ -9471,18 +9488,16 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
                 400,
                 "A carteira do resgate deve usar a mesma moeda da meta",
             )
-        linked = goal.get("account_id")
-        if linked and linked != body.to_account_id:
-            src = await db.accounts.find_one({"id": linked, "user_id": user["id"]}, {"_id": 0})
-            if src:
-                tx = {"type": "transfer", "from_account_id": linked,
-                      "to_account_id": body.to_account_id, "account_id": None, "category_id": None}
-            else:
-                tx = {"type": "income", "account_id": body.to_account_id,
-                      "from_account_id": None, "to_account_id": None, "category_id": None}
-        else:
-            tx = {"type": "income", "account_id": body.to_account_id,
-                  "from_account_id": None, "to_account_id": None, "category_id": None}
+        tx = await goal_money_movement(goal, body.to_account_id, "out", user)
+    # Atomic and guarded: concurrent withdrawals can never take the goal
+    # below zero. Reserve the amount before recording any money movement.
+    reserved = await db.goals.update_one(
+        {"id": gid, "user_id": user["id"], "current_amount": {"$gte": round(body.amount, 2) - 0.005}},
+        {"$inc": {"current_amount": -round(body.amount, 2)}},
+    )
+    if reserved.modified_count != 1:
+        raise HTTPException(400, "Valor maior que o saldo da meta")
+    if tx:
         meta = await monetary_metadata(
             goal_currency,
             user.get("currency", "EUR"),
@@ -9504,7 +9519,6 @@ async def withdraw_goal(gid: str, body: WithdrawIn, user=Depends(get_current_use
         })
 
     new_amt = round(current - body.amount, 2)
-    await db.goals.update_one({"id": gid}, {"$set": {"current_amount": new_amt}})
     await db.goal_events.insert_one({
         "id": new_id(),
         "user_id": user["id"],

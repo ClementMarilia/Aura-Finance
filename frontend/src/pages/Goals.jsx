@@ -77,10 +77,30 @@ export default function Goals() {
 
   const remove = async () => {
     if (!confirmDel) return;
-    await api.delete(`/goals/${confirmDel.id}`);
-    setConfirmDel(null);
-    toast.success(tr("Meta excluída"));
-    load();
+    try {
+      await api.delete(`/goals/${confirmDel.id}`);
+      toast.success(tr("Meta excluída"));
+      setOpen(false);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setConfirmDel(null);
+    }
+  };
+
+  // What happens to the money, mirroring the backend (goal_money_movement).
+  const moneyHint = (goal, accountId, direction) => {
+    if (!accountId) return direction === "in" ? tr("Apenas registra o progresso da meta.") : tr("Apenas reduz o progresso da meta.");
+    if (goal?.account_id && goal.account_id === accountId) {
+      return tr("O dinheiro já está nesta carteira: só o progresso da meta muda.");
+    }
+    if (goal?.account_id) {
+      return direction === "in" ? tr("Cria uma transferência para a conta vinculada.") : tr("Cria uma transferência da conta vinculada de volta.");
+    }
+    return direction === "in"
+      ? tr("Cria uma saída nesta carteira (a meta não tem carteira vinculada).")
+      : tr("Cria uma entrada nesta carteira (a meta não tem carteira vinculada).");
   };
 
   const openContribute = (g) => { setContribFor(g); setContribAmt(""); setContribFrom(""); };
@@ -93,7 +113,7 @@ export default function Goals() {
       await api.post(`/goals/${contribFor.id}/contribute`, {
         amount, from_account_id: contribFrom || null,
       });
-      toast.success(`${fmtMoney(amount, contribFor.currency || curr)} adicionado à meta${contribFrom ? " (lançamento criado)" : ""}`);
+      toast.success(tr("{amount} adicionado à meta", { amount: fmtMoney(amount, contribFor.currency || curr) }));
       setContribFor(null);
       setContribAmt("");
       setContribFrom("");
@@ -111,7 +131,7 @@ export default function Goals() {
       await api.post(`/goals/${withdrawFor.id}/withdraw`, {
         amount, to_account_id: withdrawTo || null,
       });
-      toast.success(`${fmtMoney(amount, withdrawFor.currency || curr)} resgatado da meta${withdrawTo ? " (lançamento criado)" : ""}`);
+      toast.success(tr("{amount} resgatado da meta", { amount: fmtMoney(amount, withdrawFor.currency || curr) }));
       setWithdrawFor(null);
       setWithdrawAmt("");
       setWithdrawTo("");
@@ -120,24 +140,50 @@ export default function Goals() {
   };
 
   return (
-    <div className="space-y-6" data-testid="goals-page">
+    <div className="space-y-4 md:space-y-6" data-testid="goals-page">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Metas Financeiras")}</h1>
-          <p className="text-[#6B7068]">{tr("Defina objetivos e acompanhe seu progresso")}</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Metas Financeiras")}</h1>
+          <p className="text-sm text-[#6B7068]">{tr("Defina objetivos e acompanhe seu progresso")}</p>
         </div>
-        <Button onClick={openNew} data-testid="goal-new-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
+        <Button onClick={openNew} data-testid="goal-new-btn" className="min-h-[44px] w-full sm:w-auto bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
           <Plus size={16} className="mr-1" /> {tr("Nova meta")}
         </Button>
       </div>
 
-      <div className="flex justify-end">
-        <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
-          data-testid="goal-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
-          <option value="">{tr("Todas as moedas")}</option>
-          {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
-      </div>
+      {(currencyFilter || new Set(goals.map(g => g.currency || curr)).size > 1) && (
+        <div className="flex justify-end">
+          <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
+            data-testid="goal-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+            <option value="">{tr("Todas as moedas")}</option>
+            {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+        </div>
+      )}
+
+      {goals.length > 0 && (() => {
+        const sameCurrency = new Set(goals.map(g => g.currency || curr)).size === 1;
+        if (!sameCurrency) return null;
+        const cur = goals[0].currency || curr;
+        const saved = goals.reduce((sum, g) => sum + (Number(g.current_amount) || 0), 0);
+        const target = goals.reduce((sum, g) => sum + (Number(g.target_amount) || 0), 0);
+        const pct = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
+        return (
+          <div className="card-soft p-4" data-testid="goals-summary">
+            <div className="flex items-baseline justify-between gap-3">
+              <div>
+                <div className="stat-label">{tr("Guardado nas metas")}</div>
+                <div className="money-value mt-1 text-2xl font-semibold text-[#061B4A]" style={{ fontFamily: "Outfit" }}>{fmtMoney(saved, cur)}</div>
+              </div>
+              <div className="text-right text-sm text-[#6B7068]">{tr("de {amount}", { amount: fmtMoney(target, cur) })}</div>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#F1EFE7]">
+              <div className="h-full rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="mt-1.5 text-xs text-[#6B7068]">{tr("{percent}% do total das metas", { percent: pct })}</div>
+          </div>
+        );
+      })()}
 
       {goals.length === 0 && (
         <div className="card-soft text-center py-16 flex flex-col items-center gap-3 text-[#6B7068]" data-testid="goals-empty">
@@ -146,52 +192,55 @@ export default function Goals() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
         {goals.map(g => {
           const pct = g.target_amount > 0 ? Math.min(100, Math.round(g.current_amount / g.target_amount * 100)) : 0;
           const done = pct >= 100;
           return (
-            <div key={g.id} className="card-soft" data-testid={`goal-${g.id}`}>
+            <div key={g.id} className="card-soft p-4" data-testid={`goal-${g.id}`}>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white"
                     style={{ backgroundColor: themed(g.color) }}>
                     <Target size={18} />
                   </div>
-                  <div>
-                    <div className="font-semibold">{g.title}</div>
-                    {g.deadline && <div className="text-xs text-[#6B7068]">até {fmtDate(g.deadline)}</div>}
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold">{g.title}</div>
+                    {g.deadline && <div className="text-xs text-[#6B7068]">{tr("até {date}", { date: fmtDate(g.deadline) })}</div>}
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={() => openEdit(g)} data-testid={`goal-edit-${g.id}`}
-                    className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"><Pencil size={14} /></button>
-                  <button onClick={() => setConfirmDel(g)} data-testid={`goal-delete-${g.id}`}
-                    className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"><Trash2 size={14} /></button>
+                  <button onClick={() => openEdit(g)} data-testid={`goal-edit-${g.id}`} aria-label={tr("Editar")}
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"><Pencil size={16} /></button>
+                  <button onClick={() => setConfirmDel(g)} data-testid={`goal-delete-${g.id}`} aria-label={tr("Excluir")}
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"><Trash2 size={16} /></button>
                 </div>
               </div>
 
               <div className="mt-4 flex items-baseline justify-between">
                 <span className="text-2xl font-semibold" style={{ fontFamily: "Outfit" }}>{fmtMoney(g.current_amount, g.currency || curr)}</span>
-                <span className="text-sm text-[#6B7068]">de {fmtMoney(g.target_amount, g.currency || curr)}</span>
+                <span className="text-sm text-[#6B7068]">{tr("de {amount}", { amount: fmtMoney(g.target_amount, g.currency || curr) })}</span>
               </div>
               <div className="mt-2 h-2.5 bg-[#F1EFE7] rounded-full overflow-hidden">
                 <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: done ? "#2C7A51" : themed(g.color) }} />
               </div>
-              <div className="mt-1.5 flex items-center justify-between">
-                <span className={`text-xs font-medium ${done ? "text-emerald-600" : "text-[#6B7068]"}`}>{done ? tr("Concluída! 🎉") : `${pct}%`}</span>
-                <div className="flex items-center gap-1">
-                  {g.current_amount > 0 && (
-                    <button onClick={() => openWithdraw(g)} data-testid={`goal-withdraw-${g.id}`}
-                      className="text-xs text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
-                      <Banknote size={13} /> {tr("Resgatar")}
-                    </button>
-                  )}
-                  <button onClick={() => openContribute(g)} data-testid={`goal-contribute-${g.id}`}
-                    className="text-xs text-[#061B4A] hover:bg-[#F1EFE7] rounded-lg px-2 py-1 flex items-center gap-1 font-medium">
-                    <PiggyBank size={13} /> {tr("Aportar")}
+              <div className="mt-1.5 flex items-center justify-between text-xs">
+                <span className={`font-medium ${done ? "text-emerald-600" : "text-[#6B7068]"}`}>{done ? tr("Concluída! 🎉") : `${pct}%`}</span>
+                {!done && g.target_amount > g.current_amount && (
+                  <span className="text-[#6B7068]">{tr("faltam {amount}", { amount: fmtMoney(g.target_amount - g.current_amount, g.currency || curr) })}</span>
+                )}
+              </div>
+              <div className={`mt-3 grid gap-2 ${g.current_amount > 0 ? "grid-cols-2" : "grid-cols-1"}`}>
+                {g.current_amount > 0 && (
+                  <button onClick={() => openWithdraw(g)} data-testid={`goal-withdraw-${g.id}`}
+                    className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border border-[#E5E4E0] text-sm font-medium text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]">
+                    <Banknote size={15} /> {tr("Resgatar")}
                   </button>
-                </div>
+                )}
+                <button onClick={() => openContribute(g)} data-testid={`goal-contribute-${g.id}`}
+                  className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-[#061B4A] text-sm font-medium text-white hover:bg-[#1268F4]">
+                  <PiggyBank size={15} /> {tr("Aportar")}
+                </button>
               </div>
               {!done && (
                 <div className={`mt-3 rounded-lg px-3 py-2 text-xs ${
@@ -227,13 +276,13 @@ export default function Goals() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "Outfit" }}>{editing ? "Editar meta" : tr("Nova meta")}</DialogTitle>
+            <DialogTitle style={{ fontFamily: "Outfit" }}>{editing ? tr("Editar meta") : tr("Nova meta")}</DialogTitle>
           </DialogHeader>
           <form onSubmit={save} className="space-y-3">
             <div>
               <Label>{tr("Título")}</Label>
               <Input value={form.title} required data-testid="goal-title-input"
-                onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Ex: Viagem, Reserva de emergência" />
+                onChange={e => setForm({ ...form, title: e.target.value })} placeholder={tr("Ex: Viagem, Reserva de emergência")} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -308,7 +357,7 @@ export default function Goals() {
       <Dialog open={!!contribFor} onOpenChange={(v) => !v && setContribFor(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "Outfit" }}>Aportar em "{contribFor?.title}"</DialogTitle>
+            <DialogTitle style={{ fontFamily: "Outfit" }}>{tr("Aportar em \"{name}\"", { name: contribFor?.title || "" })}</DialogTitle>
           </DialogHeader>
           <form onSubmit={contribute} className="space-y-3">
             <div>
@@ -327,11 +376,7 @@ export default function Goals() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-[#6B7068] mt-1">
-                {contribFrom && contribFor?.account_id && contribFrom !== contribFor?.account_id
-                  ? tr("Cria uma transferência para a conta vinculada.")
-                  : contribFrom ? "Cria uma despesa nesta conta." : "Apenas registra o progresso da meta."}
-              </p>
+              <p className="text-xs text-[#6B7068] mt-1" data-testid="goal-contrib-hint">{moneyHint(contribFor, contribFrom, "in")}</p>
             </div>
             <DialogFooter>
               <Button type="submit" data-testid="goal-contrib-save" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">{tr("Adicionar")}</Button>
@@ -344,7 +389,7 @@ export default function Goals() {
       <Dialog open={!!withdrawFor} onOpenChange={(v) => !v && setWithdrawFor(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "Outfit" }}>Resgatar de "{withdrawFor?.title}"</DialogTitle>
+            <DialogTitle style={{ fontFamily: "Outfit" }}>{tr("Resgatar de \"{name}\"", { name: withdrawFor?.title || "" })}</DialogTitle>
           </DialogHeader>
           <form onSubmit={withdraw} className="space-y-3">
             <div>
@@ -364,11 +409,7 @@ export default function Goals() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-[#6B7068] mt-1">
-                {withdrawTo && withdrawFor?.account_id && withdrawTo !== withdrawFor?.account_id
-                  ? tr("Cria uma transferência da conta vinculada de volta.")
-                  : withdrawTo ? "Cria uma receita nesta conta." : "Apenas reduz o progresso da meta."}
-              </p>
+              <p className="text-xs text-[#6B7068] mt-1" data-testid="goal-withdraw-hint">{moneyHint(withdrawFor, withdrawTo, "out")}</p>
             </div>
             <DialogFooter>
               <Button type="submit" data-testid="goal-withdraw-save" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">{tr("Resgatar")}</Button>

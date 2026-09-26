@@ -173,6 +173,7 @@ html.dark .bg-white { background-color: var(--surface) !important; }
 html.dark .bg-\[\#F9F8F6\] { background-color: var(--bg) !important; }
 html.dark .bg-\[\#F8F6EE\] { background-color: var(--surface-elevated) !important; }
 html.dark .bg-\[\#F1EFE7\] { background-color: var(--surface-muted) !important; }
+html.dark .bg-\[\#F8F7F3\] { background-color: var(--surface-muted) !important; }
 html.dark .bg-\[\#E7FAF5\] { background-color: rgba(111, 181, 151, 0.12) !important; }
 html.dark .bg-\[\#FAFAF7\] { background-color: var(--bg) !important; }
 
@@ -223,6 +224,7 @@ html.dark .border-amber-200 { border-color: rgba(245, 158, 11, 0.3) !important; 
 
 /* Hover muted */
 html.dark .hover\:bg-\[\#F1EFE7\]:hover { background-color: var(--surface-muted) !important; }
+html.dark .hover\:bg-\[\#F8F7F3\]:hover { background-color: var(--surface-muted) !important; }
 html.dark .hover\:bg-\[\#F8F6EE\]:hover { background-color: var(--surface-elevated) !important; }
 
 /* Pills */
