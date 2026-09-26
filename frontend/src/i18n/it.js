@@ -1025,4 +1025,10 @@ export default {
   "paga para": "paga a",
   "Para": "A",
   "De": "Da",
+  "Dia a dia": "Quotidiano",
+  "Contas e compromissos": "Conti e impegni",
+  "Planejamento": "Pianificazione",
+  "Compartilhado": "Condiviso",
+  "Administração": "Amministrazione",
+  "Ex: Mercado, aluguel, salário": "Es: spesa, affitto, stipendio",
 };

@@ -79,6 +79,7 @@ export default function Transactions() {
   const [items, setItems] = useState([]);
   const [cats, setCats] = useState([]);
   const [accs, setAccs] = useState([]);
+  const [accsLoaded, setAccsLoaded] = useState(false);
   const [people, setPeople] = useState([]);
   const now = new Date();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -152,7 +153,7 @@ export default function Transactions() {
 
   useEffect(() => {
     api.get("/categories").then(r => setCats(r.data));
-    api.get("/accounts").then(r => setAccs(r.data));
+    api.get("/accounts").then(r => setAccs(r.data)).catch(() => {}).finally(() => setAccsLoaded(true));
     api.get("/reports/filter-options").then(r => {
       setPeople((r.data?.participants || []).filter(person => !person.self));
     });
@@ -284,6 +285,17 @@ export default function Transactions() {
     setForm(defaultForm());
     setOpen(true);
   };
+
+  // Quick add from the mobile bottom bar ("+"): /lancamentos?novo=1 opens the
+  // form once wallets are known, so the default wallet can be preselected.
+  const quickAdd = accsLoaded && searchParams.get("novo") === "1";
+  useEffect(() => {
+    if (!quickAdd) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("novo");
+    setSearchParams(next, { replace: true });
+    openNew();
+  }, [quickAdd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async (e) => {
     e.preventDefault();

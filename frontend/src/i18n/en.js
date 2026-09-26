@@ -1025,4 +1025,10 @@ export default {
   "paga para": "pays",
   "Para": "To",
   "De": "From",
+  "Dia a dia": "Everyday",
+  "Contas e compromissos": "Bills and commitments",
+  "Planejamento": "Planning",
+  "Compartilhado": "Shared",
+  "Administração": "Administration",
+  "Ex: Mercado, aluguel, salário": "E.g. groceries, rent, salary",
 };
