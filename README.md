@@ -32,7 +32,6 @@ Crelith Finance é um **PWA (Progressive Web App)** em pt-BR de finanças pessoa
 - **Parcelamentos**: criação automática de N parcelas; saldo só debita quando a parcela é confirmada; pendentes rolam para o mês seguinte.
 - **Recorrências** (semanal / mensal / anual) com materialização **idempotente**; editar atualiza apenas pendentes; deletar remove só futuros.
 - **Contas a Receber** com confirmação que gera receita e credita a carteira.
-- **Comprovantes / anexos** em transações (armazenados no próprio MongoDB via GridFS, bucket `receipts`).
 - **Bulk delete** em Lançamentos com checkboxes.
 
 ### Categorias customizáveis
@@ -295,7 +294,7 @@ GET|POST|PUT|DELETE /categories[/{cid}]          # CategoryIn aceita kind: expen
 GET|POST|PUT|DELETE /accounts[/{aid}]            # saldo computado SÓ com transações status=paid
 ```
 
-### Lançamentos / Comprovantes
+### Lançamentos
 ```
 GET    /transactions?year=&month=&type=&status=&category_id=&account_id=
        # quando year+month, inclui transações pendentes de meses anteriores com overdue=true (roll-over)
@@ -304,9 +303,6 @@ PUT    /transactions/{tid}
 DELETE /transactions/{tid}
 POST   /transactions/bulk-delete                 # { ids: [...] } → { deleted: N }
 POST   /transactions/{tid}/pay                   # toggle paid ↔ pending (afeta saldo)
-POST   /transactions/{tid}/receipt               # upload de anexo
-DELETE /transactions/{tid}/receipt
-GET    /files/{path}                             # Bearer ou ?auth=
 ```
 
 ### Recorrências / Parcelamentos / Recebíveis
@@ -420,7 +416,7 @@ somente para futura ativação, conforme [`docs/BACKUP_AND_RESTORE.md`](docs/BAC
 
 - **Não modificar** `.env`, portas (`8001`/`3000`) nem `MONGO_URL` / `REACT_APP_BACKEND_URL`.
 - Todas as rotas do backend **precisam** começar com `/api` (ingress redireciona).
-- Anexos ficam no próprio MongoDB (GridFS, coleções `receipts.files`/`receipts.chunks`); não há serviço externo de armazenamento. `GET /api/files/{path}` aceita Bearer ou `?auth=`. Blobs órfãos (comprovante removido, lançamento ou conta excluídos) são limpos em segundo plano a cada boot.
+- Não há upload de arquivos (comprovantes/anexos): os lançamentos são registrados manualmente e nada é enviado a armazenamento externo.
 
 ---
 

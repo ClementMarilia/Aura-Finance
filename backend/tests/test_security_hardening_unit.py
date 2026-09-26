@@ -1,5 +1,4 @@
 import asyncio
-import inspect
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -67,25 +66,6 @@ def test_revoked_session_rejects_an_otherwise_valid_access_token(monkeypatch):
     assert exc.value.detail == "Sessão invalidada"
 
 
-@pytest.mark.parametrize(
-    ("extension", "data", "expected"),
-    [
-        ("png", b"\x89PNG\r\n\x1a\nrest", "image/png"),
-        ("pdf", b"%PDF-1.7 rest", "application/pdf"),
-        ("jpg", b"\xff\xd8\xffrest", "image/jpeg"),
-        ("png", b"<script>alert(1)</script>", None),
-    ],
-)
-def test_upload_type_uses_real_file_signature(extension, data, expected):
-    assert server.verified_upload_type(data, extension) == expected
-
-
-def test_file_download_no_longer_accepts_token_in_query_string():
-    parameters = inspect.signature(server.download_file).parameters
-    assert "auth" not in parameters
-    assert "user" in parameters
-
-
 def test_refresh_cookie_is_httponly_secure_in_production(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("REFRESH_COOKIE_SAMESITE", "none")
@@ -148,10 +128,6 @@ def test_refresh_accepts_naive_utc_datetimes_from_mongodb(monkeypatch):
     assert result["user"]["id"] == "user-1"
     assert result["token"]
     assert "crelith_refresh=" in response.headers["set-cookie"]
-
-
-def test_safe_filename_removes_path_and_control_characters():
-    assert server.safe_original_filename("../../secret\x00.pdf") == "secret_.pdf"
 
 
 def test_audit_event_drops_secrets_and_financial_values(monkeypatch):

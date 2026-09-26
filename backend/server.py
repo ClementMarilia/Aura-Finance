@@ -23,17 +23,14 @@ from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Literal
 from fastapi import (
     FastAPI, APIRouter, HTTPException, Depends, Request, WebSocket, BackgroundTasks,
-    WebSocketDisconnect, UploadFile, File, Header, Query,
+    WebSocketDisconnect, Header, Query,
 )
 from fastapi.responses import Response, JSONResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi.security import HTTPBearer
 from starlette.middleware.cors import CORSMiddleware
-from bson import ObjectId
-from bson.errors import InvalidId
-from gridfs.errors import NoFile
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
-from pymongo.errors import DuplicateKeyError, PyMongoError
+from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel as PydanticBaseModel, Field, EmailStr, ConfigDict
 from collections import defaultdict
 from email_service import EmailService
@@ -187,8 +184,7 @@ async def security_middleware(request: Request, call_next):
 
     content_length = request.headers.get("content-length")
     if content_length and content_length.isdigit():
-        limit = 6 * 1024 * 1024 if request.url.path.endswith("/receipt") else MAX_REQUEST_BYTES
-        if int(content_length) > limit:
+        if int(content_length) > MAX_REQUEST_BYTES:
             return JSONResponse(
                 status_code=413,
                 content={"detail": "Requisição muito grande", "request_id": correlation_id},
@@ -386,120 +382,6 @@ async def health_check():
         logger.error("MongoDB health check failed: %s", exc)
         raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível")
     return {"status": "ok"}
-
-# ---------- Receipt storage (MongoDB GridFS) ----------
-APP_NAME = "aurea-financas"
-RECEIPTS_BUCKET = "receipts"
-# Blobs younger than this are never treated as orphans: an upload stores the
-# blob before its `files` record, so a fresh blob may not be referenced yet.
-ORPHAN_RECEIPT_GRACE = timedelta(hours=1)
-MIME_TYPES = {
-    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
-    "gif": "image/gif", "webp": "image/webp", "pdf": "application/pdf",
-}
-
-
-def verified_upload_type(data: bytes, extension: str) -> Optional[str]:
-    signatures = {
-        "jpg": lambda b: b.startswith(b"\xff\xd8\xff"),
-        "jpeg": lambda b: b.startswith(b"\xff\xd8\xff"),
-        "png": lambda b: b.startswith(b"\x89PNG\r\n\x1a\n"),
-        "gif": lambda b: b.startswith((b"GIF87a", b"GIF89a")),
-        "pdf": lambda b: b.startswith(b"%PDF-"),
-        "webp": lambda b: len(b) >= 12 and b[:4] == b"RIFF" and b[8:12] == b"WEBP",
-    }
-    validator = signatures.get(extension)
-    return MIME_TYPES.get(extension) if validator and validator(data) else None
-
-
-def safe_original_filename(filename: Optional[str]) -> str:
-    basename = (filename or "arquivo").replace("\\", "/").rsplit("/", 1)[-1]
-    cleaned = re.sub(r"[^A-Za-z0-9._ -]", "_", basename).strip(" .")
-    return (cleaned or "arquivo")[:180]
-
-
-class StorageUnavailable(Exception):
-    """Receipt storage could not be reached."""
-
-
-class StorageObjectNotFound(Exception):
-    """The requested receipt blob does not exist."""
-
-
-STORAGE_UNAVAILABLE_DETAIL = (
-    "Armazenamento de comprovantes indisponível no momento. Tente novamente mais tarde."
-)
-
-
-def receipts_bucket() -> AsyncIOMotorGridFSBucket:
-    return AsyncIOMotorGridFSBucket(db, bucket_name=RECEIPTS_BUCKET)
-
-
-async def store_receipt_blob(path: str, data: bytes, content_type: str, user_id: str) -> str:
-    try:
-        blob_id = await receipts_bucket().upload_from_stream(
-            path, data, metadata={"user_id": user_id, "content_type": content_type},
-        )
-    except PyMongoError as exc:
-        raise StorageUnavailable(f"Receipt upload failed: {exc}") from exc
-    return str(blob_id)
-
-
-async def load_receipt_blob(record: dict) -> bytes:
-    bucket = receipts_bucket()
-    try:
-        blob_id = record.get("blob_id")
-        if blob_id:
-            stream = await bucket.open_download_stream(ObjectId(blob_id))
-        else:
-            stream = await bucket.open_download_stream_by_name(record["storage_path"])
-        return await stream.read()
-    except (NoFile, InvalidId, KeyError) as exc:
-        raise StorageObjectNotFound(record.get("storage_path")) from exc
-    except PyMongoError as exc:
-        raise StorageUnavailable(f"Receipt download failed: {exc}") from exc
-
-
-async def delete_receipt_blob(blob_id: Optional[str]) -> None:
-    """Best-effort removal; leftovers are collected by the orphan sweep."""
-    if not blob_id:
-        return
-    try:
-        await receipts_bucket().delete(ObjectId(blob_id))
-    except (NoFile, InvalidId):
-        return
-    except PyMongoError as exc:
-        logger.warning("Receipt blob %s not deleted: %s", blob_id, exc)
-
-
-async def purge_orphan_receipt_blobs() -> int:
-    """Delete blobs whose receipt was removed, deleted with its transaction or account."""
-    active = {
-        record["blob_id"]
-        async for record in db.files.find(
-            {"is_deleted": False, "blob_id": {"$exists": True}}, {"_id": 0, "blob_id": 1},
-        )
-    }
-    cutoff = datetime.now(timezone.utc) - ORPHAN_RECEIPT_GRACE
-    removed = 0
-    async for blob in db[f"{RECEIPTS_BUCKET}.files"].find(
-        {"uploadDate": {"$lt": cutoff}}, {"_id": 1},
-    ):
-        if str(blob["_id"]) not in active:
-            await delete_receipt_blob(str(blob["_id"]))
-            removed += 1
-    return removed
-
-
-async def _purge_orphan_receipt_blobs_safely() -> None:
-    try:
-        removed = await purge_orphan_receipt_blobs()
-        if removed:
-            logger.info("Removed %s orphan receipt blobs", removed)
-    except Exception as exc:
-        logger.warning("Orphan receipt sweep failed: %s", exc)
-
-
 
 # ---------- Realtime (WebSocket) ----------
 NOTIF_TYPES = ["shared_expense_added", "settlement_paid", "nudge", "group_added"]
@@ -4005,102 +3887,6 @@ async def bulk_delete_transactions(body: BulkDeleteIn, user=Depends(get_current_
             "user_id": user["id"],
         })
     return {"deleted": res.deleted_count}
-
-
-# ---------- Receipts (attachments) ----------
-@api.post("/transactions/{tid}/receipt")
-async def upload_receipt(tid: str, file: UploadFile = File(...), user=Depends(get_current_user)):
-    tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
-    if not tx:
-        raise HTTPException(404, "Lançamento não encontrado")
-    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "bin"
-    if ext not in MIME_TYPES:
-        raise HTTPException(400, "Formato não suportado (use JPG, PNG, WEBP, GIF ou PDF)")
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, "Arquivo vazio")
-    if len(data) > 5 * 1024 * 1024:
-        raise HTTPException(400, "Arquivo muito grande (máx 5MB)")
-    content_type = verified_upload_type(data, ext)
-    if not content_type or (file.content_type and file.content_type != content_type):
-        raise HTTPException(400, "O conteúdo do arquivo não corresponde ao formato informado")
-    original_filename = safe_original_filename(file.filename)
-    path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
-    try:
-        blob_id = await store_receipt_blob(path, data, content_type, user["id"])
-    except StorageUnavailable as exc:
-        logger.error("Receipt upload failed: %s", exc)
-        raise HTTPException(503, STORAGE_UNAVAILABLE_DETAIL)
-    fid = new_id()
-    await db.files.insert_one({
-        "id": fid, "user_id": user["id"], "storage_path": path, "blob_id": blob_id,
-        "original_filename": original_filename, "content_type": content_type,
-        "size": len(data), "is_deleted": False,
-        "created_at": now_iso(),
-    })
-    receipt = {"file_id": fid, "path": path,
-               "filename": original_filename, "content_type": content_type}
-    updated = await db.transactions.update_one(
-        {"id": tid, "user_id": user["id"]},
-        {"$set": {"receipt": receipt}},
-    )
-    if updated.modified_count != 1:
-        await db.files.update_one(
-            {"id": fid, "user_id": user["id"]},
-            {"$set": {"is_deleted": True}},
-        )
-        await delete_receipt_blob(blob_id)
-        raise HTTPException(409, "Não foi possível vincular o comprovante")
-    return receipt
-
-
-@api.delete("/transactions/{tid}/receipt")
-async def delete_receipt(tid: str, user=Depends(get_current_user)):
-    tx = await db.transactions.find_one({"id": tid, "user_id": user["id"]}, {"_id": 0})
-    if not tx or not tx.get("receipt"):
-        raise HTTPException(404, "Sem comprovante")
-    record = await db.files.find_one(
-        {"id": tx["receipt"]["file_id"], "user_id": user["id"]}, {"_id": 0, "blob_id": 1},
-    )
-    await db.files.update_one(
-        {"id": tx["receipt"]["file_id"], "user_id": user["id"]},
-        {"$set": {"is_deleted": True}},
-    )
-    await db.transactions.update_one(
-        {"id": tid, "user_id": user["id"]}, {"$unset": {"receipt": ""}}
-    )
-    await delete_receipt_blob((record or {}).get("blob_id"))
-    return {"ok": True}
-
-
-@api.get("/files/{path:path}")
-async def download_file(path: str, user=Depends(get_current_user)):
-    if ".." in path or not path.startswith(f"{APP_NAME}/uploads/{user['id']}/"):
-        raise HTTPException(404, "Arquivo não encontrado")
-    record = await db.files.find_one({
-        "storage_path": path,
-        "user_id": user["id"],
-        "is_deleted": False,
-    }, {"_id": 0})
-    if not record:
-        raise HTTPException(404, "Arquivo não encontrado")
-    try:
-        data = await load_receipt_blob(record)
-    except StorageObjectNotFound:
-        raise HTTPException(404, "Comprovante não está mais disponível")
-    except StorageUnavailable as exc:
-        logger.error("Receipt download failed: %s", exc)
-        raise HTTPException(503, STORAGE_UNAVAILABLE_DETAIL)
-    filename = safe_original_filename(record.get("original_filename"))
-    return Response(
-        content=data,
-        media_type=record.get("content_type", "application/octet-stream"),
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-Content-Type-Options": "nosniff",
-            "Cache-Control": "private, no-store",
-        },
-    )
 
 
 # ---------- Recurrences ----------
@@ -9573,9 +9359,6 @@ async def delete_goal(gid: str, user=Depends(get_current_user)):
 
 
 # ---------- Seed Demo ----------
-_background_tasks: set = set()
-
-
 @app.on_event("startup")
 async def startup():
     if os.environ.get("ENVIRONMENT", "production").lower() == "production":
@@ -9710,10 +9493,6 @@ async def startup():
     await db.data_export_requests.create_index("expires_at", expireAfterSeconds=0)
     await db.data_export_requests.create_index([("user_id", 1), ("created_at", -1)])
     await db.files.create_index([("user_id", 1), ("storage_path", 1)])
-    # Background task: blob cleanup must never delay the boot.
-    sweep = asyncio.create_task(_purge_orphan_receipt_blobs_safely())
-    _background_tasks.add(sweep)
-    sweep.add_done_callback(_background_tasks.discard)
     await db.email_templates.create_index("id", unique=True)
 
     # Backfill: garantir categorias padrão de receita para usuários existentes

@@ -10,7 +10,7 @@ import AmountInput from "@/components/AmountInput";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil, FileDown, Paperclip, Eye, X, Repeat, CreditCard, Check, SlidersHorizontal } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown, X, Repeat, CreditCard, Check, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 
@@ -84,9 +84,6 @@ export default function Transactions() {
   const [confirmDel, setConfirmDel] = useState(null);
   const [selected, setSelected] = useState([]);
   const [bulkConfirm, setBulkConfirm] = useState(false);
-  const [uploadingId, setUploadingId] = useState(null);
-  const fileInputRef = useRef(null);
-  const pendingUploadTx = useRef(null);
   const loadRequestRef = useRef(0);
   const {
     status: filterStatus,
@@ -344,41 +341,6 @@ export default function Transactions() {
     } catch (err) { toast.error(formatApiError(err)); }
     setBulkConfirm(false);
     load();
-  };
-
-  const triggerUpload = (t) => { pendingUploadTx.current = t; fileInputRef.current?.click(); };
-
-  const onFileSelected = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    const t = pendingUploadTx.current;
-    if (!file || !t) return;
-    const fd = new FormData();
-    fd.append("file", file);
-    setUploadingId(t.id);
-    try {
-      await api.post(`/transactions/${t.id}/receipt`, fd, { headers: { "Content-Type": "multipart/form-data" } });
-      toast.success(tr("Comprovante anexado"));
-      load();
-    } catch (err) { toast.error(formatApiError(err)); }
-    finally { setUploadingId(null); }
-  };
-
-  const viewReceipt = async (t) => {
-    try {
-      const r = await api.get(`/files/${t.receipt.path}`, { responseType: "blob" });
-      const url = URL.createObjectURL(r.data);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch { toast.error(tr("Erro ao abrir comprovante")); }
-  };
-
-  const removeReceipt = async (t) => {
-    try {
-      await api.delete(`/transactions/${t.id}/receipt`);
-      toast.success(tr("Comprovante removido"));
-      load();
-    } catch (err) { toast.error(formatApiError(err)); }
   };
 
   const payInstallment = async (t) => {
@@ -752,9 +714,6 @@ export default function Transactions() {
         </div>
       </div>
 
-      <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
-        onChange={onFileSelected} data-testid="receipt-file-input" />
-
       {selected.length > 0 && (
         <div className="card-soft flex items-center justify-between py-3" data-testid="bulk-action-bar">
           <span className="text-sm text-[#061B4A] font-medium">{selected.length} selecionado(s)</span>
@@ -905,21 +864,6 @@ export default function Transactions() {
                           title={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}
                         >
                           <Check size={16} />
-                        </button>
-                      )}
-                      {t.receipt ? (
-                        <>
-                          <button onClick={() => viewReceipt(t)} className="text-[#061B4A] hover:bg-[#F1EFE7] rounded p-1" data-testid={`tx-receipt-view-${t.id}`} title={tr("Ver comprovante")}>
-                            <Eye size={16} />
-                          </button>
-                          <button onClick={() => removeReceipt(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-receipt-remove-${t.id}`} title={tr("Remover comprovante")}>
-                            <X size={14} />
-                          </button>
-                        </>
-                      ) : (
-                        <button onClick={() => triggerUpload(t)} disabled={uploadingId === t.id}
-                          className="text-[#6B7068] hover:text-[#061B4A] p-1 disabled:opacity-40" data-testid={`tx-receipt-upload-${t.id}`} title={tr("Anexar comprovante")}>
-                          <Paperclip size={16} className={uploadingId === t.id ? "animate-pulse" : ""} />
                         </button>
                       )}
                       <button onClick={() => openEdit(t)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`tx-edit-${t.id}`} title={tr("Editar")}>
