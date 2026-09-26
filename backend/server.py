@@ -3991,16 +3991,30 @@ def _add_months(d: date, n: int) -> date:
     return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
 
 
-def _advance(d: date, freq: str) -> date:
+MONTHS_PER_FREQUENCY = {"monthly": 1, "quarterly": 3, "semiannual": 6, "yearly": 12}
+
+
+def _advance(d: date, freq: str, anchor_day: Optional[int] = None) -> date:
+    """Next occurrence after `d`.
+
+    Month-based frequencies are computed from the recurrence's original day
+    (`anchor_day`), not from the previous, possibly clamped, date: chaining
+    from the clamped date made a rent due on the 31st drift to the 28th
+    forever after February.
+    """
     if freq == "weekly":
         return d + timedelta(days=7)
-    if freq == "yearly":
-        return _add_months(d, 12)
-    if freq == "semiannual":
-        return _add_months(d, 6)
-    if freq == "quarterly":
-        return _add_months(d, 3)
-    return _add_months(d, 1)
+    months = MONTHS_PER_FREQUENCY.get(freq, 1)
+    shifted = _add_months(d.replace(day=1), months)
+    day = anchor_day or d.day
+    return shifted.replace(day=min(day, calendar.monthrange(shifted.year, shifted.month)[1]))
+
+
+def recurrence_anchor_day(next_run: str) -> Optional[int]:
+    try:
+        return datetime.strptime(next_run, "%Y-%m-%d").day
+    except (TypeError, ValueError):
+        return None
 
 
 async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
@@ -4019,19 +4033,19 @@ async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
             nxt = datetime.strptime(r["next_run"], "%Y-%m-%d").date()
         except Exception:
             continue
+        anchor_day = r.get("anchor_day") or nxt.day
         changed = False
         guard = 0
         while nxt <= horizon and guard < 120:
             guard += 1
-            # Idempotent: never create a second transaction for the same
-            # (recurrence, date). Prevents duplicates when next_run is edited
-            # back to an already-materialized date.
-            exists = await db.transactions.find_one(
-                {"user_id": user_id, "recurrence_id": r["id"], "date": nxt.isoformat()},
-                {"_id": 1},
-            )
-            if not exists:
-                await db.transactions.insert_one({
+            # Idempotent and race-safe: one transaction per (recurrence, date).
+            # Several screens materialize at the same time; a find-then-insert
+            # let two requests both insert. The upsert is atomic per key and
+            # the unique index created at startup rejects any second copy.
+            try:
+                await db.transactions.update_one(
+                    {"user_id": user_id, "recurrence_id": r["id"], "date": nxt.isoformat()},
+                    {"$setOnInsert": {
                     "id": new_id(), "user_id": user_id, "type": r["type"],
                     "date": nxt.isoformat(), "amount": r["amount"],
                     "category_id": r.get("category_id"), "person_id": r.get("person_id"),
@@ -4047,8 +4061,12 @@ async def materialize_recurrences(user_id: str, horizon: Optional[date] = None):
                     "exchange_rate_to_base": r.get("exchange_rate_to_base"),
                     "rate_date": r.get("rate_date"),
                     "rate_source": r.get("rate_source"),
-                })
-            nxt = _advance(nxt, r["frequency"])
+                    }},
+                    upsert=True,
+                )
+            except DuplicateKeyError:
+                pass  # another request created this occurrence first
+            nxt = _advance(nxt, r["frequency"], anchor_day)
             changed = True
         if changed:
             await db.recurrences.update_one({"id": r["id"]}, {"$set": {"next_run": nxt.isoformat()}})
@@ -4108,7 +4126,11 @@ async def create_recurrence(
         if payload.rate_source:
             meta["rate_source"] = payload.rate_source
         values = payload.model_dump(exclude={"currency", "exchange_rate", "rate_source"})
-        doc = {"id": new_id(), "user_id": user["id"], **values, **meta, "created_at": now_iso()}
+        doc = {
+            "id": new_id(), "user_id": user["id"], **values, **meta,
+            "anchor_day": recurrence_anchor_day(payload.next_run),
+            "created_at": now_iso(),
+        }
         await db.recurrences.insert_one(doc)
         doc.pop("_id", None)
         await materialize_recurrences(user["id"])
@@ -4133,6 +4155,7 @@ async def update_recurrence(rid: str, payload: RecurrenceIn, user=Depends(get_cu
     if payload.rate_source:
         meta["rate_source"] = payload.rate_source
     values = payload.model_dump(exclude={"currency", "exchange_rate", "rate_source"})
+    values["anchor_day"] = recurrence_anchor_day(payload.next_run)
     res = await db.recurrences.update_one(
         {"id": rid, "user_id": user["id"]}, {"$set": {**values, **meta}})
     if res.matched_count == 0:
@@ -9558,6 +9581,20 @@ async def startup():
         [("user_id", 1), ("account_id", 1), ("date", -1)]
     )
     await db.recurrences.create_index([("user_id", 1), ("person_id", 1)])
+    # One materialized transaction per (recurrence, date). Guarded: if old
+    # duplicates exist the index cannot be built, and boot must not fail.
+    try:
+        await db.transactions.create_index(
+            [("user_id", 1), ("recurrence_id", 1), ("date", 1)],
+            unique=True,
+            partialFilterExpression={"recurrence_id": {"$type": "string"}},
+            name="unique_recurrence_occurrence",
+        )
+    except Exception as exc:
+        logger.warning(
+            "Recurrence uniqueness index not created (%s). Existing duplicates "
+            "must be removed first: python scripts/dedupe_recurrences.py", exc,
+        )
     await db.people.create_index([("owner_user_id", 1), ("name", 1)])
     await db.shared_expenses.create_index("participant_ids")
     await db.shared_expenses.create_index([("creator_id", 1), ("status", 1), ("date", -1)])

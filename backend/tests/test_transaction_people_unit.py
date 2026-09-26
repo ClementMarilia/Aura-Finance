@@ -127,10 +127,7 @@ def test_recurrence_copies_person_to_generated_transaction(monkeypatch):
         "next_run": "2026-07-01",
         "active": True,
     }
-    transactions = SimpleNamespace(
-        find_one=AsyncMock(return_value=None),
-        insert_one=AsyncMock(),
-    )
+    transactions = SimpleNamespace(update_one=AsyncMock())
     fake_db = SimpleNamespace(
         recurrences=SimpleNamespace(
             find=lambda *_args, **_kwargs: Cursor([recurrence]),
@@ -147,7 +144,9 @@ def test_recurrence_copies_person_to_generated_transaction(monkeypatch):
         )
     )
 
-    inserted = transactions.insert_one.await_args.args[0]
+    call = transactions.update_one.await_args
+    inserted = call.args[1]["$setOnInsert"]
+    assert call.kwargs["upsert"] is True
     assert inserted["person_id"] == "mother"
     assert inserted["recurrence_id"] == "rec-1"
 
