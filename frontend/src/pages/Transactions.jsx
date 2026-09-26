@@ -374,9 +374,11 @@ export default function Transactions() {
   };
 
   const removeReceipt = async (t) => {
-    await api.delete(`/transactions/${t.id}/receipt`);
-    toast.success(tr("Comprovante removido"));
-    load();
+    try {
+      await api.delete(`/transactions/${t.id}/receipt`);
+      toast.success(tr("Comprovante removido"));
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
   };
 
   const payInstallment = async (t) => {

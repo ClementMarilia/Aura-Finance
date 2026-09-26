@@ -19,6 +19,7 @@ import statistics
 import math
 import re
 import hmac
+import threading
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Literal
 from fastapi import (
@@ -414,34 +415,103 @@ def safe_original_filename(filename: Optional[str]) -> str:
     return (cleaned or "arquivo")[:180]
 
 
-def init_storage():
+class StorageUnavailable(Exception):
+    """Object storage is not configured or could not be reached."""
+
+
+class StorageObjectNotFound(Exception):
+    """The requested object does not exist in object storage."""
+
+
+STORAGE_UNAVAILABLE_DETAIL = (
+    "Armazenamento de comprovantes indisponível no momento. Tente novamente mais tarde."
+)
+STORAGE_INIT_TIMEOUT = (5, 15)
+_storage_lock = threading.Lock()
+
+
+def storage_configured() -> bool:
+    return bool(EMERGENT_KEY)
+
+
+def init_storage() -> str:
+    """Return the cached storage key, creating it on first use.
+
+    Never called at startup: an unreachable storage provider must only affect
+    receipt endpoints, never application boot or unrelated routes.
+    """
     global _storage_key
     if _storage_key:
         return _storage_key
-    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-    resp.raise_for_status()
-    _storage_key = resp.json()["storage_key"]
-    return _storage_key
+    if not EMERGENT_KEY:
+        raise StorageUnavailable("EMERGENT_LLM_KEY is not configured")
+    with _storage_lock:
+        if _storage_key:
+            return _storage_key
+        try:
+            resp = requests.post(
+                f"{STORAGE_URL}/init",
+                json={"emergent_key": EMERGENT_KEY},
+                timeout=STORAGE_INIT_TIMEOUT,
+            )
+            resp.raise_for_status()
+            key = resp.json().get("storage_key")
+        except (requests.RequestException, ValueError, AttributeError) as exc:
+            raise StorageUnavailable(f"Storage init failed: {exc}") from exc
+        if not isinstance(key, str) or not key:
+            raise StorageUnavailable("Storage init returned no storage_key")
+        _storage_key = key
+        return _storage_key
+
+
+def _invalidate_storage_key(stale_key: str) -> None:
+    global _storage_key
+    with _storage_lock:
+        if _storage_key == stale_key:
+            _storage_key = None
+
+
+def _storage_request(method: str, path: str, *, headers=None, **kwargs):
+    """Call object storage, refreshing the key once if it was rejected."""
+    for attempt in range(2):
+        key = init_storage()
+        try:
+            resp = requests.request(
+                method,
+                f"{STORAGE_URL}/objects/{path}",
+                headers={"X-Storage-Key": key, **(headers or {})},
+                **kwargs,
+            )
+        except requests.RequestException as exc:
+            raise StorageUnavailable(f"Storage {method} failed: {exc}") from exc
+        if resp.status_code in (401, 403) and attempt == 0:
+            _invalidate_storage_key(key)
+            continue
+        return resp
+    return resp
 
 
 def _put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage()
-    resp = requests.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=120,
+    resp = _storage_request(
+        "PUT", path, headers={"Content-Type": content_type}, data=data, timeout=120,
     )
-    resp.raise_for_status()
-    return resp.json()
+    if resp.status_code >= 400:
+        raise StorageUnavailable(f"Storage PUT returned HTTP {resp.status_code}")
+    try:
+        result = resp.json()
+    except ValueError:
+        result = {}
+    if not isinstance(result, dict):
+        result = {}
+    return {"path": result.get("path") or path, "size": result.get("size", len(data))}
 
 
 def _get_object(path: str):
-    key = init_storage()
-    resp = requests.get(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key}, timeout=60,
-    )
-    resp.raise_for_status()
+    resp = _storage_request("GET", path, timeout=60)
+    if resp.status_code == 404:
+        raise StorageObjectNotFound(path)
+    if resp.status_code >= 400:
+        raise StorageUnavailable(f"Storage GET returned HTTP {resp.status_code}")
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 
@@ -3971,7 +4041,11 @@ async def upload_receipt(tid: str, file: UploadFile = File(...), user=Depends(ge
         raise HTTPException(400, "O conteúdo do arquivo não corresponde ao formato informado")
     original_filename = safe_original_filename(file.filename)
     path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
-    result = await asyncio.to_thread(_put_object, path, data, content_type)
+    try:
+        result = await asyncio.to_thread(_put_object, path, data, content_type)
+    except StorageUnavailable as exc:
+        logger.error("Receipt upload failed: %s", exc)
+        raise HTTPException(503, STORAGE_UNAVAILABLE_DETAIL)
     fid = new_id()
     await db.files.insert_one({
         "id": fid, "user_id": user["id"], "storage_path": result["path"],
@@ -4020,7 +4094,13 @@ async def download_file(path: str, user=Depends(get_current_user)):
     }, {"_id": 0})
     if not record:
         raise HTTPException(404, "Arquivo não encontrado")
-    data, ct = await asyncio.to_thread(_get_object, path)
+    try:
+        data, ct = await asyncio.to_thread(_get_object, path)
+    except StorageObjectNotFound:
+        raise HTTPException(404, "Arquivo não encontrado")
+    except StorageUnavailable as exc:
+        logger.error("Receipt download failed: %s", exc)
+        raise HTTPException(503, STORAGE_UNAVAILABLE_DETAIL)
     filename = safe_original_filename(record.get("original_filename"))
     return Response(
         content=data,
@@ -9510,11 +9590,10 @@ async def startup():
             raise RuntimeError("JWT_SECRET must contain at least 32 bytes in production")
         if "*" in configured_cors_origins():
             raise RuntimeError("Wildcard CORS is forbidden in production")
-    try:
-        init_storage()
-        logger.info("Object storage initialized")
-    except Exception as e:
-        logger.error(f"Storage init failed: {e}")
+    # Object storage is initialized lazily on the first receipt request so an
+    # unavailable provider can never block or slow down application startup.
+    if not storage_configured():
+        logger.warning("EMERGENT_LLM_KEY not set: receipt attachments are disabled")
     await db.users.create_index("email", unique=True)
     await db.users.create_index([("status", 1), ("created_at", -1)])
     # Keep legacy UUID-backed public IDs fast and fully compatible. MongoDB's
