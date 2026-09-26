@@ -1022,4 +1022,7 @@ export default {
   "Necessidades": "Needs",
   "Reserva / Investimentos": "Savings / Investments",
   "Outros objetivos": "Other goals",
+  "paga para": "pays",
+  "Para": "To",
+  "De": "From",
 };
