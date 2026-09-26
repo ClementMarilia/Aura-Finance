@@ -1004,4 +1004,6 @@ export default {
   "Não foi possível calcular sua saúde financeira.": "Non è stato possibile calcolare la tua salute finanziaria.",
   "Atualize os dados e tente novamente.": "Aggiorna i dati e riprova.",
   "Tentar novamente": "Riprova",
+  "Resultado do mês": "Risultato del mese",
+  "Receitas − despesas do mês, incluindo pendentes": "Entrate − uscite del mese, inclusi i pendenti",
 };

@@ -186,8 +186,9 @@ export default function Dashboard() {
     },
     {
       id: "balance",
-      label: tr("Saldo atual"), value: data.balance, icon: Wallet,
-      accent: "text-[#061B4A]", bg: "bg-[#F1EFE7]",
+      label: tr("Resultado do mês"), value: data.balance, icon: Wallet,
+      accent: data.balance < 0 ? "text-rose-600" : "text-[#061B4A]", bg: "bg-[#F1EFE7]",
+      hint: tr("Receitas − despesas do mês, incluindo pendentes"),
       to: `/extrato-financeiro`,
     },
     {
@@ -323,7 +324,7 @@ export default function Dashboard() {
         className="card-soft bg-gradient-to-br from-[#061B4A] to-[#1268F4] text-white border-transparent block hover:brightness-110 transition cursor-pointer"
       >
         <div className="flex items-center justify-between">
-          <div className="text-sm uppercase tracking-wide opacity-80">{tr("Saldo atual")}</div>
+          <div className="text-sm uppercase tracking-wide opacity-80">{tr("Resultado do mês")}</div>
           <ChevronRight size={18} className="opacity-70" />
         </div>
         <div className="money-value text-[clamp(2rem,7vw,3rem)] font-semibold tracking-tight mt-2" style={{ fontFamily: "Outfit" }}
@@ -334,6 +335,7 @@ export default function Dashboard() {
           <span>{tr("Receita:")} <strong>{fmtMoney(data.income, curr)}</strong></span>
           <span>{tr("Despesa:")} <strong>{fmtMoney(data.expense, curr)}</strong></span>
         </div>
+        <div className="mt-2 text-xs opacity-80">{tr("Receitas − despesas do mês, incluindo pendentes")}</div>
       </Link>}
 
       {/* Stats grid */}

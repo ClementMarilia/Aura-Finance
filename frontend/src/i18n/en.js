@@ -1004,4 +1004,6 @@ export default {
   "Não foi possível calcular sua saúde financeira.": "Your financial health could not be calculated.",
   "Atualize os dados e tente novamente.": "Refresh the data and try again.",
   "Tentar novamente": "Try again",
+  "Resultado do mês": "Month result",
+  "Receitas − despesas do mês, incluindo pendentes": "Income − expenses this month, including pending",
 };

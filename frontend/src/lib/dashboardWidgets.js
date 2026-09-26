@@ -1,6 +1,6 @@
 export const DASHBOARD_WIDGETS = [
   { id: "balance_summary", label: "Resumo financeiro" },
-  { id: "balance", label: "Saldo atual" },
+  { id: "balance", label: "Resultado do mês" },
   { id: "income", label: "Receita do mês" },
   { id: "expense", label: "Despesa do mês" },
   { id: "pending_payable", label: "Contas pendentes" },

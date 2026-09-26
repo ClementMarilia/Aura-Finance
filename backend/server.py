@@ -9581,6 +9581,10 @@ async def startup():
     wid = ids["Wendy"]
     cats = await db.categories.find({"user_id": wid}).to_list(50)
     cat_by_name = {c["name"]: c["id"] for c in cats}
+    # Demo entries belong to the default wallet, like entries created in the
+    # app, so wallet balances and the dashboard tell the same story.
+    wallet = await db.accounts.find_one({"user_id": wid}, {"_id": 0, "id": 1})
+    wallet_id = wallet["id"] if wallet else None
     today = datetime.now(timezone.utc).date()
     sample = [
         ("income", today.replace(day=1).isoformat(), 2500.0, None, "Salário"),
@@ -9591,7 +9595,7 @@ async def startup():
     for t, d, amt, cid, desc in sample:
         await db.transactions.insert_one({
             "id": new_id(), "user_id": wid, "type": t, "date": d,
-            "amount": amt, "category_id": cid, "account_id": None,
+            "amount": amt, "category_id": cid, "account_id": wallet_id,
             "payment_method": "Cartão", "description": desc, "notes": "",
             "status": "paid", "created_at": now_iso(),
         })

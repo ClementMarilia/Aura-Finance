@@ -10,9 +10,10 @@ import AmountInput from "@/components/AmountInput";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil, FileDown, X, Repeat, CreditCard, Check, SlidersHorizontal } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown, X, Repeat, CreditCard, Check, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
+import { useIsDesktop } from "@/hooks/useMediaQuery";
 
 import { getMonthNames, translate as tr } from "@/i18n";
 const STATUS_LABEL = { paid: tr("Pago"), pending: tr("Pendente"), cancelled: tr("Cancelado") };
@@ -64,6 +65,13 @@ export function transactionPayloadFromForm(form, {
   };
 }
 
+// New income/expense entries start on a wallet so a "paid" entry always moves
+// a wallet balance; otherwise the dashboard and the wallets disagree.
+export function defaultAccountFor(accounts, currency) {
+  if (!accounts?.length) return null;
+  return accounts.find(account => (account.currency || currency) === currency) || accounts[0];
+}
+
 export default function Transactions() {
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
@@ -84,6 +92,8 @@ export default function Transactions() {
   const [confirmDel, setConfirmDel] = useState(null);
   const [selected, setSelected] = useState([]);
   const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const isDesktop = useIsDesktop();
   const loadRequestRef = useRef(0);
   const {
     status: filterStatus,
@@ -96,13 +106,14 @@ export default function Transactions() {
   } = filter;
 
   function defaultForm() {
+    const account = defaultAccountFor(accs, curr);
     return {
       type: "expense",
       date: new Date().toISOString().slice(0, 10),
       amount: "",
       category_id: "",
       person_id: "",
-      account_id: "",
+      account_id: account?.id || "",
       from_account_id: "",
       to_account_id: "",
       payment_method: "",
@@ -110,7 +121,7 @@ export default function Transactions() {
       notes: "",
       status: "paid",
       repeat: "none",
-      currency: curr,
+      currency: account?.currency || curr,
       exchange_rate: "",
       target_amount: "",
       rate_source: "automatic",
@@ -343,6 +354,126 @@ export default function Transactions() {
     load();
   };
 
+  const activeFilterCount = ["type", "status", "category_id", "account_id", "currency"]
+    .filter(key => filter[key]).length;
+
+  const amountClass = (t) => (
+    t.type === "income" ? "text-emerald-600" : t.type === "expense" ? "text-rose-600" : "text-[#1A1C1A]"
+  );
+
+  const amountSign = (t) => {
+    if (t.source === "settlement") {
+      return ["out", "credit_reversal"].includes(t.settlement_direction) ? "-" : "+";
+    }
+    if (t.type === "expense") return "-";
+    if (t.type === "income") return "+";
+    return "";
+  };
+
+  const renderBadges = (t) => (
+    <>
+      {(t.recurrence_id || t.notes === "(recorrente)") && (
+        <span data-testid={`tx-recurrent-badge-${t.id}`}
+          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#061B4A] bg-[#E7FAF5] rounded-full px-2 py-0.5">
+          <Repeat size={10} /> {tr("Recorrente")}
+        </span>
+      )}
+      {t.source === "installment" && (
+        <span data-testid={`tx-installment-badge-${t.id}`}
+          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#8A5A00] bg-orange-50 rounded-full px-2 py-0.5">
+          <CreditCard size={10} /> {tr("Parcela")}
+        </span>
+      )}
+      {t.source === "shared_expense" && (
+        <span data-testid={`tx-shared-badge-${t.id}`}
+          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#0D5DD7] bg-[#EEF4FF] rounded-full px-2 py-0.5">
+          {tr("Compartilhada")}
+        </span>
+      )}
+      {t.source === "settlement" && (
+        <span data-testid={`tx-settlement-badge-${t.id}`}
+          className="inline-flex items-center gap-1 text-[10px] font-medium text-violet-700 bg-violet-50 rounded-full px-2 py-0.5">
+          {tr("Acerto")}
+        </span>
+      )}
+      {t.overdue && (
+        <span data-testid={`tx-overdue-badge-${t.id}`}
+          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#D9453B] bg-red-50 rounded-full px-2 py-0.5">
+          {tr("Atrasada")}
+        </span>
+      )}
+    </>
+  );
+
+  const renderAmount = (t) => (
+    <>
+      <div>{amountSign(t)}{fmtMoney(t.amount, t.currency || curr)}</div>
+      {t.type === "transfer" && t.target_currency && t.source !== "settlement" && (
+        <div className="text-xs text-[#6B7068]">→ {fmtMoney(t.target_amount ?? t.amount, t.target_currency)}</div>
+      )}
+      {t.type !== "transfer" && (t.currency || curr) !== curr && (
+        <div className="text-xs text-[#6B7068]">≈ {fmtMoney(t.base_amount || 0, curr)}</div>
+      )}
+    </>
+  );
+
+  // p-2.5 on phones gives a ~40px touch target; desktop keeps the compact row.
+  const actionButton = "p-2.5 md:p-1 rounded-lg";
+
+  const renderActions = (t) => {
+    if (t.editable === false) {
+      if (t.source === "installment") {
+        return (
+          <button onClick={() => payInstallment(t)} data-testid={`tx-installment-pay-${t.id}`}
+            className={`${actionButton} ${t.status === "paid" ? "text-emerald-600" : "text-[#6B7068] hover:text-emerald-600"}`}
+            title={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}
+            aria-label={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}>
+            <Check size={16} />
+          </button>
+        );
+      }
+      return (
+        <span
+          className="text-xs text-[#6B7068] italic pr-1"
+          title={t.source === "shared_expense"
+            ? tr("Edite em Despesas Compartilhadas")
+            : tr("Lançamento vinculado")}
+        >
+          {tr("Vinculado")}
+        </span>
+      );
+    }
+    return (
+      <>
+        {t.status !== "cancelled" && (
+          <button
+            onClick={() => payTransaction(t)}
+            data-testid={`tx-pay-${t.id}`}
+            className={`${actionButton} ${
+              t.status === "paid"
+                ? "text-emerald-600 hover:bg-emerald-50"
+                : t.overdue
+                  ? "text-rose-600 hover:bg-rose-50 animate-pulse"
+                  : "text-[#6B7068] hover:text-emerald-600 hover:bg-emerald-50"
+            }`}
+            title={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}
+            aria-label={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}
+          >
+            <Check size={16} />
+          </button>
+        )}
+        <button onClick={() => openEdit(t)} className={`${actionButton} text-[#6B7068] hover:text-[#061B4A]`}
+          data-testid={`tx-edit-${t.id}`} title={tr("Editar")} aria-label={tr("Editar")}>
+          <Pencil size={16} />
+        </button>
+        <button onClick={() => setConfirmDel(t)} className={`${actionButton} text-[#6B7068] hover:text-[#D9453B]`}
+          data-testid={`tx-delete-${t.id}`} title={tr("Excluir")} aria-label={tr("Excluir")}>
+          <Trash2 size={16} />
+        </button>
+      </>
+    );
+  };
+
   const payInstallment = async (t) => {
     await api.post(`/installments/${t.id}/pay`);
     toast.success(t.status === "paid" ? "Parcela reaberta" : "Parcela paga");
@@ -431,6 +562,10 @@ export default function Transactions() {
                       setForm({ ...form, amount, target_amount: target });
                     }} required data-testid="tx-amount-input" />
                 </div>
+                <div className="col-span-2">
+                  <Label>{tr("Descrição")}</Label>
+                  <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder={tr("Ex: Mercado, aluguel, salário")} data-testid="tx-description-input" />
+                </div>
                 {form.type !== "transfer" && (
                 <div>
                   <Label>{tr("Moeda")}</Label>
@@ -473,7 +608,7 @@ export default function Transactions() {
                 </div>
                 )}
                 {form.type !== "transfer" && (
-                <div>
+                <div className="col-span-2">
                   <Label>{tr("Conta")}</Label>
                   <Select value={form.account_id} onValueChange={(value) => {
                     const account = accs.find(item => item.id === value);
@@ -616,10 +751,6 @@ export default function Transactions() {
                 </div>
                 )}
                 <div className="col-span-2">
-                  <Label>{tr("Descrição")}</Label>
-                  <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} data-testid="tx-description-input" />
-                </div>
-                <div className="col-span-2">
                   <Label>{tr("Observações")}</Label>
                   <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} data-testid="tx-notes-input" />
                 </div>
@@ -634,11 +765,22 @@ export default function Transactions() {
       </div>
 
       <div className="card-soft p-4 md:p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
+        <div className={`flex items-center justify-between ${filtersOpen ? "mb-4" : "md:mb-4"}`}>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen(value => !value)}
+            aria-expanded={filtersOpen}
+            data-testid="filters-toggle"
+            className="flex items-center gap-2 min-h-[44px] md:min-h-0 md:pointer-events-none"
+            style={{ color: "var(--text-muted)" }}
+          >
             <SlidersHorizontal size={16} />
             <span className="text-xs uppercase font-medium tracking-[0.06em]">{tr("Filtros")}</span>
-          </div>
+            {activeFilterCount > 0 && (
+              <span className="rounded-full bg-[#061B4A] text-white text-[10px] font-semibold px-1.5 py-0.5">{activeFilterCount}</span>
+            )}
+            <ChevronDown size={16} className={`md:hidden transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+          </button>
           {hasActiveFilters && (
             <button
               type="button"
@@ -650,7 +792,7 @@ export default function Transactions() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+        <div className={`${filtersOpen ? "grid" : "hidden"} md:grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3`} data-testid="filters-panel">
           <div>
             <label className="block text-[10px] uppercase tracking-[0.06em] font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>{tr("Tipo")}</label>
             <select value={filter.type} onChange={e => setFilter({ ...filter, type: e.target.value })}
@@ -726,6 +868,48 @@ export default function Transactions() {
         </div>
       )}
 
+      {!isDesktop && (
+        <div className="space-y-2" data-testid="tx-mobile-list">
+          {items.length === 0 && (
+            <div className="card-soft text-center py-12 text-[#6B7068]">{tr("Nenhum lançamento")}</div>
+          )}
+          {items.map(t => {
+            const cat = cats.find(c => c.id === t.category_id);
+            return (
+              <div key={t.id} data-testid={`tx-row-${t.id}`}
+                className={`card-soft p-3 ${t.overdue ? "bg-red-50/60" : ""}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-[#1A1C1A] truncate">{t.description || "—"}</div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-[#6B7068]">
+                      {cat && (
+                        <span className="inline-flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />{tr(cat.name)}
+                        </span>
+                      )}
+                      {cat && <span aria-hidden="true">·</span>}
+                      <span>{fmtDate(t.date)}</span>
+                      {t.person?.name && <><span aria-hidden="true">·</span><span>{t.person.name}</span></>}
+                    </div>
+                  </div>
+                  <div className={`text-right font-semibold whitespace-nowrap ${amountClass(t)}`}>
+                    {renderAmount(t)}
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className={`pill pill-${t.status}`}>{STATUS_LABEL[t.status]}</span>
+                    {renderBadges(t)}
+                  </div>
+                  <div className="flex items-center -mr-1.5 shrink-0">{renderActions(t)}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {isDesktop && (
       <div className="card-soft overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="bg-[#F1EFE7] text-[#6B7068]">
@@ -763,36 +947,7 @@ export default function Transactions() {
                   <td className="py-3 px-4 font-medium">
                     <div className="flex items-center gap-2">
                       <span>{t.description || "—"}</span>
-                      {(t.recurrence_id || t.notes === "(recorrente)") && (
-                        <span data-testid={`tx-recurrent-badge-${t.id}`}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#061B4A] bg-[#E7FAF5] rounded-full px-2 py-0.5">
-                          <Repeat size={10} /> {tr("Recorrente")}
-                        </span>
-                      )}
-                      {t.source === "installment" && (
-                        <span data-testid={`tx-installment-badge-${t.id}`}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#8A5A00] bg-orange-50 rounded-full px-2 py-0.5">
-                          <CreditCard size={10} /> {tr("Parcela")}
-                        </span>
-                      )}
-                      {t.source === "shared_expense" && (
-                        <span data-testid={`tx-shared-badge-${t.id}`}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#0D5DD7] bg-[#EEF4FF] rounded-full px-2 py-0.5">
-                          {tr("Compartilhada")}
-                        </span>
-                      )}
-                      {t.source === "settlement" && (
-                        <span data-testid={`tx-settlement-badge-${t.id}`}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium text-violet-700 bg-violet-50 rounded-full px-2 py-0.5">
-                          {tr("Acerto")}
-                        </span>
-                      )}
-                      {t.overdue && (
-                        <span data-testid={`tx-overdue-badge-${t.id}`}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#D9453B] bg-red-50 rounded-full px-2 py-0.5">
-                          {tr("Atrasada")}
-                        </span>
-                      )}
+                      {renderBadges(t)}
                     </div>
                   </td>
                   <td className="py-3 px-4">
@@ -805,75 +960,12 @@ export default function Transactions() {
                   <td className="py-3 px-4">
                     <span className={`pill pill-${t.status}`}>{STATUS_LABEL[t.status]}</span>
                   </td>
-                  <td className={`py-3 px-4 text-right font-medium ${
-                    t.type === "income" ? "text-emerald-600" : t.type === "expense" ? "text-rose-600" : "text-[#1A1C1A]"
-                  }`}>
-                    <div>
-                      {t.source === "settlement"
-                        ? (
-                          ["out", "credit_reversal"].includes(t.settlement_direction)
-                            ? "-"
-                            : "+"
-                        )
-                        : t.type === "expense"
-                          ? "-"
-                          : t.type === "income"
-                            ? "+"
-                            : ""}
-                      {fmtMoney(t.amount, t.currency || curr)}
-                    </div>
-                    {t.type === "transfer" && t.target_currency && t.source !== "settlement" && (
-                      <div className="text-xs text-[#6B7068]">→ {fmtMoney(t.target_amount ?? t.amount, t.target_currency)}</div>
-                    )}
-                    {t.type !== "transfer" && (t.currency || curr) !== curr && (
-                      <div className="text-xs text-[#6B7068]">≈ {fmtMoney(t.base_amount || 0, curr)}</div>
-                    )}
+                  <td className={`py-3 px-4 text-right font-medium ${amountClass(t)}`}>
+                    {renderAmount(t)}
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex gap-1 justify-end items-center">
-                      {t.editable === false ? (
-                        t.source === "installment" ? (
-                          <button onClick={() => payInstallment(t)} data-testid={`tx-installment-pay-${t.id}`}
-                            className={`p-1 ${t.status === "paid" ? "text-emerald-600" : "text-[#6B7068] hover:text-emerald-600"}`}
-                            title={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}>
-                            <Check size={16} />
-                          </button>
-                        ) : (
-                          <span
-                            className="text-xs text-[#6B7068] italic pr-1"
-                            title={t.source === "shared_expense"
-                              ? tr("Edite em Despesas Compartilhadas")
-                              : tr("Lançamento vinculado")}
-                          >
-                            {tr("Vinculado")}
-                          </span>
-                        )
-                      ) : (
-                      <>
-                      {t.status !== "cancelled" && (
-                        <button
-                          onClick={() => payTransaction(t)}
-                          data-testid={`tx-pay-${t.id}`}
-                          className={`p-1 rounded ${
-                            t.status === "paid"
-                              ? "text-emerald-600 hover:bg-emerald-50"
-                              : t.overdue
-                                ? "text-rose-600 hover:bg-rose-50 animate-pulse"
-                                : "text-[#6B7068] hover:text-emerald-600 hover:bg-emerald-50"
-                          }`}
-                          title={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}
-                        >
-                          <Check size={16} />
-                        </button>
-                      )}
-                      <button onClick={() => openEdit(t)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`tx-edit-${t.id}`} title={tr("Editar")}>
-                        <Pencil size={16} />
-                      </button>
-                      <button onClick={() => setConfirmDel(t)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`tx-delete-${t.id}`} title={tr("Excluir")}>
-                        <Trash2 size={16} />
-                      </button>
-                      </>
-                      )}
+                      {renderActions(t)}
                     </div>
                   </td>
                 </tr>
@@ -882,6 +974,7 @@ export default function Transactions() {
           </tbody>
         </table>
       </div>
+      )}
 
       <ConfirmDialog
         open={!!confirmDel}
