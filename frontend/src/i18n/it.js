@@ -445,7 +445,6 @@ export default {
   "Cotação automática de {date}. Você pode substituir pelo valor real do banco.": "Tasso automatico del {date}. Puoi sostituirlo con il tasso reale della banca.",
   "Cotação automática de {date}; ajuste pelo valor real do banco se necessário.": "Tasso automatico del {date}; adegualo al valore reale della banca se necessario.",
   "\"{name}\" será removido. As despesas vinculadas a este grupo permanecem visíveis aos participantes.": "\"{name}\" verrà rimosso. Le spese collegate al gruppo resteranno visibili ai partecipanti.",
-  "\"{name}\" será removida. Os lançamentos vinculados permanecem.": "\"{name}\" verrà rimosso. I movimenti collegati resteranno.",
   "\"{name}\" será removida permanentemente.": "\"{name}\" verrà rimosso definitivamente.",
   "\"{name}\" será removida. Lançamentos existentes não serão afetados.": "\"{name}\" verrà rimossa. I movimenti esistenti non saranno modificati.",
   "\"{name}\" não gerará mais lançamentos e os lançamentos FUTUROS já gerados por ela serão removidos. Os lançamentos passados permanecem.": "\"{name}\" non genererà più movimenti e quelli FUTURI già generati saranno rimossi. I movimenti passati resteranno.",
@@ -1031,4 +1030,10 @@ export default {
   "Compartilhado": "Condiviso",
   "Administração": "Amministrazione",
   "Ex: Mercado, aluguel, salário": "Es: spesa, affitto, stipendio",
+  "{count} carteira(s)": "{count} conto/i",
+  "convertido para {currency}": "convertito in {currency}",
+  "Nenhuma carteira ainda": "Nessun conto ancora",
+  "Editar carteira": "Modifica conto",
+  "Ex: Nubank, Poupança, Tesouro": "Es: Revolut, Risparmi, BTP",
+  "\"{name}\" será removida. Só é possível excluir carteiras sem histórico, para que nenhum lançamento suma dos saldos.": "\"{name}\" verrà rimosso. Si possono eliminare solo i conti senza storico, così nessun movimento sparisce dai saldi.",
 };

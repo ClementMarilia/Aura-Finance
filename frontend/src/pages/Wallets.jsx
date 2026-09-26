@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Pencil, Trash2, Wallet, PiggyBank, Banknote, CreditCard, TrendingUp, ArrowLeftRight, Calculator, Scale } from "lucide-react";
+import { Plus, Pencil, Trash2, Wallet, PiggyBank, Banknote, CreditCard, TrendingUp, ArrowLeftRight, Scale, ChevronRight, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   BALANCE_COMPONENTS,
@@ -51,6 +51,8 @@ export default function Wallets() {
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [breakdown, setBreakdown] = useState(null);
+  const [breakdownAccount, setBreakdownAccount] = useState(null);
+  const [showEmpty, setShowEmpty] = useState(false);
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [reconcileForm, setReconcileForm] = useState({ actual_balance: "", note: "" });
   const [editingReconciliation, setEditingReconciliation] = useState(null);
@@ -173,7 +175,17 @@ export default function Wallets() {
   const visibleList = currencyFilter
     ? list.filter(account => (account.currency || curr) === currencyFilter)
     : list;
-  const total = visibleList.reduce((s, a) => s + (a.balance_base ?? a.balance ?? 0), 0);
+  // A currency filter shows the total in that currency; otherwise every wallet
+  // is converted to the user's base currency.
+  const totalCurrency = currencyFilter || curr;
+  const total = visibleList.reduce((sum, a) => (
+    sum + (currencyFilter ? (a.balance ?? 0) : (a.balance_base ?? a.balance ?? 0))
+  ), 0);
+  const walletCurrencies = new Set(list.map(a => a.currency || curr));
+  const nonZero = (a) => Math.abs(Number(a.balance) || 0) >= 0.005;
+  const activeWallets = visibleList.filter(nonZero);
+  const emptyWallets = visibleList.filter(a => !nonZero(a));
+  const shownWallets = showEmpty ? [...activeWallets, ...emptyWallets] : activeWallets;
 
   const openNew = () => { setEditing(null); setForm({ ...emptyForm, currency: curr }); setOpen(true); };
   const openEdit = (a) => {
@@ -194,13 +206,20 @@ export default function Wallets() {
 
   const remove = async () => {
     if (!confirmDel) return;
-    await api.delete(`/accounts/${confirmDel.id}`);
-    setConfirmDel(null);
-    toast.success(tr("Carteira excluída"));
-    load();
+    try {
+      await api.delete(`/accounts/${confirmDel.id}`);
+      toast.success(tr("Carteira excluída"));
+      setBreakdownOpen(false);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setConfirmDel(null);
+    }
   };
 
   const showBalanceBreakdown = async (account) => {
+    setBreakdownAccount(account);
     setBreakdownOpen(true);
     setBreakdownLoading(true);
     setBreakdown(null);
@@ -303,88 +322,104 @@ export default function Wallets() {
   };
 
   return (
-    <div className="space-y-6" data-testid="wallets-page">
-      <div className="flex items-end justify-between flex-wrap gap-3">
+    <div className="space-y-4 md:space-y-6" data-testid="wallets-page">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Carteiras")}</h1>
-          <p className="text-[#6B7068]">{tr("Contas, poupança e investimentos — saldo usado para pagar contas")}</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Carteiras")}</h1>
+          <p className="text-sm text-[#6B7068]">{tr("Contas, poupança e investimentos — saldo usado para pagar contas")}</p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={openTransfer} data-testid="wallet-transfer-btn" variant="outline" className="rounded-xl border-[#061B4A] text-[#061B4A]">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+          <Button onClick={openTransfer} data-testid="wallet-transfer-btn" variant="outline" className="min-h-[44px] rounded-xl border-[#061B4A] text-[#061B4A]">
             <ArrowLeftRight size={16} className="mr-1" /> {tr("Transferir")}
           </Button>
-          <Button onClick={openNew} data-testid="wallet-new-btn" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
+          <Button onClick={openNew} data-testid="wallet-new-btn" className="min-h-[44px] bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
             <Plus size={16} className="mr-1" /> {tr("Nova carteira")}
           </Button>
         </div>
       </div>
 
-      <div className="flex justify-end">
-        <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
-          data-testid="wallet-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
-          <option value="">{tr("Todas as moedas")}</option>
-          {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
-      </div>
-
-      <div className="card-soft" data-testid="wallets-total">
-        <div className="text-sm text-[#6B7068]">{tr("Saldo total disponível")}</div>
-        <div className={`text-4xl font-semibold mt-1 ${total >= 0 ? "text-[#061B4A]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }}>
-          {fmtMoney(total, curr)}
+      <div className="card-soft bg-gradient-to-br from-[#061B4A] to-[#1268F4] text-white border-transparent" data-testid="wallets-total">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-medium uppercase tracking-[0.08em] opacity-80">{tr("Saldo total disponível")}</div>
+          {walletCurrencies.size > 1 && (
+            <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
+              data-testid="wallet-currency-filter" aria-label={tr("Moeda")}
+              className="rounded-lg border border-white/30 bg-white/10 px-2 py-1 text-xs text-white [&>option]:text-[#1A1C1A]">
+              <option value="">{tr("Todas as moedas")}</option>
+              {CURRENCIES.filter(item => walletCurrencies.has(item.value)).map(item => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        <div className="money-value mt-1 text-[clamp(2rem,8vw,2.75rem)] font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>
+          {fmtMoney(total, totalCurrency)}
+        </div>
+        <div className="mt-1 text-xs opacity-80">
+          {tr("{count} carteira(s)", { count: visibleList.length })}
+          {!currencyFilter && walletCurrencies.size > 1 ? ` · ${tr("convertido para {currency}", { currency: curr })}` : ""}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {visibleList.map(a => {
-          const meta = typeMeta(a.type);
-          const Icon = meta.icon;
-          return (
-            <div key={a.id} className="card-soft" data-testid={`wallet-${a.id}`}>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-10 h-10 rounded-xl bg-[#E7FAF5] text-[#061B4A] flex items-center justify-center"><Icon size={18} /></div>
-                  <div>
-                    <div className="font-semibold">{tr(a.name)}</div>
-                    <div className="text-xs text-[#6B7068]">{meta.label}</div>
-                  </div>
-                </div>
-                <div className="flex gap-1">
-                  <button onClick={() => openEdit(a)} data-testid={`wallet-edit-${a.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"><Pencil size={14} /></button>
-                  <button onClick={() => setConfirmDel(a)} data-testid={`wallet-delete-${a.id}`} className="p-1.5 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"><Trash2 size={14} /></button>
+      <div className="card-soft p-0 overflow-hidden" data-testid="wallets-list">
+        {visibleList.length === 0 && (
+          <div className="py-10 text-center text-sm text-[#6B7068]">{tr("Nenhuma carteira ainda")}</div>
+        )}
+        <div className="divide-y divide-[#E5E4E0]">
+          {shownWallets.map(a => {
+            const meta = typeMeta(a.type);
+            const Icon = meta.icon;
+            const own = a.currency || curr;
+            return (
+              <div key={a.id} className="flex items-center gap-2 pr-2" data-testid={`wallet-${a.id}`}>
+                <button type="button" onClick={() => showBalanceBreakdown(a)} data-testid={`wallet-breakdown-${a.id}`}
+                  aria-label={tr("Ver cálculo do saldo")}
+                  className="flex min-h-[64px] min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-[#F1EFE7] transition-colors">
+                  <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[#E7FAF5] text-[#061B4A]"><Icon size={18} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-[#1A1C1A]">{tr(a.name)}</span>
+                    <span className="block text-xs text-[#6B7068]">{meta.label}{own !== curr ? ` · ${own}` : ""}</span>
+                  </span>
+                  <span className="text-right">
+                    <span className={`money-value block font-semibold ${a.balance < 0 ? "text-rose-600" : "text-[#1A1C1A]"}`} data-testid={`wallet-balance-${a.id}`}>
+                      {fmtMoney(a.balance || 0, own)}
+                    </span>
+                    {own !== curr && (
+                      <span className="block text-[11px] text-[#6B7068]">≈ {fmtMoney(a.balance_base || 0, curr)}</span>
+                    )}
+                  </span>
+                  <ChevronRight size={16} className="flex-shrink-0 text-[#A8ABA0]" />
+                </button>
+                <div className="hidden md:flex gap-1">
+                  <button onClick={() => openEdit(a)} data-testid={`wallet-edit-${a.id}`} aria-label={tr("Editar")}
+                    className="p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"><Pencil size={15} /></button>
+                  <button onClick={() => setConfirmDel(a)} data-testid={`wallet-delete-${a.id}`} aria-label={tr("Excluir")}
+                    className="p-2 rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#D9453B]"><Trash2 size={15} /></button>
                 </div>
               </div>
-              <div className="mt-4">
-                <div className="text-sm text-[#6B7068]">{tr("Saldo atual")}</div>
-                <div className={`text-2xl font-semibold ${a.balance >= 0 ? "text-[#061B4A]" : "text-rose-600"}`} style={{ fontFamily: "Outfit" }} data-testid={`wallet-balance-${a.id}`}>
-                  {fmtMoney(a.balance || 0, a.currency || curr)}
-                </div>
-                {(a.currency || curr) !== curr && (
-                  <div className="text-xs text-[#6B7068] mt-1">≈ {fmtMoney(a.balance_base || 0, curr)} na moeda-base</div>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => showBalanceBreakdown(a)}
-                data-testid={`wallet-breakdown-${a.id}`}
-                className="mt-4 w-full rounded-xl border-[#D8D7D2] text-[#061B4A]"
-              >
-                <Calculator size={15} className="mr-1.5" />
-                {tr("Ver cálculo do saldo")}
-              </Button>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+        {emptyWallets.length > 0 && (
+          <button type="button" onClick={() => setShowEmpty(value => !value)} aria-expanded={showEmpty}
+            data-testid="wallets-toggle-empty"
+            className="flex min-h-[48px] w-full items-center justify-center gap-1 border-t border-[#E5E4E0] text-xs font-medium text-[#6B7068] hover:text-[#1A1C1A]">
+            {showEmpty
+              ? tr("Ocultar contas zeradas")
+              : tr("Mostrar {count} contas zeradas", { count: emptyWallets.length })}
+            <ChevronDown size={14} className={showEmpty ? "rotate-180" : ""} />
+          </button>
+        )}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle style={{ fontFamily: "Outfit" }}>{editing ? "Editar carteira" : tr("Nova carteira")}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle style={{ fontFamily: "Outfit" }}>{editing ? tr("Editar carteira") : tr("Nova carteira")}</DialogTitle></DialogHeader>
           <form onSubmit={save} className="space-y-3">
             <div>
               <Label>{tr("Nome")}</Label>
               <Input value={form.name} required data-testid="wallet-name-input"
-                onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: Nubank, Poupança, Tesouro" />
+                onChange={e => setForm({ ...form, name: e.target.value })} placeholder={tr("Ex: Nubank, Poupança, Tesouro")} />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
@@ -507,12 +542,26 @@ export default function Wallets() {
                 </div>
               </div>
 
-              <DialogFooter>
+              <DialogFooter className="grid grid-cols-2 gap-2 sm:flex sm:space-x-0">
+                {breakdownAccount && (
+                  <>
+                    <Button type="button" variant="outline" data-testid="wallet-breakdown-edit"
+                      onClick={() => { setBreakdownOpen(false); openEdit(breakdownAccount); }}
+                      className="min-h-[44px] rounded-xl">
+                      <Pencil size={15} className="mr-1.5" /> {tr("Editar")}
+                    </Button>
+                    <Button type="button" variant="outline" data-testid="wallet-breakdown-delete"
+                      onClick={() => setConfirmDel(breakdownAccount)}
+                      className="min-h-[44px] rounded-xl text-[#D9453B] hover:text-[#D9453B]">
+                      <Trash2 size={15} className="mr-1.5" /> {tr("Excluir")}
+                    </Button>
+                  </>
+                )}
                 <Button
                   type="button"
                   onClick={openReconciliation}
                   data-testid="wallet-reconcile-open"
-                  className="rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
+                  className="col-span-2 min-h-[44px] rounded-xl bg-[#061B4A] hover:bg-[#1268F4]"
                 >
                   <Scale size={16} className="mr-1.5" />
                   {tr("Conciliar saldo")}
@@ -702,7 +751,7 @@ export default function Wallets() {
         open={!!confirmDel}
         onOpenChange={(v) => !v && setConfirmDel(null)}
         title={tr("Excluir carteira?")}
-        description={confirmDel ? tr("\"{name}\" será removida. Os lançamentos vinculados permanecem.", { name: confirmDel.name }) : ""}
+        description={confirmDel ? tr("\"{name}\" será removida. Só é possível excluir carteiras sem histórico, para que nenhum lançamento suma dos saldos.", { name: confirmDel.name }) : ""}
         onConfirm={remove}
         testId="wallet-confirm-delete"
       />

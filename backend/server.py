@@ -3400,8 +3400,48 @@ async def update_account(aid: str, payload: AccountIn, user=Depends(get_current_
     return {"ok": True}
 
 
+# Every stored reference to a wallet. Deleting a wallet that is still
+# referenced orphans those records: they silently stop counting towards any
+# balance, and transfers become one-sided.
+ACCOUNT_REFERENCE_FIELDS = (
+    "account_id", "from_account_id", "to_account_id",
+    "payer_account_id", "receiver_account_id",
+)
+ACCOUNT_REFERENCE_COLLECTIONS = (
+    ("transactions", "lançamento(s)"),
+    ("recurrences", "recorrência(s)"),
+    ("installment_purchases", "parcelamento(s)"),
+    ("receivables", "conta(s) a receber"),
+    ("shared_expenses", "despesa(s) compartilhada(s)"),
+    ("settlement_payments", "pagamento(s) de acerto"),
+    ("goals", "meta(s)"),
+    ("account_adjustments", "conciliação(ões)"),
+)
+
+
+async def account_references(aid: str) -> list:
+    query = {"$or": [{field: aid} for field in ACCOUNT_REFERENCE_FIELDS]}
+    usage = []
+    for collection, label in ACCOUNT_REFERENCE_COLLECTIONS:
+        count = await db[collection].count_documents(query)
+        if count:
+            usage.append({"collection": collection, "label": label, "count": count})
+    return usage
+
+
 @api.delete("/accounts/{aid}")
 async def delete_account(aid: str, user=Depends(get_current_user)):
+    account = await db.accounts.find_one({"id": aid, "user_id": user["id"]}, {"_id": 0, "id": 1})
+    if not account:
+        raise HTTPException(404, "Carteira não encontrada")
+    usage = await account_references(aid)
+    if usage:
+        summary = ", ".join(f"{item['count']} {item['label']}" for item in usage)
+        raise HTTPException(
+            409,
+            f"Esta carteira ainda tem histórico ({summary}). Excluí-la faria esses "
+            "registros sumirem dos saldos. Mova ou exclua esses registros antes.",
+        )
     await db.accounts.delete_one({"id": aid, "user_id": user["id"]})
     return {"ok": True}
 

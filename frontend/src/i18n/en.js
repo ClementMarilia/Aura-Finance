@@ -446,7 +446,6 @@ export default {
   "Cotação automática de {date}. Você pode substituir pelo valor real do banco.": "Automatic rate from {date}. You can replace it with the bank's actual rate.",
   "Cotação automática de {date}; ajuste pelo valor real do banco se necessário.": "Automatic rate from {date}; adjust it to the bank's actual rate if needed.",
   "\"{name}\" será removido. As despesas vinculadas a este grupo permanecem visíveis aos participantes.": "\"{name}\" will be removed. Expenses linked to this group will remain visible to participants.",
-  "\"{name}\" será removida. Os lançamentos vinculados permanecem.": "\"{name}\" will be removed. Linked transactions will remain.",
   "\"{name}\" será removida permanentemente.": "\"{name}\" will be permanently removed.",
   "\"{name}\" será removida. Lançamentos existentes não serão afetados.": "\"{name}\" will be removed. Existing transactions will not be affected.",
   "\"{name}\" não gerará mais lançamentos e os lançamentos FUTUROS já gerados por ela serão removidos. Os lançamentos passados permanecem.": "\"{name}\" will stop generating entries, and its already-generated FUTURE entries will be removed. Past entries will remain.",
@@ -1031,4 +1030,10 @@ export default {
   "Compartilhado": "Shared",
   "Administração": "Administration",
   "Ex: Mercado, aluguel, salário": "E.g. groceries, rent, salary",
+  "{count} carteira(s)": "{count} wallet(s)",
+  "convertido para {currency}": "converted to {currency}",
+  "Nenhuma carteira ainda": "No wallets yet",
+  "Editar carteira": "Edit wallet",
+  "Ex: Nubank, Poupança, Tesouro": "E.g. Nubank, Savings, Treasury",
+  "\"{name}\" será removida. Só é possível excluir carteiras sem histórico, para que nenhum lançamento suma dos saldos.": "\"{name}\" will be removed. Only wallets without history can be deleted, so no entry disappears from your balances.",
 };

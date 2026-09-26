@@ -446,7 +446,6 @@ export default {
   "Cotação automática de {date}. Você pode substituir pelo valor real do banco.": "Tipo automático del {date}. Puedes sustituirlo por el tipo real del banco.",
   "Cotação automática de {date}; ajuste pelo valor real do banco se necessário.": "Tipo automático del {date}; ajústalo al tipo real del banco si es necesario.",
   "\"{name}\" será removido. As despesas vinculadas a este grupo permanecem visíveis aos participantes.": "Se eliminará \"{name}\". Los gastos vinculados al grupo seguirán visibles para los participantes.",
-  "\"{name}\" será removida. Os lançamentos vinculados permanecem.": "Se eliminará \"{name}\". Los movimientos vinculados permanecerán.",
   "\"{name}\" será removida permanentemente.": "Se eliminará \"{name}\" de forma permanente.",
   "\"{name}\" será removida. Lançamentos existentes não serão afetados.": "Se eliminará \"{name}\". Los movimientos existentes no se verán afectados.",
   "\"{name}\" não gerará mais lançamentos e os lançamentos FUTUROS já gerados por ela serão removidos. Os lançamentos passados permanecem.": "\"{name}\" dejará de generar movimientos y se eliminarán los movimientos FUTUROS ya generados. Los anteriores permanecerán.",
@@ -1031,4 +1030,10 @@ export default {
   "Compartilhado": "Compartido",
   "Administração": "Administración",
   "Ex: Mercado, aluguel, salário": "Ej: mercado, alquiler, salario",
+  "{count} carteira(s)": "{count} cartera(s)",
+  "convertido para {currency}": "convertido a {currency}",
+  "Nenhuma carteira ainda": "Aún no hay carteras",
+  "Editar carteira": "Editar cartera",
+  "Ex: Nubank, Poupança, Tesouro": "Ej: Nubank, Ahorros, Tesoro",
+  "\"{name}\" será removida. Só é possível excluir carteiras sem histórico, para que nenhum lançamento suma dos saldos.": "\"{name}\" se eliminará. Solo se pueden eliminar carteras sin historial, para que ningún movimiento desaparezca de los saldos.",
 };
