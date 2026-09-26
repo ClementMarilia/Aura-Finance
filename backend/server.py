@@ -4436,18 +4436,49 @@ async def update_receivable(rid: str, payload: ReceivableIn, user=Depends(get_cu
     )
     if not res.matched_count:
         raise HTTPException(404, "Não encontrado")
+    # An already received item has an income in a wallet; keep it in sync, or
+    # correcting the amount/wallet here would leave the wallet on the old value.
+    current = await db.receivables.find_one({"id": rid, "user_id": user["id"]}, {"_id": 0})
+    if current and current.get("status") == "received" and current.get("received_tx_id"):
+        desc = (payload.description or payload.person or "").strip()
+        await db.transactions.update_one(
+            {"id": current["received_tx_id"], "user_id": user["id"]},
+            {"$set": {
+                "amount": payload.amount,
+                "account_id": payload.account_id,
+                "description": f"Recebimento: {desc}" if desc else "Recebimento",
+                **meta,
+            }},
+        )
     return {"ok": True}
 
 
+class ReceiveIn(BaseModel):
+    # Target state. Omitted = legacy toggle. Sending it makes repeated taps
+    # (double tap on a phone, retried request) idempotent.
+    received: Optional[bool] = None
+
+
 @api.post("/receivables/{rid}/receive")
-async def receive_receivable(rid: str, user=Depends(get_current_user)):
+async def receive_receivable(rid: str, body: Optional[ReceiveIn] = None, user=Depends(get_current_user)):
     r = await db.receivables.find_one({"id": rid, "user_id": user["id"]})
     if not r:
         raise HTTPException(404, "Não encontrado")
-    new_status = "pending" if r["status"] == "received" else "received"
+    want = body.received if body and body.received is not None else r["status"] != "received"
+    new_status = "received" if want else "pending"
+    if new_status == r["status"]:
+        return {"ok": True, "status": new_status}
     if new_status == "received":
-        # Create an income transaction so it counts as receita AND credits the wallet
+        # Claim the transition atomically first: only the request that flips
+        # pending -> received creates the income, so it can never be doubled.
         tx_id = new_id()
+        claimed = await db.receivables.update_one(
+            {"id": rid, "user_id": user["id"], "status": {"$ne": "received"}},
+            {"$set": {"status": "received", "received_at": now_iso(), "received_tx_id": tx_id}},
+        )
+        if claimed.modified_count != 1:
+            return {"ok": True, "status": "received"}
+        # Create an income transaction so it counts as receita AND credits the wallet
         desc = (r.get("description") or r.get("person") or "").strip()
         await db.transactions.insert_one({
             "id": tx_id, "user_id": user["id"], "type": "income",
@@ -4466,19 +4497,15 @@ async def receive_receivable(rid: str, user=Depends(get_current_user)):
             "rate_date": r.get("rate_date"),
             "rate_source": r.get("rate_source"),
         })
-        await db.receivables.update_one(
-            {"id": rid},
-            {"$set": {"status": "received", "received_at": now_iso(), "received_tx_id": tx_id}},
-        )
     else:
-        # Reverting to pending: remove the linked income transaction
-        if r.get("received_tx_id"):
-            await db.transactions.delete_one(
-                {"id": r["received_tx_id"], "user_id": user["id"]})
-        await db.receivables.update_one(
-            {"id": rid},
+        # Reverting to pending: claim first, then remove the linked income.
+        released = await db.receivables.find_one_and_update(
+            {"id": rid, "user_id": user["id"], "status": "received"},
             {"$set": {"status": "pending", "received_at": None, "received_tx_id": None}},
         )
+        if released and released.get("received_tx_id"):
+            await db.transactions.delete_one(
+                {"id": released["received_tx_id"], "user_id": user["id"]})
     return {"ok": True, "status": new_status}
 
 

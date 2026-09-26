@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Check, Trash2, Pencil, ArrowRight } from "lucide-react";
+import { Plus, Check, Trash2, Pencil, ArrowRight, CalendarClock } from "lucide-react";
+import { defaultAccountFor } from "@/lib/accounts";
 import { toast } from "sonner";
 
 import { translate as tr } from "@/i18n";
@@ -23,6 +24,8 @@ export default function Receivables() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "", currency: curr });
   const [confirmDel, setConfirmDel] = useState(null);
+  const [confirmReceive, setConfirmReceive] = useState(null);
+  const [busyId, setBusyId] = useState(null);
   const [currencyFilter, setCurrencyFilter] = useState("");
 
   const load = useCallback(() => Promise.all([
@@ -45,8 +48,10 @@ export default function Receivables() {
   const sharedPayTotal = sharedToPay.reduce((sum, row) => sum + Number(row.amount || 0), 0);
 
   const openNew = () => {
+    // Receiving credits a wallet, so new items start on one (same rule as Lançamentos).
+    const account = defaultAccountFor(accs, curr);
     setEditing(null);
-    setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: "", currency: curr });
+    setForm({ person: "", amount: "", due_date: new Date().toISOString().slice(0, 10), description: "", account_id: account?.id || "", currency: account?.currency || curr });
     setOpen(true);
   };
   const openEdit = (r) => {
@@ -72,39 +77,63 @@ export default function Receivables() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const receive = async (id) => {
+  // Sends the target state (not a toggle) and ignores taps while a request
+  // is in flight, so a double tap can never record the income twice.
+  const receive = async () => {
+    if (!confirmReceive || busyId) return;
+    const target = confirmReceive.status !== "received";
+    setBusyId(confirmReceive.id);
     try {
-      const r = await api.post(`/receivables/${id}/receive`);
-      toast.success(r.data?.status === "received" ? tr("Recebido! Receita lançada na carteira") : "Recebimento desfeito");
+      const r = await api.post(`/receivables/${confirmReceive.id}/receive`, { received: target });
+      if (r.data?.status !== "received") toast.success(tr("Recebimento desfeito"));
+      else if (confirmReceive.account_id) toast.success(tr("Recebido! Receita lançada na carteira"));
+      else toast.warning(tr("Recebido, mas sem carteira: edite a cobrança e escolha uma para o saldo refletir."));
       load();
-    } catch (err) { toast.error(formatApiError(err)); }
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setBusyId(null);
+      setConfirmReceive(null);
+    }
   };
   const remove = async () => {
     if (!confirmDel) return;
-    await api.delete(`/receivables/${confirmDel.id}`);
-    setConfirmDel(null);
-    toast.success(tr("Conta excluída"));
-    load();
+    try {
+      await api.delete(`/receivables/${confirmDel.id}`);
+      toast.success(tr("Conta excluída"));
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setConfirmDel(null);
+    }
   };
+  const accountName = (id) => {
+    const account = accs.find(a => a.id === id);
+    return account ? tr(account.name) : tr("nenhuma carteira");
+  };
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const pendingOwn = list.filter(r => r.status !== "received");
+  const pendingOwnTotal = pendingOwn.reduce((sum, r) => sum + Number(r.base_amount ?? r.amount ?? 0), 0);
 
   return (
-    <div className="space-y-6" data-testid="receivables-page">
+    <div className="space-y-4 md:space-y-6" data-testid="receivables-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Contas a Receber")}</h1>
-          <p className="text-[#6B7068]">{tr("Valores a receber e a pagar, sem misturar com receitas e despesas")}</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Contas a Receber")}</h1>
+          <p className="text-sm text-[#6B7068]">{tr("Valores a receber e a pagar, sem misturar com receitas e despesas")}</p>
         </div>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>
-            <Button onClick={openNew} data-testid="new-receivable-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
+            <Button onClick={openNew} data-testid="new-receivable-button" className="min-h-[44px] w-full sm:w-auto bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
               <Plus size={16} className="mr-1" /> {tr("Nova conta a receber")}
             </Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>{editing ? "Editar conta a receber" : tr("Nova conta a receber")}</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{editing ? tr("Editar conta a receber") : tr("Nova conta a receber")}</DialogTitle></DialogHeader>
             <form onSubmit={submit} className="space-y-3">
               <div><Label>{tr("Pessoa / Empresa")}</Label>
-                <Input value={form.person} required data-testid="rec-person-input"
+                <Input value={form.person} required data-testid="rec-person-input" placeholder={tr("Ex: Ana, Empresa X")}
                   onChange={e => setForm({ ...form, person: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>{tr("Valor")}</Label>
@@ -141,7 +170,7 @@ export default function Receivables() {
                     ))}
                   </SelectContent>
                 </Select></div>
-              <Button type="submit" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="rec-submit-button">
+              <Button type="submit" className="min-h-[44px] w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="rec-submit-button">
                 {editing ? tr("Salvar alterações") : tr("Salvar")}
               </Button>
             </form>
@@ -149,130 +178,131 @@ export default function Receivables() {
         </Dialog>
       </div>
 
-      <div className="flex justify-end">
-        <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
-          data-testid="receivable-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
-          <option value="">{tr("Todas as moedas")}</option>
-          {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="card-soft border-l-4 border-l-emerald-500">
-          <p className="text-sm text-[#6B7068]">{tr("A receber de despesas compartilhadas")}</p>
-          <p className="mt-1 text-2xl font-semibold text-emerald-700" style={{ fontFamily: "Outfit" }}>
-            {fmtMoney(sharedReceiveTotal, curr)}
-          </p>
-          <p className="mt-1 text-xs text-[#6B7068]">
-            {tr("{count} valor(es) pendente(s)", { count: sharedToReceive.length })}
-          </p>
-        </div>
-        <div className="card-soft border-l-4 border-l-rose-500">
-          <p className="text-sm text-[#6B7068]">{tr("A pagar de despesas compartilhadas")}</p>
-          <p className="mt-1 text-2xl font-semibold text-rose-600" style={{ fontFamily: "Outfit" }}>
-            {fmtMoney(sharedPayTotal, curr)}
-          </p>
-          <p className="mt-1 text-xs text-[#6B7068]">
-            {tr("{count} valor(es) pendente(s)", { count: sharedToPay.length })}
-          </p>
-        </div>
-      </div>
-
-      {(sharedToReceive.length > 0 || sharedToPay.length > 0) && (
-        <div className="card-soft overflow-x-auto p-0">
-          <div className="flex items-center justify-between gap-3 p-4 pb-2">
-            <div>
-              <h2 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>
-                {tr("Pendências compartilhadas")}
-              </h2>
-              <p className="text-xs text-[#6B7068]">
-                {tr("Esses valores não são novas receitas ou despesas.")}
-              </p>
-            </div>
-            <Link to="/acertos" className="inline-flex items-center gap-1 text-sm font-medium text-[#0D5DD7]">
-              {tr("Ver acertos")} <ArrowRight size={14} />
-            </Link>
-          </div>
-          <table className="w-full text-sm">
-            <thead className="bg-[#F1EFE7] text-[#6B7068]">
-              <tr>
-                <th className="text-left py-3 px-4">{tr("Pessoa")}</th>
-                <th className="text-left py-3 px-4">{tr("Despesa")}</th>
-                <th className="text-left py-3 px-4">{tr("Situação")}</th>
-                <th className="text-right py-3 px-4">{tr("Valor")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...sharedToReceive, ...sharedToPay].map(row => {
-                const receiving = row.creditor_id === user.id;
-                const person = receiving ? row.debtor : row.creditor;
-                return (
-                  <tr key={`${row.expense_id}-${row.debtor_id}`} className="border-b border-[#E5E4E0]">
-                    <td className="py-3 px-4 font-medium">{person?.name || "—"}</td>
-                    <td className="py-3 px-4">{row.title}</td>
-                    <td className={`py-3 px-4 font-medium ${receiving ? "text-emerald-700" : "text-rose-600"}`}>
-                      {receiving ? tr("A receber") : tr("A pagar")}
-                    </td>
-                    <td className="py-3 px-4 text-right font-semibold">
-                      {fmtMoney(row.amount, row.currency || curr)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {(currencyFilter || new Set([...list, ...sharedRows].map(item => item.currency || curr)).size > 1) && (
+        <div className="flex justify-end">
+          <select value={currencyFilter} onChange={event => setCurrencyFilter(event.target.value)}
+            data-testid="receivable-currency-filter" className="bg-white border border-[#E5E4E0] rounded-xl px-3 py-2 text-sm">
+            <option value="">{tr("Todas as moedas")}</option>
+            {CURRENCIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
         </div>
       )}
 
-      <div className="card-soft overflow-x-auto p-0">
-        <div className="p-4 pb-2">
-          <h2 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>
-            {tr("Outras contas a receber")}
-          </h2>
-          <p className="text-xs text-[#6B7068]">
-            {tr("Cobranças e valores cadastrados manualmente")}
-          </p>
+      <div className="card-soft p-4" data-testid="receivables-summary">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="stat-label">{tr("A receber")}</div>
+            <div className="money-value mt-1 text-xl font-semibold text-emerald-600" style={{ fontFamily: "Outfit" }}>
+              {fmtMoney(pendingOwnTotal + sharedReceiveTotal, curr)}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="stat-label">{tr("A pagar")}</div>
+            <div className="money-value mt-1 text-xl font-semibold text-rose-600" style={{ fontFamily: "Outfit" }}>
+              {fmtMoney(sharedPayTotal, curr)}
+            </div>
+          </div>
         </div>
-        <table className="w-full text-sm">
-          <thead className="bg-[#F1EFE7] text-[#6B7068]">
-            <tr>
-              <th className="text-left py-3 px-4">{tr("Pessoa / Empresa")}</th>
-              <th className="text-left py-3 px-4">{tr("Descrição")}</th>
-              <th className="text-left py-3 px-4">{tr("Vencimento")}</th>
-              <th className="text-left py-3 px-4">{tr("Status")}</th>
-              <th className="text-right py-3 px-4">{tr("Valor")}</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.length === 0 && <tr><td colSpan={6} className="text-center py-12 text-[#6B7068]">{tr("Nenhum registro")}</td></tr>}
-            {list.map(r => (
-              <tr key={r.id} className="border-b border-[#E5E4E0]" data-testid={`rec-row-${r.id}`}>
-                <td className="py-3 px-4 font-medium">{r.person}</td>
-                <td className="py-3 px-4">{r.description || "—"}</td>
-                <td className="py-3 px-4">{fmtDate(r.due_date)}</td>
-                <td className="py-3 px-4">
-                  <span className={`pill ${r.status === "received" ? "pill-paid" : "pill-pending"}`}>
-                    {r.status === "received" ? tr("Recebido") : tr("Pendente")}
-                  </span>
-                </td>
-                <td className="py-3 px-4 text-right font-semibold">{fmtMoney(r.amount, r.currency || curr)}</td>
-                <td className="py-3 px-4 flex gap-1 justify-end">
-                  <button onClick={() => receive(r.id)} className="text-emerald-600 hover:text-emerald-800 p-1" data-testid={`rec-receive-${r.id}`} title={tr("Marcar como recebido")}>
-                    <Check size={16} />
-                  </button>
-                  <button onClick={() => openEdit(r)} className="text-[#6B7068] hover:text-[#061B4A] p-1" data-testid={`rec-edit-${r.id}`} title={tr("Editar")}>
-                    <Pencil size={16} />
-                  </button>
-                  <button onClick={() => setConfirmDel(r)} className="text-[#6B7068] hover:text-[#D9453B] p-1" data-testid={`rec-delete-${r.id}`} title={tr("Excluir")}>
-                    <Trash2 size={16} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="mt-2 text-xs text-[#6B7068]">
+          {tr("{own} cobrança(s) · {shared} pendência(s) compartilhada(s)", { own: pendingOwn.length, shared: sharedToReceive.length + sharedToPay.length })}
+        </div>
       </div>
+
+      <section className="space-y-2" data-testid="receivables-list">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Outras contas a receber")}</h2>
+            <p className="text-xs text-[#6B7068]">{tr("Cobranças e valores cadastrados manualmente")}</p>
+          </div>
+        </div>
+        {list.length === 0 && <div className="card-soft py-10 text-center text-sm text-[#6B7068]">{tr("Nenhum registro")}</div>}
+        {list.map(r => {
+          const received = r.status === "received";
+          const overdue = !received && r.due_date < todayIso;
+          return (
+            <div key={r.id} className={`card-soft p-4 ${received ? "opacity-70" : ""}`} data-testid={`rec-row-${r.id}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-[#1A1C1A]">{r.person}</div>
+                  <div className="truncate text-xs text-[#6B7068]">{r.description || "—"}</div>
+                </div>
+                <div className="money-value whitespace-nowrap font-semibold text-emerald-600">{fmtMoney(r.amount, r.currency || curr)}</div>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div className={`flex items-center gap-1 text-xs ${overdue ? "font-medium text-[#D9453B]" : "text-[#6B7068]"}`}>
+                  <CalendarClock size={12} />
+                  {received
+                    ? tr("Recebido")
+                    : overdue ? tr("Atrasada desde {date}", { date: fmtDate(r.due_date) }) : tr("Vence {date}", { date: fmtDate(r.due_date) })}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => openEdit(r)} aria-label={tr("Editar")} data-testid={`rec-edit-${r.id}`}
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-[#6B7068] hover:bg-[#F1EFE7] hover:text-[#061B4A]"><Pencil size={16} /></button>
+                  <button onClick={() => setConfirmDel(r)} aria-label={tr("Excluir")} data-testid={`rec-delete-${r.id}`}
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-[#6B7068] hover:bg-rose-50 hover:text-[#D9453B]"><Trash2 size={16} /></button>
+                  <button onClick={() => setConfirmReceive(r)} disabled={busyId === r.id} data-testid={`rec-receive-${r.id}`}
+                    className={`flex min-h-[40px] items-center gap-1.5 rounded-xl px-3 text-sm font-medium disabled:opacity-50 ${
+                      received ? "bg-emerald-50 text-emerald-700" : "bg-[#061B4A] text-white hover:bg-[#1268F4]"
+                    }`}>
+                    <Check size={14} /> {received ? tr("Recebido") : tr("Receber")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      {(sharedToReceive.length > 0 || sharedToPay.length > 0) && (
+        <section className="card-soft p-0 overflow-hidden" data-testid="receivables-shared">
+          <div className="flex items-start justify-between gap-3 p-4 pb-2">
+            <div>
+              <h2 className="text-base font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Pendências compartilhadas")}</h2>
+              <p className="text-xs text-[#6B7068]">{tr("Esses valores não são novas receitas ou despesas.")}</p>
+            </div>
+            <Link to="/acertos" className="inline-flex min-h-[40px] shrink-0 items-center gap-1 text-sm font-medium text-[#1268F4]">
+              {tr("Ver acertos")} <ArrowRight size={14} />
+            </Link>
+          </div>
+          <div className="divide-y divide-[#E5E4E0]">
+            {[...sharedToReceive, ...sharedToPay].map(row => {
+              const receiving = row.creditor_id === user.id;
+              const person = receiving ? row.debtor : row.creditor;
+              return (
+                <div key={`${row.expense_id}-${row.debtor_id}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-[#1A1C1A]">{person?.name || "—"}</div>
+                    <div className="truncate text-xs text-[#6B7068]">{row.title} · {receiving ? tr("A receber") : tr("A pagar")}</div>
+                  </div>
+                  <div className={`money-value whitespace-nowrap text-sm font-semibold ${receiving ? "text-emerald-600" : "text-rose-600"}`}>
+                    {fmtMoney(row.amount, row.currency || curr)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <ConfirmDialog
+        open={!!confirmReceive}
+        onOpenChange={(v) => !v && !busyId && setConfirmReceive(null)}
+        variant="primary"
+        title={confirmReceive?.status === "received" ? tr("Desfazer recebimento?") : tr("Confirmar recebimento?")}
+        description={confirmReceive ? (
+          confirmReceive.status === "received"
+            ? tr("A receita de {amount} será removida de {wallet} e a cobrança volta a ficar pendente.", {
+              amount: fmtMoney(confirmReceive.amount, confirmReceive.currency || curr), wallet: accountName(confirmReceive.account_id),
+            })
+            : tr("{amount} de {name} entrará em {wallet} como receita.", {
+              amount: fmtMoney(confirmReceive.amount, confirmReceive.currency || curr), name: confirmReceive.person,
+              wallet: accountName(confirmReceive.account_id),
+            })
+        ) : ""}
+        confirmLabel={confirmReceive?.status === "received" ? tr("Desfazer") : tr("Confirmar recebimento")}
+        onConfirm={receive}
+        testId="rec-confirm-receive"
+      />
 
       <ConfirmDialog
         open={!!confirmDel}
