@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import AmountInput from "@/components/AmountInput";
+import ReceiptScanner from "@/components/ReceiptScanner";
+import { takeSharedReceipt } from "@/lib/sharedReceipt";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil, FileDown, X, Repeat, CreditCard, Check, SlidersHorizontal, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown, FileUp, X, Repeat, CreditCard, Check, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
@@ -85,6 +87,7 @@ export default function Transactions() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
+  const [sharedReceipt, setSharedReceipt] = useState(null);
   const [rateLoading, setRateLoading] = useState(false);
   const [rateError, setRateError] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
@@ -275,6 +278,7 @@ export default function Transactions() {
   };
 
   const openNew = () => {
+    setSharedReceipt(null);
     setEditing(null);
     setRateError("");
     setRateLoading(false);
@@ -292,6 +296,32 @@ export default function Transactions() {
     setSearchParams(next, { replace: true });
     openNew();
   }, [quickAdd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A receipt photo shared from another app (Android share sheet) arrives via
+  // the service worker as /lancamentos?recibo=compartilhado.
+  const sharedArrival = accsLoaded && searchParams.get("recibo") === "compartilhado";
+  useEffect(() => {
+    if (!sharedArrival) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("recibo");
+    setSearchParams(next, { replace: true });
+    takeSharedReceipt().then((file) => {
+      openNew();
+      if (file) setSharedReceipt(file);
+      else toast.error(tr("O arquivo compartilhado não chegou. Tente de novo pelo botão Ler recibo."));
+    });
+  }, [sharedArrival]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const applyReceipt = ({ total, date, merchant, category_id }) => {
+    setForm((current) => ({
+      ...current,
+      type: current.type === "transfer" ? "expense" : current.type,
+      amount: total ? total.toFixed(2) : current.amount,
+      date: date || current.date,
+      description: merchant || current.description,
+      category_id: category_id || current.category_id,
+    }));
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -519,9 +549,12 @@ export default function Transactions() {
           <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Lançamentos")}</h1>
           <p className="text-[#6B7068]">{tr("Receitas, despesas e transferências")}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
         <Button variant="outline" onClick={handleCSV} data-testid="tx-export-csv" className="rounded-xl">
           <FileDown size={16} className="mr-1" /> {tr("CSV")}
+        </Button>
+        <Button asChild variant="outline" data-testid="tx-import-statement" className="rounded-xl">
+          <Link to="/importar-extrato"><FileUp size={16} className="mr-1" /> {tr("Importar")}</Link>
         </Button>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>
@@ -532,6 +565,7 @@ export default function Transactions() {
           <DialogContent className="max-w-lg" data-testid="new-transaction-dialog">
             <DialogHeader><DialogTitle>{editing ? tr("Editar lançamento") : tr("Novo lançamento")}</DialogTitle></DialogHeader>
             <form onSubmit={submit} className="space-y-3">
+              {!editing && <ReceiptScanner onResult={applyReceipt} initialFile={sharedReceipt} />}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>{tr("Tipo")}</Label>

@@ -146,6 +146,7 @@ export function formatApiError(err) {
   if (!d) return tr(err?.message || tr("Erro inesperado"));
   if (typeof d === "string") return tr(d);
   if (Array.isArray(d)) return d.map((e) => e?.msg || JSON.stringify(e)).join(" ");
+  if (typeof d.message === "string") return tr(d.message);
   return String(d);
 }
 

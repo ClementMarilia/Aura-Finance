@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
   Users, FolderOpen, Scale, FileBarChart, Wallet, Bell, Target, Repeat, Settings,
   Menu, UserCircle, LogOut, ShieldCheck,
-  ReceiptText, CalendarDays, HeartPulse, TrendingUp, Plus,
+  ReceiptText, CalendarDays, HeartPulse, TrendingUp, Plus, FileUp,
 } from "lucide-react";
 import NotificationsBell from "@/components/NotificationsBell";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -21,6 +21,7 @@ const navGroups = [
     id: "daily", label: tr("Dia a dia"), items: [
       { to: "/", icon: LayoutDashboard, label: tr("Painel"), end: true },
       { to: "/lancamentos", icon: ArrowLeftRight, label: tr("Lançamentos") },
+      { to: "/importar-extrato", icon: FileUp, label: tr("Importar extrato") },
       { to: "/carteiras", icon: Wallet, label: tr("Carteiras") },
       { to: "/extrato-financeiro", icon: ReceiptText, label: tr("Extrato financeiro") },
       { to: "/notificacoes", icon: Bell, label: tr("Notificações") },
