@@ -163,7 +163,7 @@ printf '%s\n' '{"database":"crelith_restore_test","collections":{"users":2},"col
         self.assertIn("secrets.MONGODB_URI_BACKUP", workflow)
         self.assertNotIn("secrets.MONGO_URL", workflow)
 
-        upload = workflow.split("uses: actions/upload-artifact@v4", 1)[1]
+        upload = workflow.split("uses: actions/upload-artifact@v6", 1)[1]
         uploaded_paths = [
             line.strip() for line in upload.splitlines()
             if "backup-output/" in line
