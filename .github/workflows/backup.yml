@@ -45,7 +45,7 @@ jobs:
           exit "$missing"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install MongoDB Database Tools and mongosh
         run: |
@@ -68,8 +68,22 @@ jobs:
           export RESTORE_REPORT_PATH="$BACKUP_OUTPUT_DIR/restore-report.json"
           ./scripts/mongodb_restore_drill.sh
 
+      - name: Publish restore evidence
+        run: |
+          python3 - "$BACKUP_OUTPUT_DIR/restore-report.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          import sys
+
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          print("### Restore drill")
+          print()
+          print("| Resultado | Coleções | Documentos |")
+          print("|---|---:|---:|")
+          print(f"| {report['status']} | {report['collection_count']} | {report['document_count']} |")
+          PY
+
       - name: Upload encrypted backup
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mongodb-backup-${{ github.run_id }}
           path: |

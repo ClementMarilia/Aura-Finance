@@ -83,15 +83,19 @@ obrigatórios, mas não eliminam o risco da allowlist ampla.
 2. Em **Actions > MongoDB backup > Run workflow**, execute o backup manualmente.
 3. Confirme que o job ficou verde.
 4. Baixe o artefato e guarde a passphrase separadamente.
-5. Abra `restore-report.json` e registre data, duração, quantidade de coleções e
-   documentos na tabela abaixo.
+5. Registre data, duração, quantidade de coleções e documentos na tabela abaixo.
+   As contagens aparecem no resumo da execução (**Restore drill**) e em
+   `restore-report.json`.
 
 | Data UTC | Workflow/run | Resultado | Duração | Coleções | Documentos | Responsável |
 |---|---|---|---|---:|---:|---|
-| Pendente | Pendente | Pendente | Pendente | Pendente | Pendente | Pendente |
+| 2026-09-28 | [#2](https://github.com/ClementMarilia/Aura-Finance/actions/runs/36432144304) (manual) | Passou | 59 s | não registrado¹ | não registrado¹ | ClementMarilia |
 
-Enquanto essa linha continuar como `Pendente`, o backup não foi validado em
-produção.
+¹ Execução anterior ao resumo automático; as contagens ficaram apenas no
+artefato, que expira em 30 dias.
+
+A primeira execução (#1) falhou porque `MONGODB_URI_BACKUP` apontava para um
+host inexistente; corrigido o secret, a #2 passou.
 
 ## Recuperação de desastre
 
