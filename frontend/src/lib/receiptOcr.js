@@ -7,8 +7,9 @@ const MIN_WIDTH = 1000;
 
 // Rotate by EXIF, scale to a size Tesseract reads well, convert to grayscale
 // and stretch contrast: faded thermal paper is the usual failure mode.
-async function prepareImage(file) {
-  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+// `source` is an image File or a canvas (a scanned PDF page).
+async function prepareImage(source) {
+  const bitmap = await createImageBitmap(source, { imageOrientation: "from-image" });
   const scale = Math.min(MAX_SIDE / Math.max(bitmap.width, bitmap.height), Math.max(1, MIN_WIDTH / bitmap.width));
   const width = Math.round(bitmap.width * scale);
   const height = Math.round(bitmap.height * scale);
@@ -44,10 +45,10 @@ async function prepareImage(file) {
   return canvas;
 }
 
-export async function readReceipt(file, { language = "pt", onProgress } = {}) {
+export async function readReceipt(source, { language = "pt", onProgress } = {}) {
   const [{ createWorker, OEM, PSM }, canvas] = await Promise.all([
     import(/* webpackChunkName: "ocr" */ "tesseract.js"),
-    prepareImage(file),
+    prepareImage(source),
   ]);
   const worker = await createWorker(ocrLanguage(language), OEM.LSTM_ONLY, {
     workerPath: "/ocr/worker.min.js",

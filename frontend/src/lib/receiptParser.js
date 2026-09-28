@@ -2,6 +2,10 @@
 // Every field may be null: the user always reviews before saving.
 
 const TOTAL_KEYWORDS = [
+  // e-mailed receipts and order confirmations
+  "total do pedido", "valor do pedido", "total pago", "valor cobrado", "totale ordine",
+  "totale pagato", "importo addebitato", "total del pedido", "total pagado", "importe cobrado",
+  "order total", "total paid", "amount paid", "amount charged", "you paid",
   // pt
   "valor a pagar", "valor total", "total a pagar", "total r$", "total geral", "valor pago",
   // it
@@ -121,10 +125,47 @@ export function findDate(lines, today = new Date()) {
       // when day-first is impossible (e.g. 03/25/2026).
       candidates.push(toIso(+dmy[3], +dmy[2], +dmy[1]) || toIso(+dmy[3], +dmy[1], +dmy[2]));
     }
+    candidates.push(...textualDates(raw));
     const valid = candidates.find((value) => value && value <= todayIso && value >= oldestIso);
     if (valid) return valid;
   }
   return null;
+}
+
+const MONTHS = {
+  jan: 1, fev: 2, feb: 2, mar: 3, abr: 4, apr: 4, mai: 5, mag: 5, may: 5, jun: 6, giu: 6,
+  jul: 7, lug: 7, ago: 8, aug: 8, set: 9, sep: 9, out: 10, ott: 10, oct: 10, nov: 11,
+  dez: 12, dic: 12, dec: 12, gen: 1, ene: 1,
+};
+// Month names that don't start with one of the prefixes above.
+const MONTH_WORDS = new Set([
+  "janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho", "agosto", "setembro",
+  "outubro", "novembro", "dezembro", "gennaio", "febbraio", "marzo", "aprile", "maggio",
+  "giugno", "luglio", "settembre", "ottobre", "novembre", "dicembre", "enero", "febrero",
+  "mayo", "junio", "julio", "septiembre", "octubre", "noviembre", "diciembre", "january",
+  "february", "march", "april", "june", "july", "august", "september", "october", "november",
+  "december", "sept",
+]);
+
+function monthNumber(word) {
+  const month = MONTHS[word.slice(0, 3)];
+  if (!month) return null;
+  return word.length === 3 || MONTH_WORDS.has(word) ? month : null;
+}
+
+// "28 de setembro de 2026", "28 settembre 2026", "28 Sep 2026", "September 28, 2026".
+function textualDates(line) {
+  const text = normalizeLine(line).replace(/\./g, " ");
+  const found = [];
+  for (const match of text.matchAll(/\b(\d{1,2})(?:st|nd|rd|th|º)?\s+(?:de\s+)?([a-z]{3,10})\s+(?:de\s+)?(\d{4})\b/g)) {
+    const month = monthNumber(match[2]);
+    if (month) found.push(toIso(+match[3], month, +match[1]));
+  }
+  for (const match of text.matchAll(/\b([a-z]{3,10})\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b/g)) {
+    const month = monthNumber(match[1]);
+    if (month) found.push(toIso(+match[3], month, +match[2]));
+  }
+  return found;
 }
 
 function titleCase(text) {

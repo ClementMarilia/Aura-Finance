@@ -7,12 +7,13 @@ import { normalizeText } from "@/lib/statementImport";
 import { getLanguage, translate as tr } from "@/i18n";
 
 const STATUS_LABEL = {
+  "reading pdf": tr("Lendo o PDF..."),
   "loading tesseract core": tr("Preparando o leitor..."),
   "loading language traineddata": tr("Baixando o idioma do leitor..."),
   "recognizing text": tr("Lendo o recibo..."),
 };
 
-// Reads a receipt photo on the device and reports { total, date, merchant,
+// Reads a receipt photo or PDF on the device and reports { total, date, merchant,
 // category_id }. `initialFile` lets a file shared from another app start
 // reading as soon as the form opens.
 export default function ReceiptScanner({ onResult, initialFile = null }) {
@@ -22,19 +23,26 @@ export default function ReceiptScanner({ onResult, initialFile = null }) {
 
   const scan = async (file) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error(tr("Escolha uma foto do recibo (JPG ou PNG)."));
+    const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
+    if (!isPdf && !file.type.startsWith("image/")) {
+      toast.error(tr("Escolha uma foto ou um PDF do recibo."));
       return;
     }
     setBusy(true);
     setProgress({ status: "", value: 0 });
     try {
-      const { readReceipt } = await import(/* webpackChunkName: "ocr" */ "@/lib/receiptOcr");
+      const options = {
+        language: getLanguage(),
+        onProgress: (status, value) => setProgress({ status, value }),
+      };
+      const read = isPdf
+        ? import(/* webpackChunkName: "pdf-receipt" */ "@/lib/pdfReceipt").then(({ readPdfReceipt }) => {
+          setProgress({ status: "reading pdf", value: 0 });
+          return readPdfReceipt(file, options);
+        })
+        : import(/* webpackChunkName: "ocr" */ "@/lib/receiptOcr").then(({ readReceipt }) => readReceipt(file, options));
       const [result, rules] = await Promise.all([
-        readReceipt(file, {
-          language: getLanguage(),
-          onProgress: (status, value) => setProgress({ status, value }),
-        }),
+        read,
         api.get("/statement-imports/rules").then((r) => r.data).catch(() => []),
       ]);
       const merchant = normalizeText(result.merchant);
@@ -63,18 +71,18 @@ export default function ReceiptScanner({ onResult, initialFile = null }) {
 
   const label = busy
     ? `${STATUS_LABEL[progress.status] || tr("Preparando o leitor...")} ${Math.round(progress.value * 100)}%`
-    : tr("Ler recibo (foto)");
+    : tr("Ler recibo (foto ou PDF)");
 
   return (
     <div className="space-y-1">
-      <input ref={input} type="file" accept="image/*" className="hidden"
+      <input ref={input} type="file" accept="image/*,application/pdf,.pdf" className="hidden"
         data-testid="receipt-file" onChange={(event) => scan(event.target.files?.[0])} />
       <Button type="button" variant="outline" disabled={busy} onClick={() => input.current?.click()}
         className="w-full rounded-xl" data-testid="receipt-scan-button">
         <Camera size={16} className="mr-2" /> {label}
       </Button>
       <p className="text-[11px] text-[#6B7068] text-center">
-        {tr("A foto é lida no seu aparelho e não é enviada nem guardada.")}
+        {tr("O recibo é lido no seu aparelho e não é enviado nem guardado.")}
       </p>
     </div>
   );
