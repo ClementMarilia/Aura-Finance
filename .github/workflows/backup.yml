@@ -1,0 +1,81 @@
+name: MongoDB backup
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mongodb-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Encrypted backup and restore drill
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      mongo:
+        image: mongo:8.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      MONGODB_URI_BACKUP: ${{ secrets.MONGODB_URI_BACKUP }}
+      MONGODB_DATABASE: ${{ secrets.MONGODB_DATABASE }}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+    steps:
+      - name: Require backup secrets
+        run: |
+          echo "BACKUP_OUTPUT_DIR=$RUNNER_TEMP/backup-output" >> "$GITHUB_ENV"
+          missing=0
+          for name in MONGODB_URI_BACKUP MONGODB_DATABASE BACKUP_ENCRYPTION_PASSPHRASE; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository secret ${name}. See docs/BACKUP_AND_RESTORE.md."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install MongoDB Database Tools and mongosh
+        run: |
+          curl -fsSL https://pgp.mongodb.com/server-8.0.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg
+          echo "deb [ arch=amd64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" \
+            | sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+          sudo apt-get update -q
+          sudo apt-get install -y -q mongodb-database-tools mongodb-mongosh
+
+      - name: Create encrypted backup
+        run: ./scripts/mongodb_backup.sh
+
+      - name: Restore into isolated test database
+        run: |
+          export BACKUP_ARCHIVE="$(find "$BACKUP_OUTPUT_DIR" -name '*.archive.gz.gpg' -type f -print -quit)"
+          export BACKUP_MANIFEST="$(find "$BACKUP_OUTPUT_DIR" -name '*.manifest.json' -type f -print -quit)"
+          export RESTORE_MONGODB_URI='mongodb://127.0.0.1:27017'
+          export RESTORE_DATABASE='crelith_restore_test'
+          export RESTORE_REPORT_PATH="$BACKUP_OUTPUT_DIR/restore-report.json"
+          ./scripts/mongodb_restore_drill.sh
+
+      - name: Upload encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: mongodb-backup-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/backup-output/*.archive.gz.gpg
+            ${{ runner.temp }}/backup-output/*.manifest.json
+            ${{ runner.temp }}/backup-output/restore-report.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

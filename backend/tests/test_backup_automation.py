@@ -10,6 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 BACKUP_SCRIPT = ROOT / "scripts" / "mongodb_backup.sh"
 RESTORE_SCRIPT = ROOT / "scripts" / "mongodb_restore_drill.sh"
+BACKUP_WORKFLOW = ROOT / ".github" / "workflows" / "backup.yml"
 
 
 def run_script(script, env=None):
@@ -148,6 +149,33 @@ printf '%s\n' '{"database":"crelith_restore_test","collections":{"users":2},"col
             evidence = json.loads(report.read_text(encoding="utf-8"))
             self.assertEqual(evidence["status"], "passed")
             self.assertEqual(evidence["document_count"], 2)
+
+    def test_backup_workflow_runs_daily_and_publishes_only_encrypted_evidence(self):
+        workflow = BACKUP_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn('cron: "17 3 * * *"', workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("./scripts/mongodb_backup.sh", workflow)
+        self.assertIn("./scripts/mongodb_restore_drill.sh", workflow)
+        self.assertIn("RESTORE_DATABASE='crelith_restore_test'", workflow)
+        self.assertIn("retention-days: 30", workflow)
+        self.assertIn("secrets.MONGODB_URI_BACKUP", workflow)
+        self.assertNotIn("secrets.MONGO_URL", workflow)
+
+        upload = workflow.split("uses: actions/upload-artifact@v4", 1)[1]
+        uploaded_paths = [
+            line.strip() for line in upload.splitlines()
+            if "backup-output/" in line
+        ]
+        self.assertEqual(
+            uploaded_paths,
+            [
+                "${{ runner.temp }}/backup-output/*.archive.gz.gpg",
+                "${{ runner.temp }}/backup-output/*.manifest.json",
+                "${{ runner.temp }}/backup-output/restore-report.json",
+            ],
+        )
 
 if __name__ == "__main__":
     unittest.main()

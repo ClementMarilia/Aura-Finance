@@ -1,19 +1,21 @@
 # Backup e restauração do MongoDB
 
-## Status: ADIADO
+## Status: ATIVO (custo zero)
 
-O backup automático de produção está suspenso enquanto o Crelith Finance utiliza
-a infraestrutura gratuita atual. Não há workflow agendado de backup ativo no
-GitHub Actions e nenhum secret de backup é necessário neste momento.
+O workflow `.github/workflows/backup.yml` executa `mongodb_backup.sh` e
+`mongodb_restore_drill.sh` diariamente. O plano gratuito do MongoDB Atlas (M0)
+não oferece snapshots automáticos, por isso o backup roda no GitHub Actions.
+Como o repositório é público, os minutos do Actions e o armazenamento dos
+artefatos não têm custo.
 
-Os scripts `mongodb_backup.sh` e `mongodb_restore_drill.sh` permanecem no
-repositório apenas como preparação para uma futura ativação. Eles não são
-executados automaticamente.
+Enquanto os três secrets abaixo não forem cadastrados, o workflow falha de
+propósito com a mensagem `Missing repository secret`.
 
-O restante deste documento descreve a política planejada para quando o backup
-de produção for formalmente reativado.
+> **Atenção:** o GitHub desativa workflows agendados de repositórios públicos
+> após 60 dias sem atividade no repositório. Se receber o e-mail de aviso,
+> reative em **Actions > MongoDB backup > Enable workflow**.
 
-## Política planejada (inativa)
+## Política
 
 - Frequência: diariamente às 03:17 UTC e sob demanda.
 - Retenção: 30 dias no GitHub Actions.
@@ -28,7 +30,7 @@ O artefato contém somente o arquivo criptografado, o manifesto com SHA-256 e o
 relatório de contagens da restauração. Nenhum documento financeiro é escrito nos
 logs ou no relatório.
 
-## Secrets necessários somente após a reativação
+## Secrets necessários
 
 Em **Settings > Secrets and variables > Actions**, cadastre:
 
@@ -40,6 +42,12 @@ Em **Settings > Secrets and variables > Actions**, cadastre:
 
 Não reutilize `MONGO_URL` do Render. A credencial da aplicação possui permissão
 de escrita; a do backup não deve possuir.
+
+Para criar o usuário no Atlas: **Database Access > Add New Database User**,
+autenticação por senha, papel **Built-in Role > Read Only**
+(`readAnyDatabase`) ou, em **Specific Privileges**, `read` apenas no banco de
+produção. Use a connection string `mongodb+srv://` desse usuário como
+`MONGODB_URI_BACKUP`.
 
 Crie a passphrase com um gerador criptográfico, por exemplo
 `openssl rand -base64 48`, e guarde-a em um gerenciador de senhas fora do
@@ -69,13 +77,10 @@ o plano e a infraestrutura permitirem. Se o cluster estiver liberado para toda a
 internet, a credencial exclusiva, senha forte e privilégio mínimo tornam-se gates
 obrigatórios, mas não eliminam o risco da allowlist ampla.
 
-## Ativação futura e evidência
-
-Antes de ativar qualquer rotina automática, a decisão deve ser revista e um novo
-workflow deve passar por PR e validação. Depois:
+## Ativação e evidência
 
 1. Cadastre os três secrets.
-2. Execute o workflow aprovado para backup e restauração isolada.
+2. Em **Actions > MongoDB backup > Run workflow**, execute o backup manualmente.
 3. Confirme que o job ficou verde.
 4. Baixe o artefato e guarde a passphrase separadamente.
 5. Abra `restore-report.json` e registre data, duração, quantidade de coleções e
@@ -85,8 +90,8 @@ workflow deve passar por PR e validação. Depois:
 |---|---|---|---|---:|---:|---|
 | Pendente | Pendente | Pendente | Pendente | Pendente | Pendente | Pendente |
 
-Enquanto essa linha continuar como `Pendente`, o P0.1 permanece adiado e não
-validado em produção.
+Enquanto essa linha continuar como `Pendente`, o backup não foi validado em
+produção.
 
 ## Recuperação de desastre
 
