@@ -11,6 +11,31 @@ const CACHE_PREFIX = "crelith";
 const STATIC_CACHE = `${CACHE_PREFIX}-${BUILD_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}-${BUILD_VERSION}-runtime`;
 
+// Receipt shared from another app (manifest share_target). Kept outside the
+// versioned caches so an update in between doesn't lose it.
+const SHARE_INBOX = "shared-receipt-inbox";
+const SHARE_KEY = "/shared-receipt/latest";
+const SHARE_ACTION = "/compartilhar-recibo";
+
+async function receiveSharedReceipt(request) {
+  try {
+    const form = await request.formData();
+    const file = form.get("receipt");
+    if (file && typeof file === "object") {
+      const cache = await caches.open(SHARE_INBOX);
+      await cache.put(SHARE_KEY, new Response(file, {
+        headers: {
+          "content-type": file.type || "application/octet-stream",
+          "x-file-name": encodeURIComponent(file.name || "recibo"),
+        },
+      }));
+    }
+  } catch (error) {
+    // Fall through: the page explains that the file did not arrive.
+  }
+  return Response.redirect(new URL("/lancamentos?recibo=compartilhado", self.location.origin).href, 303);
+}
+
 const PRECACHE_URLS = [
   "/",
   "/manifest.json",
@@ -44,9 +69,13 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  if (request.method !== "GET") return;
-
   const url = new URL(request.url);
+
+  if (request.method === "POST" && url.origin === self.location.origin && url.pathname === SHARE_ACTION) {
+    event.respondWith(receiveSharedReceipt(request));
+    return;
+  }
+  if (request.method !== "GET") return;
 
   // Nunca cachear chamadas de API (dados financeiros sempre frescos)
   if (url.pathname.startsWith("/api/")) return;

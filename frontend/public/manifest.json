@@ -57,5 +57,13 @@
       "url": "/acertos",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
-  ]
+  ],
+  "share_target": {
+    "action": "/compartilhar-recibo",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [{ "name": "receipt", "accept": ["image/*"] }]
+    }
+  }
 }

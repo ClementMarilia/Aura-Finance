@@ -31,14 +31,23 @@ assert(
 );
 
 const handlers = {};
+const inbox = new Map();
 let skipWaitingCalls = 0;
 const sandbox = {
   URL,
   Promise,
   console,
   fetch: () => Promise.reject(new Error("fetch não usado neste teste")),
+  Response,
+  Request,
   caches: {
-    open: () => Promise.resolve({ addAll: () => Promise.resolve() }),
+    open: (name) => Promise.resolve({
+      addAll: () => Promise.resolve(),
+      put: (key, response) => {
+        inbox.set(`${name}|${key}`, response);
+        return Promise.resolve();
+      },
+    }),
     keys: () => Promise.resolve([]),
     match: () => Promise.resolve(null),
   },
@@ -79,8 +88,28 @@ Promise.resolve(installPromise)
       "A confirmação do usuário deve liberar a atualização",
     );
 
+    // Android share sheet → POST multipart to the share_target action.
+    const form = new FormData();
+    form.append("receipt", new File(["jpeg"], "cupom mercado.jpg", { type: "image/jpeg" }));
+    let shared;
+    handlers.fetch({
+      request: new Request("https://www.crelithtech.com/compartilhar-recibo", { method: "POST", body: form }),
+      respondWith: (promise) => { shared = promise; },
+    });
+    assert(shared, "O service worker deve responder ao compartilhamento de recibo");
+    return shared;
+  })
+  .then(async (response) => {
+    assert.strictEqual(response.status, 303, "O compartilhamento deve redirecionar ao formulário");
+    assert.strictEqual(response.headers.get("location"), "https://www.crelithtech.com/lancamentos?recibo=compartilhado");
+    const stored = inbox.get("shared-receipt-inbox|/shared-receipt/latest");
+    assert(stored, "O recibo compartilhado deve ficar na caixa de entrada");
+    assert.strictEqual(stored.headers.get("content-type"), "image/jpeg");
+    assert.strictEqual(decodeURIComponent(stored.headers.get("x-file-name")), "cupom mercado.jpg");
+    assert.strictEqual(await stored.text(), "jpeg");
+
     console.log(
-      `[Crelith Finance] PWA validada: v${packageJson.version}, atualização sob confirmação.`,
+      `[Crelith Finance] PWA validada: v${packageJson.version}, atualização sob confirmação, recibo compartilhado recebido.`,
     );
   })
   .catch((error) => {
