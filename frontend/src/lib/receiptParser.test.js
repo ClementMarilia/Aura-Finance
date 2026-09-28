@@ -111,3 +111,39 @@ test("maps interface language to OCR model", () => {
   expect(ocrLanguage("it")).toBe("ita");
   expect(ocrLanguage("xx")).toBe("por");
 });
+
+// Order confirmation e-mail saved as PDF.
+const EMAIL = `
+Livraria Online
+Obrigado pela sua compra!
+Pedido nº 4471-2291
+Realizado em 21 de setembro de 2026
+O Pequeno Príncipe          1   39,90
+Frete                           12,50
+Subtotal                        52,40
+Desconto                        -5,00
+Total do pedido          R$ 47,40
+Pago com cartão de crédito final 1234
+`;
+
+test("reads an order confirmation e-mail with a textual date", () => {
+  expect(parseReceiptText(EMAIL, TODAY)).toEqual({
+    total: 47.4,
+    date: "2026-09-21",
+    merchant: "Livraria Online",
+  });
+});
+
+test("understands month names in pt, it, es and en", () => {
+  expect(findDate(["Data: 3 settembre 2026"], TODAY)).toBe("2026-09-03");
+  expect(findDate(["Fecha: 14 de agosto de 2026"], TODAY)).toBe("2026-08-14");
+  expect(findDate(["Order placed September 2, 2026"], TODAY)).toBe("2026-09-02");
+  expect(findDate(["Tuesday 1st Sept. 2026"], TODAY)).toBe("2026-09-01");
+  expect(findDate(["28 mar 2026"], TODAY)).toBe("2026-03-28");
+  expect(findDate(["Total 12 items 2026"], TODAY)).toBeNull();
+});
+
+test("e-mail total keywords beat the generic 'total' of item counts", () => {
+  expect(findTotal(["Total items 3", "Order total: €12,90", "Amount charged 12,90 EUR"])).toBe(12.9);
+  expect(findTotal(["Totale ordine € 23,40"])).toBe(23.4);
+});

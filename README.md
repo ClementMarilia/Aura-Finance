@@ -34,7 +34,7 @@ Crelith Finance é um **PWA (Progressive Web App)** em pt-BR de finanças pessoa
 - **Contas a Receber** com confirmação que gera receita e credita a carteira.
 - **Bulk delete** em Lançamentos com checkboxes.
 - **Importar extrato** (`/importar-extrato`): lê arquivos **OFX/QFX** e **CSV** do banco (colunas, datas dia/mês ou mês/dia, valores `1.234,56`/`1,234.56`, débito/crédito separados e arquivos Windows-1252 são detectados automaticamente; se o CSV for incomum, o usuário indica as colunas). A prévia marca **Novo / Possível duplicado / Já importado**, sugere a categoria por **regras** ("descrição contém LIDL → Mercado") ou pelo **histórico** de descrições parecidas, e nada é salvo antes da confirmação. Cada linha tem uma impressão digital única: reimportar o mesmo arquivo nunca duplica lançamentos. A importação pode ser **desfeita** pelo aviso que aparece logo após importar.
-- **Ler recibo (foto)**: no "Novo lançamento", uma foto de cupom fiscal/scontrino/ticket preenche **valor total, data e loja** (e a categoria, se houver regra para a loja). O OCR (Tesseract.js) roda **no próprio aparelho**: a foto não é enviada nem guardada. No Android, com o app instalado, dá para usar **Compartilhar → Crelith Finance** a partir da galeria ou da câmera.
+- **Ler recibo (foto ou PDF)**: no "Novo lançamento", uma foto de cupom fiscal/scontrino/ticket ou um PDF (NFC-e, recibo ou confirmação de pedido por e-mail) preenche **valor total, data e loja** (e a categoria, se houver regra para a loja). PDFs com texto são lidos direto pelo **pdf.js**; fotos e PDFs escaneados passam pelo OCR (**Tesseract.js**). Tudo roda **no próprio aparelho**: o arquivo não é enviado nem guardado. No Android, com o app instalado, dá para usar **Compartilhar → Crelith Finance** a partir da galeria, da câmera ou do app de e-mail.
 
 ### Categorias customizáveis
 - Tipos: **`expense`**, **`income`** e **`both`**. Crie *Salário* (income), *Gasolina* (expense), etc.
@@ -429,7 +429,7 @@ GitHub Actions, sem custo. A configuração dos secrets está em
 
 - **Não modificar** `.env`, portas (`8001`/`3000`) nem `MONGO_URL` / `REACT_APP_BACKEND_URL`.
 - Todas as rotas do backend **precisam** começar com `/api` (ingress redireciona).
-- Não há upload de arquivos (comprovantes/anexos) para armazenamento externo. Fotos de recibo são lidas no navegador e descartadas; o motor de OCR e os modelos por, ita, spa e eng ficam em `frontend/public/ocr`, copiados de `node_modules` por `scripts/copy-ocr-assets.js` em `yarn start`/`yarn build` (por isso a CSP inclui `'wasm-unsafe-eval'`, que libera só WebAssembly, não `eval`). Arquivos de extrato são lidos no navegador, enviados como texto (limite de 2 MB / 2000 linhas) apenas para gerar a prévia e não são guardados; somente os lançamentos confirmados são salvos.
+- Não há upload de arquivos (comprovantes/anexos) para armazenamento externo. Recibos (fotos e PDFs) são lidos no navegador e descartados; o motor de OCR e os modelos por, ita, spa e eng ficam em `frontend/public/ocr` e o pdf.js (build *legacy*, com polyfills para navegadores de celular) em `frontend/public/pdfjs`, copiados de `node_modules` por `scripts/copy-reader-assets.js` em `yarn start`/`yarn build` (por isso a CSP inclui `'wasm-unsafe-eval'`, que libera só WebAssembly, não `eval`). Arquivos de extrato são lidos no navegador, enviados como texto (limite de 2 MB / 2000 linhas) apenas para gerar a prévia e não são guardados; somente os lançamentos confirmados são salvos.
 
 ---
 
