@@ -1,9 +1,42 @@
 // Browser-only OCR for receipt photos. The engine and language models are
-// served from /ocr (see scripts/copy-ocr-assets.js); nothing leaves the device.
+// served from /ocr (see scripts/copy-reader-assets.js); nothing leaves the device.
 import { ocrLanguage, parseReceiptText } from "@/lib/receiptParser";
 
-const MAX_SIDE = 2000;
-const MIN_WIDTH = 1000;
+const MAX_SIDE = 2500;
+const MIN_WIDTH = 1200;
+// Adaptive threshold: neighbourhood of 5% of the width, pixel must be 12
+// levels darker than it. Tuned on real photos of thermal receipts on a table.
+const WINDOW_RATIO = 0.05;
+const THRESHOLD_C = 12;
+
+// Each pixel is compared with the mean of its neighbourhood (integral image),
+// so a receipt lit unevenly or faded at the top still separates ink from
+// paper. A single global threshold erased the whole header of real photos.
+export function adaptiveThreshold(gray, width, height, windowRatio = WINDOW_RATIO, c = THRESHOLD_C) {
+  const stride = width + 1;
+  const integral = new Float64Array(stride * (height + 1));
+  for (let y = 0; y < height; y += 1) {
+    let row = 0;
+    for (let x = 0; x < width; x += 1) {
+      row += gray[y * width + x];
+      integral[(y + 1) * stride + x + 1] = integral[y * stride + x + 1] + row;
+    }
+  }
+  const half = Math.max(8, Math.round((width * windowRatio) / 2));
+  const out = new Uint8ClampedArray(width * height);
+  for (let y = 0; y < height; y += 1) {
+    const y0 = Math.max(0, y - half);
+    const y1 = Math.min(height, y + half + 1);
+    for (let x = 0; x < width; x += 1) {
+      const x0 = Math.max(0, x - half);
+      const x1 = Math.min(width, x + half + 1);
+      const sum = integral[y1 * stride + x1] - integral[y0 * stride + x1]
+        - integral[y1 * stride + x0] + integral[y0 * stride + x0];
+      out[y * width + x] = gray[y * width + x] < sum / ((y1 - y0) * (x1 - x0)) - c ? 0 : 255;
+    }
+  }
+  return out;
+}
 
 // Rotate by EXIF, scale to a size Tesseract reads well, convert to grayscale
 // and stretch contrast: faded thermal paper is the usual failure mode.
@@ -35,11 +68,15 @@ async function prepareImage(source) {
   for (let sum = 0; low < 255 && sum + histogram[low] < cutoff; low += 1) sum += histogram[low];
   for (let sum = 0; high > 0 && sum + histogram[high] < cutoff; high -= 1) sum += histogram[high];
   const range = Math.max(1, high - low);
-  for (let i = 0; i < pixels.length; i += 4) {
-    const value = Math.max(0, Math.min(255, ((pixels[i] - low) * 255) / range));
-    pixels[i] = value;
-    pixels[i + 1] = value;
-    pixels[i + 2] = value;
+  const gray = new Uint8ClampedArray(width * height);
+  for (let i = 0; i < gray.length; i += 1) {
+    gray[i] = ((pixels[i * 4] - low) * 255) / range;
+  }
+  const binary = adaptiveThreshold(gray, width, height);
+  for (let i = 0; i < binary.length; i += 1) {
+    pixels[i * 4] = binary[i];
+    pixels[i * 4 + 1] = binary[i];
+    pixels[i * 4 + 2] = binary[i];
   }
   context.putImageData(image, 0, 0);
   return canvas;
