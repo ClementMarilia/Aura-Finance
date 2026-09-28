@@ -403,10 +403,11 @@ O endpoint `/api/health` confirma a conexão da API com o MongoDB sem expor cred
 
 ### Backup de produção
 
-**ADIADO:** o backup automático de produção permanece suspenso enquanto o projeto
-utiliza a infraestrutura gratuita atual. Não existe workflow agendado de backup
-ativo no GitHub Actions. Os scripts de backup e restauração isolada são mantidos
-somente para futura ativação, conforme [`docs/BACKUP_AND_RESTORE.md`](docs/BACKUP_AND_RESTORE.md).
+O workflow `.github/workflows/backup.yml` faz, diariamente às 03:17 UTC, um
+`mongodump` criptografado (AES-256), restaura a cópia num MongoDB descartável
+para provar que ela funciona e guarda o arquivo por 30 dias como artefato do
+GitHub Actions, sem custo. A configuração dos secrets está em
+[`docs/BACKUP_AND_RESTORE.md`](docs/BACKUP_AND_RESTORE.md).
 
 > O backfill das categorias de receita roda automaticamente no próximo boot do backend em produção (idempotente).
 
