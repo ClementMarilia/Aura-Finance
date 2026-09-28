@@ -32,6 +32,7 @@ const FinancialStatement = lazy(() => import("@/pages/FinancialStatement"));
 const ProjectedCashFlow = lazy(() => import("@/pages/ProjectedCashFlow"));
 const FinancialCalendar = lazy(() => import("@/pages/FinancialCalendar"));
 const FinancialHealth = lazy(() => import("@/pages/FinancialHealth"));
+const ImportStatement = lazy(() => import("@/pages/ImportStatement"));
 
 function RouteLoading() {
   return (
@@ -78,6 +79,7 @@ function App() {
             <Route path="/" element={<Protected><Layout /></Protected>}>
               <Route index element={<Dashboard />} />
               <Route path="lancamentos" element={<Transactions />} />
+              <Route path="importar-extrato" element={<ImportStatement />} />
               <Route path="parcelamentos" element={<Installments />} />
               <Route path="contas-a-receber" element={<Receivables />} />
               <Route path="orcamento" element={<Budget />} />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import AmountInput from "@/components/AmountInput";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Trash2, Pencil, FileDown, X, Repeat, CreditCard, Check, SlidersHorizontal, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Pencil, FileDown, FileUp, X, Repeat, CreditCard, Check, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { exportCSV } from "@/lib/exporters";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
@@ -522,6 +522,9 @@ export default function Transactions() {
         <div className="flex gap-2">
         <Button variant="outline" onClick={handleCSV} data-testid="tx-export-csv" className="rounded-xl">
           <FileDown size={16} className="mr-1" /> {tr("CSV")}
+        </Button>
+        <Button asChild variant="outline" data-testid="tx-import-statement" className="rounded-xl">
+          <Link to="/importar-extrato"><FileUp size={16} className="mr-1" /> {tr("Importar")}</Link>
         </Button>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>

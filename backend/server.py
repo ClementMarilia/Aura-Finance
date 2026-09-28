@@ -9603,6 +9603,16 @@ async def startup():
     )
     await db.transactions.create_index([("user_id", 1), ("date", -1)])
     await db.transactions.create_index([("user_id", 1), ("person_id", 1)])
+    await db.transactions.create_index(
+        [("user_id", 1), ("import_fingerprint", 1)],
+        unique=True,
+        partialFilterExpression={"import_fingerprint": {"$type": "string"}},
+    )
+    await db.transactions.create_index(
+        [("user_id", 1), ("import_batch_id", 1)],
+        partialFilterExpression={"import_batch_id": {"$type": "string"}},
+    )
+    await db.import_rules.create_index([("user_id", 1), ("pattern_key", 1)])
     await db.installments.create_index([("user_id", 1), ("due_date", 1)])
     await db.receivables.create_index([("user_id", 1), ("due_date", 1)])
     await db.recurrences.create_index([("user_id", 1), ("active", 1), ("next_run", 1)])
@@ -9834,6 +9844,7 @@ app.include_router(api)
 from projection_api import create_projection_router  # noqa: E402
 from timeline_api import create_timeline_router  # noqa: E402
 from dashboard_preferences_api import create_dashboard_preferences_router  # noqa: E402
+from statement_import_api import create_statement_import_router  # noqa: E402
 
 app.include_router(create_projection_router(
     db=db,
@@ -9853,6 +9864,15 @@ app.include_router(create_timeline_router(
 app.include_router(create_dashboard_preferences_router(
     db=db,
     get_current_user=get_current_user,
+))
+
+app.include_router(create_statement_import_router(
+    db=db,
+    get_current_user=get_current_user,
+    transaction_values=transaction_values,
+    transaction_model=TransactionIn,
+    new_id=new_id,
+    now_iso=now_iso,
 ))
 
 app.add_middleware(
