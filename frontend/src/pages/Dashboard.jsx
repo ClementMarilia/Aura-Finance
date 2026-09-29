@@ -20,15 +20,23 @@ import {
 import {
   ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area
 } from "recharts";
-import { monthForecast, monthOverMonth, splitAccounts, topCategories } from "@/lib/dashboardSummary";
-import { useThemedColor } from "@/lib/colors";
 import {
-  AccountsCard, CashflowCard, CategoryCard, CommitmentsCard, ForecastHero, KpiTile,
+  accountStructure, annualBalances, goalsSummary, monthForecast, monthOverMonth, splitAccounts, topCategories,
+} from "@/lib/dashboardSummary";
+import {
+  AccountsCard, CategoryCard, CommitmentsCard, ForecastHero, KpiTile,
 } from "@/components/dashboard/DashboardBlocks";
+import {
+  AnnualCard, BudgetCard, CompareCard, FlowCard, GoalsCard, StructureCard,
+} from "@/components/dashboard/DashboardCharts";
 
 const months = getMonthNames("short");
+const monthNames = getMonthNames("long");
 // Insights are the most verbose block; two are enough at a glance.
 const INSIGHTS_PREVIEW = 2;
+const TILE_COLUMNS = {
+  2: "md:grid-cols-2", 3: "md:grid-cols-3", 4: "md:grid-cols-4", 5: "md:grid-cols-3 lg:grid-cols-5",
+};
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -36,6 +44,9 @@ export default function Dashboard() {
   const [insights, setInsights] = useState(null);
   const [projection, setProjection] = useState(null);
   const [accounts, setAccounts] = useState([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
+  const [goals, setGoals] = useState([]);
+  const [annual, setAnnual] = useState(null);
   const [widgets, setWidgets] = useState(null);
   const [draftWidgets, setDraftWidgets] = useState([]);
   const [customizerOpen, setCustomizerOpen] = useState(false);
@@ -43,7 +54,6 @@ export default function Dashboard() {
   const [expandedInsight, setExpandedInsight] = useState(null);
   const [showInsightHistory, setShowInsightHistory] = useState(false);
   const [showAllInsights, setShowAllInsights] = useState(false);
-  const themed = useThemedColor();
   const [insightHistory, setInsightHistory] = useState(null);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
@@ -88,17 +98,39 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!widgets) return;
-    if (hasDashboardWidget(widgets, "projection")) {
+    if (hasDashboardWidget(widgets, "projection") || hasDashboardWidget(widgets, "annual")) {
       api.get("/reports/projection", { params: { months: 6 } }).then(r => setProjection(r.data)).catch(() => {});
     } else {
       setProjection(null);
     }
-    if (hasDashboardWidget(widgets, "accounts")) {
-      api.get("/accounts").then(r => setAccounts(r.data || [])).catch(() => {});
+    // The summary card shows net worth, so wallets load for it too.
+    if (["accounts", "structure", "balance_summary"].some((id) => hasDashboardWidget(widgets, id))) {
+      api.get("/accounts")
+        .then(r => { setAccounts(r.data || []); setAccountsLoaded(true); })
+        .catch(() => {});
     } else {
       setAccounts([]);
+      setAccountsLoaded(false);
+    }
+    if (hasDashboardWidget(widgets, "goals")) {
+      api.get("/goals").then(r => setGoals(r.data || [])).catch(() => setGoals([]));
+    } else {
+      setGoals([]);
     }
   }, [user?.currency, widgets]);
+
+  // Twelve months of the selected year: only refetched when the year changes.
+  const needsAnnual = !!widgets && ["evolution", "compare", "annual"].some((id) => hasDashboardWidget(widgets, id));
+  useEffect(() => {
+    if (!needsAnnual) {
+      setAnnual(null);
+      return;
+    }
+    setAnnual((current) => (current?.year === period.year ? current : null));
+    api.get("/reports/annual", { params: { year: period.year } })
+      .then(r => setAnnual(r.data))
+      .catch(() => setAnnual(null));
+  }, [needsAnnual, period.year, user?.currency]);
 
   const openCustomizer = () => {
     setDraftWidgets([...(widgets || DEFAULT_DASHBOARD_WIDGETS)]);
@@ -239,9 +271,10 @@ export default function Dashboard() {
     setPeriod({ year: Math.floor(index / 12), month: (index % 12) + 1 });
   };
 
+  const selectMonth = (month) => setPeriod((current) => ({ ...current, month }));
+
   const showAccounts = hasDashboardWidget(widgets, "accounts") && accounts.length > 0;
   const showCommitments = commitments.some((row) => row.value > 0);
-  const hasSideColumn = showAccounts || showCommitments;
 
   return (
     <div className="space-y-4 md:space-y-6" data-testid="dashboard-root">
@@ -341,53 +374,52 @@ export default function Dashboard() {
         </div>
       )}
 
-      {(showForecast || tiles.length > 0 || hasSideColumn) && (
-        <div className={`grid grid-cols-1 gap-4 md:gap-6 ${hasSideColumn ? "lg:grid-cols-3" : ""}`}>
-          <div className={`space-y-4 ${hasSideColumn ? "lg:col-span-2" : ""}`}>
-            {showForecast && (
-              <ForecastHero forecast={forecast} currency={curr}
-                receivableTo="/contas-a-receber" payableTo={pendingTo} />
-            )}
-            {tiles.length > 0 && (
-              <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-2">
-                {tiles.map((tile) => (
-                  <KpiTile key={tile.id} {...tile} currency={curr} testId={`stat-${tile.id}`} />
-                ))}
-              </div>
-            )}
+      {tiles.length > 0 && (
+        <div className={`grid grid-cols-2 gap-3 md:gap-4 ${TILE_COLUMNS[Math.min(tiles.length, 5)] || ""}`}>
+          {tiles.map((tile) => (
+            <KpiTile key={tile.id} {...tile} currency={curr} testId={`stat-${tile.id}`} />
+          ))}
+        </div>
+      )}
+
+      {/* Bento: the DOM order is the phone order; lg:order-* sets the desktop grid. */}
+      <div className="grid grid-cols-1 gap-4 md:grid-flow-row-dense md:grid-cols-2 md:gap-5 lg:grid-cols-4" data-testid="dashboard-grid">
+        {showForecast && (
+          <div className="lg:order-1">
+            <ForecastHero forecast={forecast} currency={curr} monthName={monthNames[period.month - 1]}
+              receivableTo="/contas-a-receber" payableTo={pendingTo}
+              patrimony={accountsLoaded ? accountSummary.total : null}
+              delta={monthOverMonth(data.evolution, "balance")}
+              trend={(data.evolution || []).map((item) => item.balance)} />
           </div>
-          {hasSideColumn && (
-            <div className="space-y-4">
-              {showAccounts && <AccountsCard summary={accountSummary} currency={curr} />}
-              <CommitmentsCard rows={commitments} currency={curr} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {(hasDashboardWidget(widgets, "evolution") || hasDashboardWidget(widgets, "categories")) && (
-        <div className={`grid grid-cols-1 gap-4 md:gap-6 ${
-          hasDashboardWidget(widgets, "evolution") && hasDashboardWidget(widgets, "categories") ? "lg:grid-cols-3" : ""
-        }`}>
-          {hasDashboardWidget(widgets, "evolution") && (
-            <div className={hasDashboardWidget(widgets, "categories") ? "lg:col-span-2" : ""}>
-              <CashflowCard evolution={data.evolution} monthLabels={months} currency={curr} />
-            </div>
-          )}
-          {hasDashboardWidget(widgets, "categories") && (
+        )}
+        {hasDashboardWidget(widgets, "evolution") && (
+          <div className="md:col-span-2 lg:order-2">
+            <FlowCard months={annual?.year === period.year ? annual.months : null} year={period.year}
+              selectedMonth={period.month} onSelectMonth={selectMonth} monthLabels={months} currency={curr} />
+          </div>
+        )}
+        {hasDashboardWidget(widgets, "categories") && (
+          <div className="lg:order-6 lg:row-span-2">
             <CategoryCard breakdown={categorySummary} currency={curr} to={`/lancamentos?type=expense&${ym}`} />
-          )}
-        </div>
-      )}
-
-      {/* Insights + Projection */}
-      {(hasDashboardWidget(widgets, "insights") || hasDashboardWidget(widgets, "projection")) && (
-      <div className={`grid grid-cols-1 gap-6 ${
-        hasDashboardWidget(widgets, "insights") && hasDashboardWidget(widgets, "projection")
-          ? "lg:grid-cols-2"
-          : "lg:grid-cols-1"
-      }`}>
-        {hasDashboardWidget(widgets, "insights") && <div className="card-soft" data-testid="insights-section">
+          </div>
+        )}
+        {hasDashboardWidget(widgets, "budget") && (
+          <div className="md:col-span-2 lg:order-5">
+            <BudgetCard data={data} currency={curr} />
+          </div>
+        )}
+        {hasDashboardWidget(widgets, "goals") && (
+          <div className="lg:order-4">
+            <GoalsCard summary={goalsSummary(goals, 4)} currency={curr} />
+          </div>
+        )}
+        {showCommitments && (
+          <div className="lg:order-10">
+            <CommitmentsCard rows={commitments} currency={curr} />
+          </div>
+        )}
+        {hasDashboardWidget(widgets, "insights") && <div className="card-soft h-full p-4 md:col-span-2 md:p-5 lg:order-9" data-testid="insights-section">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <h3 className="text-lg font-semibold flex items-center gap-2" style={{ fontFamily: "Outfit" }}>
@@ -578,8 +610,24 @@ export default function Dashboard() {
             )}
           </div>
         </div>}
-
-        {hasDashboardWidget(widgets, "projection") && <div className="card-soft" data-testid="projection-section">
+        {hasDashboardWidget(widgets, "compare") && (
+          <div className="md:col-span-2 lg:order-7">
+            <CompareCard report={annual?.year === period.year ? annual : null}
+              selectedMonth={period.month} monthLabels={months} currency={curr} />
+          </div>
+        )}
+        {hasDashboardWidget(widgets, "annual") && (
+          <div className="lg:order-8">
+            <AnnualCard rows={annualBalances(annual?.year === period.year ? annual : null, projection, now.getFullYear())}
+              selectedYear={period.year} currency={curr} />
+          </div>
+        )}
+        {hasDashboardWidget(widgets, "structure") && (
+          <div className="lg:order-3">
+            <StructureCard rows={accountStructure(accounts)} currency={curr} />
+          </div>
+        )}
+        {hasDashboardWidget(widgets, "projection") && <div className="card-soft p-4 md:col-span-2 md:p-5 lg:col-span-3 lg:order-12" data-testid="projection-section">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Projeção de saldo")}</h3>
             {projection && (
@@ -609,29 +657,12 @@ export default function Dashboard() {
             </div>
           )}
         </div>}
-      </div>)}
-
-      {/* Budget */}
-      {hasDashboardWidget(widgets, "budget") && <div className="card-soft p-4 md:p-6" data-testid="dashboard-budget">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-base font-semibold" style={{ fontFamily: "Outfit" }}>{tr("Orçamento 50/20/10/10/10")}</h3>
-          <div className="text-xs text-[#6B7068]">Base: {fmtMoney(data.budget.income, curr)}</div>
-        </div>
-        <div className="grid grid-cols-1 gap-x-8 gap-y-3 md:grid-cols-2 xl:grid-cols-3">
-          {data.budget.rules.map((r, i) => (
-            <div key={r.label} className="min-w-0">
-              <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="truncate text-[#1A1C1A]">{tr(r.label)} <span className="text-xs text-[#6B7068]">{r.percent}%</span></span>
-                <span className="money-value whitespace-nowrap font-semibold text-[#1A1C1A]">{fmtMoney(r.amount, curr)}</span>
-              </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#F1EFE7]">
-                <div className="h-full rounded-full"
-                  style={{ width: `${r.percent}%`, backgroundColor: themed(["#061B4A","#D96C5B","#E5A83B","#7EA193","#C7BCA1"][i]) }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>}
+        {showAccounts && (
+          <div className="lg:order-11 lg:row-span-2">
+            <AccountsCard summary={accountSummary} currency={curr} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
