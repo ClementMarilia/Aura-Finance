@@ -7,8 +7,8 @@ import {
 describe("dashboard widget preferences", () => {
   test("keeps the current dashboard visible for users without saved preferences", () => {
     expect(normalizeDashboardWidgets(undefined)).toEqual(DEFAULT_DASHBOARD_WIDGETS);
-    expect(DEFAULT_DASHBOARD_WIDGETS).toHaveLength(14);
-    expect(new Set(DEFAULT_DASHBOARD_WIDGETS).size).toBe(14);
+    expect(DEFAULT_DASHBOARD_WIDGETS).toHaveLength(18);
+    expect(new Set(DEFAULT_DASHBOARD_WIDGETS).size).toBe(18);
     expect(DEFAULT_DASHBOARD_WIDGETS).toContain("balance_summary");
     expect(DEFAULT_DASHBOARD_WIDGETS).toContain("balance");
   });
