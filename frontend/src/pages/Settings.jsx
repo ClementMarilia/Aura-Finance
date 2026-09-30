@@ -11,6 +11,7 @@ import { Trash2, Plus, Pencil, X, RefreshCw, CheckCircle2, DownloadCloud, AlertT
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ThemeToggle from "@/components/ThemeToggle";
+import ColorCustomizer from "@/components/ColorCustomizer";
 import { usePWAUpdate } from "@/context/PWAUpdateContext";
 import { useAuth } from "@/context/AuthContext";
 import LanguageSelector from "@/components/LanguageSelector";
@@ -322,6 +323,7 @@ export default function Settings() {
           {tr("Escolha como o app deve aparecer para você. Selecione “Sistema” para seguir automaticamente as preferências do seu celular ou computador.")}
         </p>
         <ThemeToggle />
+        <ColorCustomizer />
       </div>
 
       <div className="card-soft" data-testid="app-update-section">
