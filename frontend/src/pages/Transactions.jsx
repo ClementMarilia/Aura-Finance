@@ -424,6 +424,12 @@ export default function Transactions() {
           <CreditCard size={10} /> {tr("Parcela")}
         </span>
       )}
+      {t.source === "receivable" && (
+        <span data-testid={`tx-receivable-badge-${t.id}`}
+          className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5">
+          {tr("A receber")}
+        </span>
+      )}
       {t.source === "shared_expense" && (
         <span data-testid={`tx-shared-badge-${t.id}`}
           className="inline-flex items-center gap-1 text-[10px] font-medium text-[#0D5DD7] bg-[#EEF4FF] rounded-full px-2 py-0.5">
@@ -468,6 +474,15 @@ export default function Transactions() {
             className={`${actionButton} ${t.status === "paid" ? "text-emerald-600" : "text-[#6B7068] hover:text-emerald-600"}`}
             title={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}
             aria-label={t.status === "paid" ? "Marcar como pendente" : "Confirmar pagamento"}>
+            <Check size={16} />
+          </button>
+        );
+      }
+      if (t.source === "receivable") {
+        return (
+          <button onClick={() => receiveReceivable(t)} data-testid={`tx-receivable-receive-${t.id}`}
+            className={`${actionButton} text-[#6B7068] hover:text-emerald-600`}
+            title="Confirmar recebimento" aria-label="Confirmar recebimento">
             <Check size={16} />
           </button>
         );
@@ -518,6 +533,14 @@ export default function Transactions() {
     await api.post(`/installments/${t.id}/pay`);
     toast.success(t.status === "paid" ? "Parcela reaberta" : "Parcela paga");
     load();
+  };
+
+  const receiveReceivable = async (t) => {
+    try {
+      await api.post(`/receivables/${t.id}/receive`, { received: true });
+      toast.success("Recebimento confirmado");
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
   };
 
   const payTransaction = async (t) => {
