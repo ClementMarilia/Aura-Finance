@@ -42,12 +42,20 @@ const usesRscDataRouter = sourceFiles(sourceRoot).some((sourceFile) =>
 );
 
 const acceptedAdvisory = (advisory) =>
-  advisory.id === 1124282 &&
-  advisory.module_name === "react-router" &&
-  !usesRscDataRouter &&
-  advisory.findings.every((finding) =>
-    finding.paths.every((dependencyPath) => dependencyPath === "react-router-dom>react-router")
-  );
+  (advisory.id === 1124282 &&
+    advisory.module_name === "react-router" &&
+    !usesRscDataRouter &&
+    advisory.findings.every((finding) =>
+      finding.paths.every((dependencyPath) => dependencyPath === "react-router-dom>react-router")
+    )) ||
+  // braces has no patched release (latest 3.0.3 is still affected). It is only
+  // reachable through react-scripts' build/test tooling (micromatch globbing of
+  // our own files), never shipped in the bundle. Revisit when a fix is published.
+  (advisory.id === 1240992 &&
+    advisory.module_name === "braces" &&
+    advisory.findings.every((finding) =>
+      finding.paths.every((dependencyPath) => dependencyPath.startsWith("react-scripts>"))
+    ));
 
 const blocking = advisories.filter(
   (advisory) =>
@@ -58,7 +66,7 @@ const accepted = advisories.filter(acceptedAdvisory);
 for (const advisory of accepted) {
   console.warn(
     `Accepted non-applicable advisory ${advisory.id}: ${advisory.title} ` +
-      "(SPA BrowserRouter; no React Server Components or server actions)."
+      "(documented as non-applicable in scripts/audit-production.js)."
   );
 }
 
@@ -74,5 +82,5 @@ if (blocking.length) {
 
 console.log(
   `Dependency audit passed: no applicable high/critical vulnerabilities ` +
-    `(${accepted.length} documented non-applicable advisory).`
+    `(${accepted.length} documented non-applicable advisories).`
 );
