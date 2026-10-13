@@ -32,13 +32,35 @@ const TENDERED = [
   "cambio", "cash", "change", "entregue", "pago em",
 ];
 
+// Header lines that are never the store name. Plain words match whole words
+// only, so "tel" doesn't reject "Telepizza"; entries with punctuation or a
+// trailing space match as written.
 const MERCHANT_NOISE = [
   "cnpj", "cpf", "ie:", "i.e.", "im:", "p.iva", "p. iva", "partita iva", "c.f.", "cif", "nif",
   "cupom", "cupon", "documento", "scontrino", "ricevuta", "factura", "ticket", "nfc-e", "nf-e",
   "extrato", "sat n", "tel", "fone", "www", "http", "rua ", "av.", "avenida", "via ", "calle",
   "cep", "cap ", "data", "hora", "caixa", "operador", "cassa", "bem-vindo", "benvenuti",
   "bienvenido", "welcome", "obrigado", "grazie", "gracias",
+  // item table headers: "DESCRIZIONE IVA PREZZO(€)", "ITEM CODIGO DESCRICAO QTD VL UNIT"
+  "descrizione", "descricao", "descripcion", "description", "prezzo", "preco", "precio",
+  "price", "iva", "qtd", "qta", "quant", "codigo", "codice", "item", "itens", "valor", "vendita",
+  "prestazione", "totale", "total", "importo",
 ];
+
+const LEGAL_FORM = /\b(snc|srl|srls|spa|sas|sapa|ltda|ltd|eireli|epp|me|mei|sa|s ?a|sl|slu|gmbh|inc|llc|coop)\.?$/;
+
+function isMerchantNoise(normalized) {
+  return MERCHANT_NOISE.some((entry) => (/^[a-z]+$/.test(entry)
+    ? new RegExp(`(^|[^a-z])${entry}([^a-z]|$)`).test(normalized)
+    : normalized.includes(entry)));
+}
+
+// OCR reads I as 1 and O as 0 inside words ("1STANBUL", "C0NAD").
+function lettersForDigits(text) {
+  return text
+    .replace(/(?<=\p{L})1|1(?=\p{L}{2})/gu, "I")
+    .replace(/(?<=\p{L})0|0(?=\p{L}{2})/gu, "O");
+}
 
 export function normalizeLine(line) {
   return String(line || "")
@@ -173,14 +195,22 @@ function titleCase(text) {
 }
 
 export function findMerchant(lines) {
-  for (const raw of lines.slice(0, 8)) {
-    const line = raw.replace(/[^\p{L}\d&.'\- ]/gu, " ").replace(/\s+/g, " ").trim();
+  const candidates = [];
+  for (const raw of lines.slice(0, 10)) {
+    const line = lettersForDigits(raw.replace(/[^\p{L}\d&.'\- ]/gu, " ").replace(/\s+/g, " ").trim())
+      .replace(/^[^\p{L}\d]+|[^\p{L}\d.]+$/gu, "");
     const letters = (line.match(/\p{L}/gu) || []).length;
-    if (letters < 3 || letters / line.length < 0.6) continue;
-    if (includesAny(normalizeLine(line), MERCHANT_NOISE)) continue;
-    return titleCase(line).slice(0, 60);
+    const words = line.split(" ").filter((word) => /\p{L}{2}/u.test(word));
+    // Skip OCR crumbs from the table edge ("Led", "em ss") and header lines.
+    if (letters < 5 || letters / line.length < 0.6) continue;
+    if (words.length < 2 && !words.some((word) => word.length >= 5)) continue;
+    const normalized = normalizeLine(line);
+    if (isMerchantNoise(normalized)) continue;
+    candidates.push({ line, legal: LEGAL_FORM.test(normalized) });
   }
-  return null;
+  // A company suffix (SNC, SRL, LTDA...) marks the registered store name.
+  const best = candidates.find((candidate) => candidate.legal) || candidates[0];
+  return best ? titleCase(best.line).slice(0, 60) : null;
 }
 
 export function parseReceiptText(text, today = new Date()) {

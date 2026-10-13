@@ -147,3 +147,46 @@ test("e-mail total keywords beat the generic 'total' of item counts", () => {
   expect(findTotal(["Total items 3", "Order total: €12,90", "Amount charged 12,90 EUR"])).toBe(12.9);
   expect(findTotal(["Totale ordine € 23,40"])).toBe(23.4);
 });
+
+// Real Italian receipt photographed on a table (OCR output after adaptive
+// thresholding): junk from the table edge above the header, table headers
+// ("DESCRIZIONE IVA PREZZO") that must never be taken as the store.
+const REAL_KEBAP = `
+sSSs———————————-—-—-—-—---ss———-.————sssd  sgs dc.
+Led
+em ss
+1STANBUL cITY KEBAP SNC           |     +
+VIA DANTE ALIGHIERI, 7
+31027 SPRESIANO (TV)                  A”
+PARTITA IVA 05046050265                 ax
+DOCUMENTO COMMERCIALE
+di vendita o prestazione              |
+DESCRIZIONE       TVA PREZZO(€)
+VR-PANINI        10%     6,50
+BIBITE LATTINA    10%     2.00
+TOTALE COMPLESSIVO         8,50
+di cui IVA                0,77
+PAGAMENTO ELETTRONICO      8,50    :
+TIMPORTO PAGATO            8,50    ;
+L      03/08/2026 13:10         :
+DOCUMENTO N. 0244-0008           ,
+Data 03/08/26 Ora 13:10      : |
+IMPORTO EUR        8,50        :
+ARRIVEDERCI E GRAZIE         |
+`;
+
+test("real photographed scontrino: skips edge junk and table headers", () => {
+  expect(parseReceiptText(REAL_KEBAP, TODAY)).toEqual({
+    total: 8.5,
+    date: "2026-08-03",
+    merchant: "Istanbul City Kebap Snc",
+  });
+});
+
+test("without a readable store line, a table header is still not the merchant", () => {
+  expect(findMerchant(["Y.", "em ss", "DESCRIZIONE      IVA PREZZO(€)", "VR-PANINI 10% 6,50"])).toBeNull();
+});
+
+test("merchant noise matches whole words only", () => {
+  expect(findMerchant(["TELEPIZZA ROMA NORD", "Tel. 06 123456"])).toBe("Telepizza Roma Nord");
+});
