@@ -19,11 +19,22 @@ DASHBOARD_WIDGETS = (
     "accounts",
     "evolution",
     "categories",
+    "goals",
+    "structure",
+    "compare",
+    "annual",
     "insights",
     "projection",
     "budget",
 )
 DASHBOARD_WIDGET_SET = frozenset(DASHBOARD_WIDGETS)
+PREFERENCES_VERSION = 2
+# Widgets added after a user may have saved a configuration. They are shown
+# to anyone whose saved list predates them, since that user never chose to
+# hide them.
+WIDGETS_SINCE_VERSION = {
+    2: ("goals", "structure", "compare", "annual"),
+}
 
 
 class DashboardPreferencesIn(BaseModel):
@@ -35,6 +46,20 @@ def normalize_dashboard_widgets(value) -> list[str]:
     if not isinstance(value, list):
         return list(DASHBOARD_WIDGETS)
     return [widget for widget in DASHBOARD_WIDGETS if widget in value]
+
+
+def stored_dashboard_widgets(value, version) -> list[str]:
+    """Saved widgets plus the ones released after that list was saved."""
+    if not isinstance(value, list):
+        return list(DASHBOARD_WIDGETS)
+    saved_version = version if isinstance(version, int) else 1
+    added = [
+        widget
+        for since, widgets in WIDGETS_SINCE_VERSION.items()
+        if since > saved_version
+        for widget in widgets
+    ]
+    return normalize_dashboard_widgets([*value, *added])
 
 
 def create_dashboard_preferences_router(
@@ -49,14 +74,16 @@ def create_dashboard_preferences_router(
     async def get_dashboard_preferences(user=Depends(get_current_user)):
         stored = await db.users.find_one(
             {"id": user["id"]},
-            {"_id": 0, "dashboard_widgets": 1},
+            {"_id": 0, "dashboard_widgets": 1, "dashboard_widgets_version": 1},
         )
+        stored = stored or {}
         return {
-            "widgets": normalize_dashboard_widgets(
-                (stored or {}).get("dashboard_widgets")
+            "widgets": stored_dashboard_widgets(
+                stored.get("dashboard_widgets"),
+                stored.get("dashboard_widgets_version"),
             ),
             "available_widgets": list(DASHBOARD_WIDGETS),
-            "version": 1,
+            "version": PREFERENCES_VERSION,
         }
 
     @router.put("/dashboard/preferences")
@@ -73,12 +100,15 @@ def create_dashboard_preferences_router(
         clean = normalize_dashboard_widgets(body.widgets)
         await db.users.update_one(
             {"id": user["id"]},
-            {"$set": {"dashboard_widgets": clean}},
+            {"$set": {
+                "dashboard_widgets": clean,
+                "dashboard_widgets_version": PREFERENCES_VERSION,
+            }},
         )
         return {
             "widgets": clean,
             "available_widgets": list(DASHBOARD_WIDGETS),
-            "version": 1,
+            "version": PREFERENCES_VERSION,
         }
 
     return router

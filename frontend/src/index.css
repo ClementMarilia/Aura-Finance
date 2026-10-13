@@ -19,6 +19,10 @@
   --success: #2C7A51;
   --warning: #E5A83B;
   --danger: #D9453B;
+  --chart-bar: #2A3553;
+  --dash-track: #E6E9F2;
+  --dash-hero-from: #0B2350;
+  --dash-hero-to: #173A7A;
 }
 
 html.dark {
@@ -36,6 +40,10 @@ html.dark {
   --success: #4FD49B;
   --warning: #F1B85A;
   --danger: #F26B61;
+  --chart-bar: #1D3765;
+  --dash-track: #12305F;
+  --dash-hero-from: #0A2048;
+  --dash-hero-to: #123A78;
 }
 
 @layer base {
@@ -121,6 +129,14 @@ html.dark {
     color: var(--text-main);
     box-shadow: 0 1px 2px rgba(20, 32, 26, 0.03);
   }
+  /* Painel: cartões escuros (resumo e comparativo) e barras de progresso */
+  .dash-dark-card {
+    color: #FFFFFF;
+    background-image: linear-gradient(160deg, var(--dash-hero-from), var(--dash-hero-to));
+    box-shadow: 0 12px 30px -14px rgba(4, 17, 47, 0.55);
+  }
+  .dash-track { background-color: var(--dash-track); }
+  .dash-fill { background-image: linear-gradient(90deg, #1268F4, #08B6E7); }
   .stat-value {
     @apply text-3xl font-medium tracking-tight tabular-nums;
     font-family: 'Outfit', sans-serif;

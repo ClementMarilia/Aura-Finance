@@ -73,3 +73,66 @@ export function splitAccounts(accounts) {
     emptyCount: list.length - active.length,
   };
 }
+
+// Wallet balances grouped by wallet type, in a fixed axis order so the
+// "Estrutura" radar keeps its shape between visits. Card debt counts by its
+// size: the radar shows where money sits, not its sign.
+export const ACCOUNT_TYPE_ORDER = ["checking", "savings", "investment", "card", "cash", "other"];
+
+export function accountStructure(accounts) {
+  const totals = new Map(ACCOUNT_TYPE_ORDER.map((type) => [type, 0]));
+  (Array.isArray(accounts) ? accounts : []).forEach((account) => {
+    const type = totals.has(account?.type) ? account.type : "other";
+    const value = Math.abs(Number(account?.balance_base ?? account?.balance) || 0);
+    totals.set(type, totals.get(type) + value);
+  });
+  return ACCOUNT_TYPE_ORDER
+    .map((type) => ({ type, value: round2(totals.get(type)) }))
+    .filter((row) => row.type !== "other" || row.value > 0);
+}
+
+// Totals use the amounts already converted to the user's currency by /goals;
+// each row keeps its own currency for display.
+export function goalsSummary(goals, limit = 4) {
+  const list = Array.isArray(goals) ? goals : [];
+  const base = (goal, key) => Number(goal?.[`base_${key}`] ?? goal?.[key]) || 0;
+  const saved = list.reduce((sum, goal) => sum + base(goal, "current_amount"), 0);
+  const target = list.reduce((sum, goal) => sum + base(goal, "target_amount"), 0);
+  const rows = list.map((goal) => {
+    const goalTarget = Number(goal?.target_amount) || 0;
+    const current = Number(goal?.current_amount) || 0;
+    return {
+      ...goal,
+      percent: goalTarget > 0 ? Math.round((current / goalTarget) * 100) : 0,
+    };
+  });
+  // Unfinished goals first: they are the ones that still need attention.
+  const ordered = [
+    ...rows.filter((goal) => goal.percent < 100),
+    ...rows.filter((goal) => goal.percent >= 100),
+  ];
+  return {
+    saved: round2(saved),
+    target: round2(target),
+    percent: target > 0 ? Math.round((saved / target) * 100) : 0,
+    rows: ordered.slice(0, limit),
+    hidden: Math.max(0, ordered.length - limit),
+  };
+}
+
+// Result of the previous year, the selected year and, when the selected year
+// is the current one and a projection exists, the next year (average monthly
+// net × 12). The projection is based on recent history, so it says nothing
+// about years further away.
+export function annualBalances(report, projection, currentYear) {
+  if (!report) return [];
+  const rows = [
+    { year: report.prev_year, balance: round2(report.prev_totals?.balance), projected: false },
+    { year: report.year, balance: round2(report.totals?.balance), projected: false },
+  ];
+  const avg = Number(projection?.avg_monthly_net);
+  if (projection && Number.isFinite(avg) && report.year === currentYear) {
+    rows.push({ year: report.year + 1, balance: round2(avg * 12), projected: true });
+  }
+  return rows;
+}

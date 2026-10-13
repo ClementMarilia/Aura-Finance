@@ -3636,6 +3636,40 @@ async def list_transactions(
                     "exchange_rate_to_base": pur.get("exchange_rate_to_base"),
                 })
 
+    # Merge pending receivables as income entries (month's + overdue pending).
+    # Received ones already exist as real income transactions, so skip them.
+    if type in (None, "income") and status in (None, "pending"):
+        now = datetime.now(timezone.utc)
+        ry, rm = (year, month) if (year and month) else (now.year, now.month)
+        rs, re_ = month_range(ry, rm)
+        rstart, rend = rs[:10], re_[:10]
+        rq = {"user_id": user["id"], "status": {"$ne": "received"}}
+        if include_carryover:
+            rq["due_date"] = {"$lt": rend}
+        else:
+            rq["due_date"] = {"$gte": rstart, "$lt": rend}
+        if account_id:
+            rq["account_id"] = account_id
+        for rec in await db.receivables.find(rq, {"_id": 0}).to_list(2000):
+            if category_id:
+                continue
+            rec_currency = normalize_currency(rec.get("currency"), base_currency)
+            overdue = rec["due_date"] < rstart
+            desc = (rec.get("description") or "").strip()
+            label = f"{rec.get('person', '')} - {desc}" if desc else rec.get("person", "")
+            rows.append({
+                "id": rec["id"], "type": "income", "date": rec["due_date"],
+                "amount": rec["amount"], "category_id": None,
+                "account_id": rec.get("account_id"), "payment_method": None,
+                "description": label or "Conta a receber",
+                "notes": "atrasada" if overdue else "", "status": "pending",
+                "source": "receivable", "overdue": overdue, "editable": False,
+                "currency": rec_currency,
+                "exchange_rates": rec.get("exchange_rates"),
+                "base_currency_at_creation": rec.get("base_currency_at_creation"),
+                "exchange_rate_to_base": rec.get("exchange_rate_to_base"),
+            })
+
     person_ids = {row.get("person_id") for row in rows if row.get("person_id")}
     person_map = {}
     if person_ids:

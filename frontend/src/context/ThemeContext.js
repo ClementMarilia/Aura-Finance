@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { applyCustomColors, loadCustomColors, saveCustomColors, sanitizeColors } from "@/lib/customColors";
 
 /**
  * ThemeProvider — gerencia o tema do app.
@@ -9,6 +10,8 @@ const ThemeContext = createContext({
   theme: "system",
   setTheme: () => {},
   resolvedTheme: "light",
+  customColors: { light: {}, dark: {} },
+  setCustomColors: () => {},
 });
 
 const STORAGE_KEY = "aura_theme";
@@ -38,6 +41,18 @@ export function ThemeProvider({ children }) {
     } catch (_) { return "system"; }
   });
   const [resolvedTheme, setResolvedTheme] = useState("light");
+  const [customColors, setCustomColorsState] = useState(loadCustomColors);
+
+  // Reaplica as cores personalizadas quando mudam ou quando o modo efetivo muda
+  useEffect(() => {
+    applyCustomColors(customColors, resolvedTheme);
+  }, [customColors, resolvedTheme]);
+
+  const setCustomColors = useCallback((next) => {
+    const clean = sanitizeColors(next);
+    saveCustomColors(clean);
+    setCustomColorsState(clean);
+  }, []);
 
   // Aplicar no mount e a cada mudança
   useEffect(() => {
@@ -63,7 +78,7 @@ export function ThemeProvider({ children }) {
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme, customColors, setCustomColors }}>
       {children}
     </ThemeContext.Provider>
   );

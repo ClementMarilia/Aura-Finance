@@ -1,4 +1,6 @@
-import { monthForecast, monthOverMonth, splitAccounts, topCategories } from "./dashboardSummary";
+import {
+  accountStructure, annualBalances, goalsSummary, monthForecast, monthOverMonth, splitAccounts, topCategories,
+} from "./dashboardSummary";
 
 describe("monthForecast", () => {
   test("adds receivables and subtracts shared debts not yet in expenses", () => {
@@ -83,5 +85,65 @@ describe("splitAccounts", () => {
     expect(result.active.map((account) => account.id)).toEqual(["b", "c"]);
     expect(result.emptyCount).toBe(2);
     expect(result.total).toBe(289.12);
+  });
+});
+
+describe("accountStructure", () => {
+  test("groups balances by wallet type in a fixed order, using base amounts", () => {
+    const rows = accountStructure([
+      { type: "savings", balance: 100, balance_base: 110 },
+      { type: "checking", balance: 50 },
+      { type: "card", balance: -80 },
+      { type: "checking", balance: 25 },
+    ]);
+    expect(rows.map((row) => row.type)).toEqual(["checking", "savings", "investment", "card", "cash"]);
+    expect(rows.find((row) => row.type === "checking").value).toBe(75);
+    expect(rows.find((row) => row.type === "savings").value).toBe(110);
+    expect(rows.find((row) => row.type === "card").value).toBe(80);
+  });
+
+  test("shows the 'other' axis only when it holds money", () => {
+    expect(accountStructure([]).some((row) => row.type === "other")).toBe(false);
+    expect(accountStructure([{ type: "mystery", balance: 10 }]).find((row) => row.type === "other").value).toBe(10);
+  });
+});
+
+describe("goalsSummary", () => {
+  const goals = [
+    { id: "a", target_amount: 100, current_amount: 120, base_target_amount: 100, base_current_amount: 120 },
+    { id: "b", target_amount: 1000, current_amount: 250, currency: "USD", base_target_amount: 900, base_current_amount: 225 },
+    { id: "c", target_amount: 200, current_amount: 50 },
+  ];
+
+  test("totals use converted amounts and unfinished goals come first", () => {
+    const summary = goalsSummary(goals, 2);
+    expect(summary.saved).toBe(395);
+    expect(summary.target).toBe(1200);
+    expect(summary.percent).toBe(33);
+    expect(summary.rows.map((goal) => goal.id)).toEqual(["b", "c"]);
+    expect(summary.rows[0].percent).toBe(25);
+    expect(summary.hidden).toBe(1);
+  });
+
+  test("handles no goals", () => {
+    expect(goalsSummary(undefined)).toEqual({ saved: 0, target: 0, percent: 0, rows: [], hidden: 0 });
+  });
+});
+
+describe("annualBalances", () => {
+  const report = { year: 2026, prev_year: 2025, totals: { balance: 900 }, prev_totals: { balance: -100 } };
+
+  test("adds next year's projection only for the current year", () => {
+    expect(annualBalances(report, { avg_monthly_net: 50 }, 2026)).toEqual([
+      { year: 2025, balance: -100, projected: false },
+      { year: 2026, balance: 900, projected: false },
+      { year: 2027, balance: 600, projected: true },
+    ]);
+    expect(annualBalances(report, { avg_monthly_net: 50 }, 2027)).toHaveLength(2);
+    expect(annualBalances(report, null, 2026)).toHaveLength(2);
+  });
+
+  test("returns nothing before the report loads", () => {
+    expect(annualBalances(null, null, 2026)).toEqual([]);
   });
 });

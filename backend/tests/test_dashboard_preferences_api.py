@@ -60,7 +60,10 @@ def test_preferences_are_saved_only_for_authenticated_user_in_canonical_order():
     assert database.users.updates == [
         (
             {"id": "authenticated-user"},
-            {"$set": {"dashboard_widgets": ["balance", "insights", "budget"]}},
+            {"$set": {
+                "dashboard_widgets": ["balance", "insights", "budget"],
+                "dashboard_widgets_version": 2,
+            }},
         )
     ]
 
@@ -91,3 +94,24 @@ def test_preferences_reject_unknown_or_duplicate_widgets():
 
     assert unknown.status_code == 422
     assert duplicate.status_code == 422
+
+
+def test_widgets_released_later_appear_for_lists_saved_before_them():
+    database = FakeDatabase({"dashboard_widgets": ["budget", "balance"]})
+
+    response = make_client(database).get("/api/dashboard/preferences")
+
+    assert response.json()["widgets"] == [
+        "balance", "goals", "structure", "compare", "annual", "budget",
+    ]
+
+
+def test_lists_saved_with_current_version_are_kept_as_chosen():
+    database = FakeDatabase({
+        "dashboard_widgets": ["budget", "balance"],
+        "dashboard_widgets_version": 2,
+    })
+
+    response = make_client(database).get("/api/dashboard/preferences")
+
+    assert response.json()["widgets"] == ["balance", "budget"]
