@@ -36,7 +36,7 @@ services:
       - key: SEED_DEMO
         value: "false"
       - key: CORS_ORIGINS
-        value: https://www.crelithtech.com,https://crelithtech.com,https://aura-finance-inky.vercel.app
+        value: https://www.crelithtech.com,https://crelithtech.com,https://crelithtech.mariliaclement.com,https://aura-finance-inky.vercel.app
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM_NAME
