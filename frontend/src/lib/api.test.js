@@ -14,7 +14,8 @@ jest.mock("axios", () => ({
   },
 }));
 
-import { postCreate } from "./api";
+import axios from "axios";
+import { postCreate, refreshAccessToken } from "./api";
 
 
 describe("postCreate", () => {
@@ -57,5 +58,38 @@ describe("postCreate", () => {
 
     expect(retryKey).toBe(firstKey);
     expect(sessionStorage.length).toBe(0);
+  });
+});
+
+
+describe("refreshAccessToken", () => {
+  afterEach(() => {
+    delete navigator.locks;
+    jest.restoreAllMocks();
+  });
+
+  test("retries 409 conflicts caused by another tab rotating the cookie", async () => {
+    jest.spyOn(global, "setTimeout").mockImplementation((fn) => { fn(); return 0; });
+    const conflict = { response: { status: 409 } };
+    axios.post
+      .mockReset()
+      .mockRejectedValueOnce(conflict)
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce({ data: { token: "new", user: { id: "u1" } } });
+
+    const data = await refreshAccessToken();
+
+    expect(data.token).toBe("new");
+    expect(axios.post).toHaveBeenCalledTimes(3);
+  });
+
+  test("serializes refreshes across tabs with a Web Lock when available", async () => {
+    const request = jest.fn((name, task) => task());
+    Object.defineProperty(navigator, "locks", { value: { request }, configurable: true });
+    axios.post.mockReset().mockResolvedValue({ data: { token: "t", user: {} } });
+
+    await refreshAccessToken();
+
+    expect(request).toHaveBeenCalledWith("crelith-auth-refresh", expect.any(Function));
   });
 });
