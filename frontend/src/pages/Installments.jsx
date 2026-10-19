@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Plus, Check, Trash2, Pencil, ChevronDown, CalendarClock } from "lucide-react";
+import { Plus, Check, Trash2, Pencil, ChevronDown, ChevronRight, Minus, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import { defaultAccountFor } from "@/lib/accounts";
 import { installmentAmounts, purchaseProgress, purchaseTotal } from "@/lib/installments";
@@ -51,6 +51,7 @@ export default function Installments() {
     };
   };
   const [form, setForm] = useState(emptyForm);
+  const [showStart, setShowStart] = useState(false);
 
   const load = () => api.get("/installments/purchases", {
     params: currencyFilter ? { currency: currencyFilter } : {},
@@ -65,7 +66,7 @@ export default function Installments() {
     }).then(r => setList(r.data));
   }, [currencyFilter]);
 
-  const openNew = () => { setForm(emptyForm()); setOpen(true); };
+  const openNew = () => { setForm(emptyForm()); setShowStart(false); setOpen(true); };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -205,11 +206,28 @@ export default function Installments() {
                   })()}
                 </div>
               )}
-              <div><Label>{tr("Já estou pagando? Começar na parcela")}</Label>
-                <Input type="number" inputMode="numeric" min="1" max={form.installments || 120}
-                  value={form.start_number} data-testid="inst-start-input"
-                  onChange={e => setForm({ ...form, start_number: e.target.value })} /></div>
-              <div><Label>{startNumber > 1 ? tr("Data da parcela {n}", { n: startNumber }) : tr("Primeira parcela")}</Label>
+              {(showStart || startNumber > 1) ? (
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-[#F1EFE7] px-3 py-2">
+                  <Label className="m-0">{tr("Parcela atual")}</Label>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="outline" size="icon" aria-label="-" data-testid="inst-start-minus"
+                      disabled={startNumber <= 1}
+                      onClick={() => setForm({ ...form, start_number: startNumber - 1 })}><Minus size={14} /></Button>
+                    <span className="w-14 text-center text-sm" data-testid="inst-start-value">
+                      {startNumber}/{parseInt(form.installments, 10) || 1}
+                    </span>
+                    <Button type="button" variant="outline" size="icon" aria-label="+" data-testid="inst-start-plus"
+                      disabled={startNumber >= (parseInt(form.installments, 10) || 1)}
+                      onClick={() => setForm({ ...form, start_number: startNumber + 1 })}><Plus size={14} /></Button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setShowStart(true)} data-testid="inst-start-toggle"
+                  className="flex items-center gap-1 text-sm text-[#1268F4]">
+                  {tr("Já estou pagando? Começar na parcela")} <ChevronRight size={14} />
+                </button>
+              )}
+              <div><Label>{tr("Data da parcela {n}", { n: startNumber })}</Label>
                 <Input type="date" value={form.first_date} required data-testid="inst-date-input"
                   onChange={e => setForm({ ...form, first_date: e.target.value })} /></div>
               <div><Label>{tr("Carteira (pagamento sai daqui ao confirmar a parcela)")}</Label>

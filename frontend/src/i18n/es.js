@@ -1241,4 +1241,5 @@ export default {
   "total": "total",
   "Já estou pagando? Começar na parcela": "¿Ya estás pagando? Empezar en la cuota",
   "Data da parcela {n}": "Fecha de la cuota {n}",
+  "Parcela atual": "Cuota actual",
 };
