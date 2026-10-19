@@ -11,7 +11,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Check, Trash2, Pencil, ChevronDown, ChevronRight, Minus, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import { defaultAccountFor } from "@/lib/accounts";
-import { installmentAmounts, purchaseProgress, purchaseTotal } from "@/lib/installments";
+import { installmentAmounts, installmentPayload, purchaseProgress, purchaseTotal } from "@/lib/installments";
 
 import { translate as tr } from "@/i18n";
 
@@ -71,14 +71,7 @@ export default function Installments() {
   const submit = async (e) => {
     e.preventDefault();
     try {
-      await postCreate("/installments/purchases", {
-        ...form,
-        total_amount: purchaseTotal(form.total_amount, form.installments, form.amount_mode),
-        installments: parseInt(form.installments, 10),
-        start_number: Math.min(parseInt(form.start_number, 10) || 1, parseInt(form.installments, 10) || 1),
-        category_id: form.category_id || null,
-        account_id: form.account_id || null,
-      });
+      await postCreate("/installments/purchases", installmentPayload(form));
       toast.success(tr("Parcelamento criado"));
       setOpen(false); load();
     } catch (err) { toast.error(formatApiError(err)); }

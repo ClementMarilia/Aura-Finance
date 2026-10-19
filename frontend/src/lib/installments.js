@@ -30,3 +30,18 @@ export function purchaseProgress(purchase) {
     next: pending.slice().sort((a, b) => a.number - b.number)[0] || null,
   };
 }
+
+// Body for POST /installments/purchases. The API rejects unknown fields, so
+// UI-only state (amount_mode) must not travel with the form.
+export function installmentPayload(form) {
+  const { amount_mode, ...fields } = form; // eslint-disable-line no-unused-vars
+  const count = parseInt(fields.installments, 10);
+  return {
+    ...fields,
+    total_amount: purchaseTotal(fields.total_amount, count, amount_mode),
+    installments: count,
+    start_number: Math.min(parseInt(fields.start_number, 10) || 1, count || 1),
+    category_id: fields.category_id || null,
+    account_id: fields.account_id || null,
+  };
+}
