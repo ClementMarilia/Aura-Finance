@@ -1,4 +1,4 @@
-import { installmentAmounts, purchaseProgress, purchaseTotal } from "./installments";
+import { installmentAmounts, installmentPayload, purchaseProgress, purchaseTotal } from "./installments";
 
 test("parcels add up to the total and differ by at most one cent", () => {
   expect(installmentAmounts(100, 3)).toEqual([33.34, 33.33, 33.33]);
@@ -36,4 +36,14 @@ test("prior parcels count as already paid", () => {
     installments_list: [{ number: 4, amount: 100, status: "pending" }],
   });
   expect(progress).toMatchObject({ paidCount: 3, total: 6 });
+});
+
+test("payload drops UI-only fields the API would reject", () => {
+  const payload = installmentPayload({
+    description: "geladeira", total_amount: "350", installments: "6", amount_mode: "per_parcel",
+    first_date: "2026-10-18", start_number: 1, category_id: "", account_id: "a1", currency: "BRL",
+    payment_method: "",
+  });
+  expect(payload).not.toHaveProperty("amount_mode");
+  expect(payload).toMatchObject({ total_amount: 2100, installments: 6, start_number: 1, category_id: null });
 });

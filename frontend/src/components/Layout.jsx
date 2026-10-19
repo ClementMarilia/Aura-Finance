@@ -10,6 +10,7 @@ import NotificationsBell from "@/components/NotificationsBell";
 import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
 import Logo from "@/components/Logo";
+import QuickAddMenu from "@/components/QuickAddMenu";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/lib/api";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -66,6 +67,7 @@ const testIdFor = (to) => to.replace(/\//g, "") || "painel";
 
 export default function Layout() {
   const [moreOpen, setMoreOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [pendingUserCount, setPendingUserCount] = useState(0);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -186,6 +188,10 @@ export default function Layout() {
           <Outlet />
         </div>
 
+        <QuickAddMenu open={quickOpen} onClose={() => setQuickOpen(false)} onPick={(mode) => {
+          setQuickOpen(false);
+          navigate(mode === "digitar" ? "/lancamentos?novo=1" : `/lancamentos?novo=1&modo=${mode}`);
+        }} />
         <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t grid grid-cols-5 items-end z-30 backdrop-blur-xl"
           style={{
             background: "color-mix(in srgb, var(--surface) 88%, transparent)",
@@ -204,12 +210,13 @@ export default function Layout() {
           <div className="flex justify-center">
             <button
               type="button"
-              onClick={() => navigate("/lancamentos?novo=1")}
+              onClick={() => setQuickOpen((open) => !open)}
               aria-label={tr("Novo lançamento")}
+              aria-expanded={quickOpen}
               data-testid="mobile-nav-quick-add"
-              className="-mt-5 mb-1 flex h-14 w-14 items-center justify-center rounded-full bg-[#061B4A] text-white shadow-lg ring-4 ring-[var(--bg)] transition active:scale-95"
+              className="relative z-30 -mt-5 mb-1 flex h-14 w-14 items-center justify-center rounded-full bg-[#061B4A] text-white shadow-lg ring-4 ring-[var(--bg)] transition active:scale-95"
             >
-              <Plus size={26} />
+              <Plus size={26} className={`transition-transform ${quickOpen ? "rotate-45" : ""}`} />
             </button>
           </div>
           {mobileRight.map(findItem).map((n) => (

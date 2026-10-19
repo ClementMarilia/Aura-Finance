@@ -1242,4 +1242,13 @@ export default {
   "Já estou pagando? Começar na parcela": "Stai già pagando? Inizia dalla rata",
   "Data da parcela {n}": "Data della rata {n}",
   "Parcela atual": "Rata attuale",
+  "escanear": "scansiona",
+  "falar": "parla",
+  "digitar": "scrivi",
+  "Não entendi. Tente algo como: gastei 35 reais no mercado.": "Non ho capito. Prova qualcosa come: ho speso 35 al mercato.",
+  "Ouvi e preenchi. Confira antes de salvar.": "Ho ascoltato e compilato. Controlla prima di salvare.",
+  "Permita o microfone para falar o lançamento.": "Consenti il microfono per dettare il movimento.",
+  "Não foi possível ouvir agora. Tente de novo.": "Impossibile ascoltare ora. Riprova.",
+  "Ouvindo... fale agora": "Ascolto... parla ora",
+  "Falar o lançamento": "Detta il movimento",
 };
