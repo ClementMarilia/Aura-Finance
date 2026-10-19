@@ -16,7 +16,7 @@ const STATUS_LABEL = {
 // Reads a receipt photo or PDF on the device and reports { total, date, merchant,
 // category_id }. `initialFile` lets a file shared from another app start
 // reading as soon as the form opens.
-export default function ReceiptScanner({ onResult, initialFile = null }) {
+export default function ReceiptScanner({ onResult, initialFile = null, autoStart = false }) {
   const input = useRef(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState({ status: "", value: 0 });
@@ -68,6 +68,12 @@ export default function ReceiptScanner({ onResult, initialFile = null }) {
   useEffect(() => {
     if (initialFile) scan(initialFile);
   }, [initialFile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "escanear" shortcut: open the camera/file picker right away. If the browser
+  // blocks it (no recent tap), the visible button still works.
+  useEffect(() => {
+    if (autoStart) input.current?.click();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const label = busy
     ? `${STATUS_LABEL[progress.status] || tr("Preparando o leitor...")} ${Math.round(progress.value * 100)}%`

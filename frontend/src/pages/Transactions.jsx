@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import AmountInput from "@/components/AmountInput";
 import ReceiptScanner from "@/components/ReceiptScanner";
+import VoiceEntry from "@/components/VoiceEntry";
 import { takeSharedReceipt } from "@/lib/sharedReceipt";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -88,6 +89,7 @@ export default function Transactions() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultForm());
   const [sharedReceipt, setSharedReceipt] = useState(null);
+  const [entryMode, setEntryMode] = useState(null); // "escanear" | "falar" from the quick-add menu
   const [rateLoading, setRateLoading] = useState(false);
   const [rateError, setRateError] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
@@ -277,7 +279,8 @@ export default function Transactions() {
     setOpen(true);
   };
 
-  const openNew = () => {
+  const openNew = (mode = null) => {
+    setEntryMode(mode);
     setSharedReceipt(null);
     setEditing(null);
     setRateError("");
@@ -293,8 +296,10 @@ export default function Transactions() {
     if (!quickAdd) return;
     const next = new URLSearchParams(searchParams);
     next.delete("novo");
+    const mode = next.get("modo");
+    next.delete("modo");
     setSearchParams(next, { replace: true });
-    openNew();
+    openNew(mode === "escanear" || mode === "falar" ? mode : null);
   }, [quickAdd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A receipt photo shared from another app (Android share sheet) arrives via
@@ -320,6 +325,15 @@ export default function Transactions() {
       date: date || current.date,
       description: merchant || current.description,
       category_id: category_id || current.category_id,
+    }));
+  };
+
+  const applyVoice = ({ amount, type, description }) => {
+    setForm((current) => ({
+      ...current,
+      type,
+      amount: amount ? amount.toFixed(2) : current.amount,
+      description: description || current.description,
     }));
   };
 
@@ -581,14 +595,15 @@ export default function Transactions() {
         </Button>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
           <DialogTrigger asChild>
-            <Button onClick={openNew} data-testid="new-transaction-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
+            <Button onClick={() => openNew()} data-testid="new-transaction-button" className="bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
               <Plus size={16} className="mr-1" /> {tr("Novo lançamento")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg" data-testid="new-transaction-dialog">
             <DialogHeader><DialogTitle>{editing ? tr("Editar lançamento") : tr("Novo lançamento")}</DialogTitle></DialogHeader>
             <form onSubmit={submit} className="space-y-3">
-              {!editing && <ReceiptScanner onResult={applyReceipt} initialFile={sharedReceipt} />}
+              {!editing && <ReceiptScanner onResult={applyReceipt} initialFile={sharedReceipt} autoStart={entryMode === "escanear"} />}
+              {!editing && <VoiceEntry onResult={applyVoice} autoStart={entryMode === "falar"} />}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>{tr("Tipo")}</Label>
