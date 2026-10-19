@@ -1236,4 +1236,10 @@ export default {
   "Pôr do sol": "Sunset",
   "Violeta": "Violet",
   "Grafite": "Graphite",
+  "O valor é": "The amount is",
+  "Por parcela": "Per installment",
+  "total": "total",
+  "Já estou pagando? Começar na parcela": "Already paying? Start at installment",
+  "Data da parcela {n}": "Date of installment {n}",
+  "Parcela atual": "Current installment",
 };

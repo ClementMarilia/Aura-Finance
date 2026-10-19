@@ -1236,4 +1236,10 @@ export default {
   "Pôr do sol": "Atardecer",
   "Violeta": "Violeta",
   "Grafite": "Grafito",
+  "O valor é": "El importe es",
+  "Por parcela": "Por cuota",
+  "total": "total",
+  "Já estou pagando? Começar na parcela": "¿Ya estás pagando? Empezar en la cuota",
+  "Data da parcela {n}": "Fecha de la cuota {n}",
+  "Parcela atual": "Cuota actual",
 };

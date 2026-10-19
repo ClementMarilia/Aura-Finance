@@ -1236,4 +1236,10 @@ export default {
   "Pôr do sol": "Tramonto",
   "Violeta": "Viola",
   "Grafite": "Grafite",
+  "O valor é": "L'importo è",
+  "Por parcela": "Per rata",
+  "total": "totale",
+  "Já estou pagando? Começar na parcela": "Stai già pagando? Inizia dalla rata",
+  "Data da parcela {n}": "Data della rata {n}",
+  "Parcela atual": "Rata attuale",
 };
