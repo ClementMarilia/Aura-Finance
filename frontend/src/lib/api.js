@@ -27,18 +27,37 @@ export function clearAccessToken() {
   localStorage.removeItem("token"); // remove the legacy seven-day token once
 }
 
+const REFRESH_LOCK_NAME = "crelith-auth-refresh";
+const REFRESH_CONFLICT_RETRIES = 4;
+
+// The refresh cookie is rotated on every use and shared by all tabs. Holding a
+// cross-tab lock until the response (and its Set-Cookie) is processed keeps a
+// second tab from sending the already-rotated cookie.
+function withRefreshLock(task) {
+  if (typeof navigator !== "undefined" && navigator.locks?.request) {
+    return navigator.locks.request(REFRESH_LOCK_NAME, task);
+  }
+  return task();
+}
+
+async function postRefresh() {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await axios.post(`${API}/auth/refresh`, null, {
+        withCredentials: true,
+        headers: { "X-Requested-With": "CrelithFinance" },
+      });
+    } catch (error) {
+      // 409: another tab/device rotated the cookie within the backend's race window.
+      if (error.response?.status !== 409 || attempt > REFRESH_CONFLICT_RETRIES) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+    }
+  }
+}
+
 export async function refreshAccessToken() {
   if (!refreshPromise) {
-    const refreshRequest = () => axios.post(`${API}/auth/refresh`, null, {
-      withCredentials: true,
-      headers: { "X-Requested-With": "CrelithFinance" },
-    });
-    refreshPromise = refreshRequest().catch(async (error) => {
-      // Another browser tab may have rotated the shared HttpOnly cookie first.
-      if (error.response?.status !== 409) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      return refreshRequest();
-    }).then(({ data }) => {
+    refreshPromise = withRefreshLock(postRefresh).then(({ data }) => {
       setAccessToken(data.token);
       return data;
     }).finally(() => { refreshPromise = null; });
