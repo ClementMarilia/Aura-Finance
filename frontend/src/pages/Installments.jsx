@@ -11,7 +11,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Check, Trash2, Pencil, ChevronDown, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import { defaultAccountFor } from "@/lib/accounts";
-import { installmentAmounts, purchaseProgress } from "@/lib/installments";
+import { installmentAmounts, purchaseProgress, purchaseTotal } from "@/lib/installments";
 
 import { translate as tr } from "@/i18n";
 
@@ -46,7 +46,7 @@ export default function Installments() {
     const account = defaultAccountFor(accs, curr);
     return {
       description: "", total_amount: "", installments: 2,
-      first_date: today(), category_id: "", payment_method: "",
+      first_date: today(), start_number: 1, amount_mode: "total", category_id: "", payment_method: "",
       account_id: account?.id || "", currency: account?.currency || curr,
     };
   };
@@ -72,8 +72,9 @@ export default function Installments() {
     try {
       await postCreate("/installments/purchases", {
         ...form,
-        total_amount: parseFloat(form.total_amount),
+        total_amount: purchaseTotal(form.total_amount, form.installments, form.amount_mode),
         installments: parseInt(form.installments, 10),
+        start_number: Math.min(parseInt(form.start_number, 10) || 1, parseInt(form.installments, 10) || 1),
         category_id: form.category_id || null,
         account_id: form.account_id || null,
       });
@@ -140,7 +141,10 @@ export default function Installments() {
     const account = accs.find(a => a.id === id);
     return account ? tr(account.name) : null;
   };
-  const preview = installmentAmounts(form.total_amount, form.installments);
+  const total = purchaseTotal(form.total_amount, form.installments, form.amount_mode);
+  const preview = installmentAmounts(total, form.installments);
+  const startNumber = Math.min(Math.max(parseInt(form.start_number, 10) || 1, 1), parseInt(form.installments, 10) || 1);
+  const remaining = preview.slice(startNumber - 1);
   const showCurrencyFilter = currencyFilter || new Set(list.map(p => p.currency || curr)).size > 1;
 
   const allParcels = list.flatMap(p => p.installments_list);
@@ -167,7 +171,17 @@ export default function Installments() {
                 <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required
                   placeholder={tr("Ex: Notebook, geladeira")} data-testid="inst-description-input" /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>{tr("Valor total")}</Label>
+                <div>
+                  <div className="mb-1 flex gap-1" role="group" aria-label={tr("O valor é")}>
+                    {[["total", "Valor total"], ["per_parcel", "Por parcela"]].map(([mode, label]) => (
+                      <button key={mode} type="button" aria-pressed={form.amount_mode === mode}
+                        data-testid={`inst-mode-${mode}`}
+                        onClick={() => setForm({ ...form, amount_mode: mode })}
+                        className={`rounded-lg px-2 py-1 text-xs ${form.amount_mode === mode ? "bg-[#061B4A] text-white" : "bg-[#F1EFE7] text-[#1A1C1A]"}`}>
+                        {tr(label)}
+                      </button>
+                    ))}
+                  </div>
                   <AmountInput value={form.total_amount} currency={form.currency || curr} required data-testid="inst-total-input"
                     onValueChange={total_amount => setForm({ ...form, total_amount })} /></div>
                 <div><Label>{tr("Nº parcelas")}</Label>
@@ -178,19 +192,24 @@ export default function Installments() {
                 <div className="rounded-xl bg-[#F1EFE7] px-3 py-2 text-sm text-[#1A1C1A]" data-testid="inst-preview">
                   {(() => {
                     const cur = form.currency || curr;
-                    const high = preview.filter(value => value === preview[0]).length;
-                    if (high === preview.length) {
-                      return tr("{count}× de {amount}", { count: preview.length, amount: fmtMoney(preview[0], cur) });
-                    }
-                    // Leftover cents go to the first parcels (same rule as the backend).
-                    return tr("{high}× de {first} e {low}× de {second}", {
-                      high, first: fmtMoney(preview[0], cur),
-                      low: preview.length - high, second: fmtMoney(preview[preview.length - 1], cur),
-                    });
+                    const first = remaining[0];
+                    const high = remaining.filter(value => value === first).length;
+                    const line = high === remaining.length
+                      ? tr("{count}× de {amount}", { count: remaining.length, amount: fmtMoney(first, cur) })
+                      // Leftover cents go to the first parcels (same rule as the backend).
+                      : tr("{high}× de {first} e {low}× de {second}", {
+                        high, first: fmtMoney(first, cur),
+                        low: remaining.length - high, second: fmtMoney(remaining[remaining.length - 1], cur),
+                      });
+                    return `${line} · ${tr("total")} ${fmtMoney(total, cur)}`;
                   })()}
                 </div>
               )}
-              <div><Label>{tr("Primeira parcela")}</Label>
+              <div><Label>{tr("Já estou pagando? Começar na parcela")}</Label>
+                <Input type="number" inputMode="numeric" min="1" max={form.installments || 120}
+                  value={form.start_number} data-testid="inst-start-input"
+                  onChange={e => setForm({ ...form, start_number: e.target.value })} /></div>
+              <div><Label>{startNumber > 1 ? tr("Data da parcela {n}", { n: startNumber }) : tr("Primeira parcela")}</Label>
                 <Input type="date" value={form.first_date} required data-testid="inst-date-input"
                   onChange={e => setForm({ ...form, first_date: e.target.value })} /></div>
               <div><Label>{tr("Carteira (pagamento sai daqui ao confirmar a parcela)")}</Label>
