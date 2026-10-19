@@ -1036,7 +1036,9 @@ class InstallmentPurchaseIn(BaseModel):
     description: str
     total_amount: float
     installments: int
-    first_date: str  # ISO date
+    first_date: str  # ISO date of the first parcel still to be paid
+    # Parcels before this number were already paid elsewhere and are not created.
+    start_number: int = Field(default=1, ge=1)
     category_id: Optional[str] = None
     payment_method: Optional[str] = None
     account_id: Optional[str] = None
@@ -4295,6 +4297,8 @@ async def create_purchase(
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
     async def create():
+        if payload.start_number > payload.installments:
+            raise HTTPException(400, "A parcela inicial não pode passar do total de parcelas")
         pid = new_id()
         amounts = installment_amounts(payload.total_amount, payload.installments)
         base_date = datetime.fromisoformat(payload.first_date)
@@ -4312,8 +4316,8 @@ async def create_purchase(
         await db.installment_purchases.insert_one(purchase)
         inst_docs = []
         try:
-            for i in range(payload.installments):
-                d = installment_due_date(base_date.date(), i)
+            for i in range(payload.start_number - 1, payload.installments):
+                d = installment_due_date(base_date.date(), i - (payload.start_number - 1))
                 inst_docs.append({
                     "id": new_id(), "purchase_id": pid, "user_id": user["id"],
                     "number": i + 1, "total": payload.installments,

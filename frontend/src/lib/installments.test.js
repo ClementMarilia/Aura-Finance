@@ -1,4 +1,4 @@
-import { installmentAmounts, purchaseProgress } from "./installments";
+import { installmentAmounts, purchaseProgress, purchaseTotal } from "./installments";
 
 test("parcels add up to the total and differ by at most one cent", () => {
   expect(installmentAmounts(100, 3)).toEqual([33.34, 33.33, 33.33]);
@@ -23,4 +23,17 @@ test("progress picks the lowest pending parcel as next", () => {
   });
   expect(progress).toMatchObject({ paidCount: 1, total: 3, paidAmount: 120, pendingAmount: 240 });
   expect(progress.next.number).toBe(2);
+});
+
+test("per-parcel mode multiplies by the count", () => {
+  expect(purchaseTotal(350, 6, "per_parcel")).toBe(2100);
+  expect(purchaseTotal(2100, 6, "total")).toBe(2100);
+});
+
+test("prior parcels count as already paid", () => {
+  const progress = purchaseProgress({
+    installments: 6, start_number: 4,
+    installments_list: [{ number: 4, amount: 100, status: "pending" }],
+  });
+  expect(progress).toMatchObject({ paidCount: 3, total: 6 });
 });
