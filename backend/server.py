@@ -55,6 +55,7 @@ email_service = EmailService(db)
 DEFAULT_CORS_ORIGINS = (
     "https://www.crelithtech.com,"
     "https://crelithtech.com,"
+    "https://crelithtech.mariliaclement.com,"
     "https://aura-finance-inky.vercel.app,"
     "http://localhost:3000"
 )
