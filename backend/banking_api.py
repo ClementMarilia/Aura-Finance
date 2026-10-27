@@ -49,7 +49,9 @@ def is_provider_eligible(user, is_super_admin):
     # Restricted Production is for the Control Panel owner's own linked accounts.
     # Admin approval alone does NOT authorize use by third parties.
     mode = os.getenv("ENABLE_BANKING_MODE", "restricted").lower()
-    return mode == "sandbox" or (mode == "restricted" and is_super_admin(user))
+    return mode in {"sandbox", "unrestricted"} or (
+        mode == "restricted" and is_super_admin(user)
+    )
 
 
 def jwt_for_provider():
