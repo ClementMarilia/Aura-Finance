@@ -99,7 +99,9 @@ export default function Banking() {
           )}
           {access.allowed && !access.can_connect && (
             <p className="text-sm text-amber-700">
-              Seu acesso foi liberado, mas o provedor ainda não foi ativado pela administradora.
+              {access.provider_restricted && !access.provider_eligible
+                ? "Acesso interno aprovado. A modalidade gratuita da Enable Banking permite apenas contas próprias da titular da aplicação."
+                : "Seu acesso foi liberado, mas o provedor ainda não foi ativado pela administradora."}
             </p>
           )}
           {access.access === "pending" && <p className="text-sm">A administradora precisa aprovar seu pedido.</p>}
