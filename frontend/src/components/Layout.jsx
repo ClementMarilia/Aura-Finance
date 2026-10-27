@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
   Users, FolderOpen, Scale, FileBarChart, Wallet, Bell, Target, Repeat, Settings,
-  Menu, UserCircle, LogOut, ShieldCheck,
+  Menu, UserCircle, LogOut, ShieldCheck, Landmark,
   ReceiptText, CalendarDays, HeartPulse, TrendingUp, Plus, FileUp,
 } from "lucide-react";
 import NotificationsBell from "@/components/NotificationsBell";
@@ -23,6 +23,7 @@ const navGroups = [
       { to: "/", icon: LayoutDashboard, label: tr("Painel"), end: true },
       { to: "/lancamentos", icon: ArrowLeftRight, label: tr("Lançamentos") },
       { to: "/importar-extrato", icon: FileUp, label: tr("Importar extrato") },
+      { to: "/conexoes-bancarias", icon: Landmark, label: "Conexões bancárias" },
       { to: "/carteiras", icon: Wallet, label: tr("Carteiras") },
       { to: "/extrato-financeiro", icon: ReceiptText, label: tr("Extrato financeiro") },
       { to: "/notificacoes", icon: Bell, label: tr("Notificações") },
@@ -56,7 +57,7 @@ const navGroups = [
 ];
 
 const adminNav = { to: "/admin/usuarios", icon: ShieldCheck, label: tr("Usuários") };
-const adminGroup = { id: "admin", label: tr("Administração"), items: [adminNav] };
+const bankingAdminNav = { to: "/admin/banking", icon: Landmark, label: "Integrações bancárias" };
 
 // Bottom bar on phones: two destinations each side of a central quick-add.
 const mobileLeft = ["/", "/lancamentos"];
@@ -72,7 +73,10 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const visibleGroups = user?.is_admin ? [...navGroups, adminGroup] : navGroups;
+  const visibleGroups = user?.is_admin
+    ? [...navGroups, { id: "admin", label: tr("Administração"),
+        items: user?.is_super_admin ? [adminNav, bankingAdminNav] : [adminNav] }]
+    : navGroups;
   // Everything not already on the bottom bar belongs to "Mais".
   const moreGroups = visibleGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => !mobileBarPaths.has(item.to)) }))
