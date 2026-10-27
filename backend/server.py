@@ -9884,6 +9884,7 @@ from projection_api import create_projection_router  # noqa: E402
 from timeline_api import create_timeline_router  # noqa: E402
 from dashboard_preferences_api import create_dashboard_preferences_router  # noqa: E402
 from statement_import_api import create_statement_import_router  # noqa: E402
+from banking_api import create_banking_router  # noqa: E402
 
 app.include_router(create_projection_router(
     db=db,
@@ -9912,6 +9913,14 @@ app.include_router(create_statement_import_router(
     transaction_model=TransactionIn,
     new_id=new_id,
     now_iso=now_iso,
+))
+
+app.include_router(create_banking_router(
+    db=db,
+    get_current_user=get_current_user,
+    require_super_admin=require_super_admin,
+    is_super_admin=is_super_admin_user,
+    audit_event=audit_event,
 ))
 
 app.add_middleware(
