@@ -65,6 +65,13 @@ function AdminOnly({ children }) {
   return children;
 }
 
+function SuperAdminOnly({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <RouteLoading />;
+  if (!user?.is_super_admin) return <Navigate to="/" replace />;
+  return children;
+}
+
 function App() {
   useEffect(() => { document.title = tr("Crelith Finance — Controle Financeiro"); }, []);
   return (
@@ -102,7 +109,7 @@ function App() {
               <Route path="carteiras" element={<Wallets />} />
               <Route path="extrato-financeiro" element={<FinancialStatement />} />
               <Route path="admin/usuarios" element={<AdminOnly><AdminUsers /></AdminOnly>} />
-              <Route path="admin/banking" element={<AdminOnly><AdminBanking /></AdminOnly>} />
+              <Route path="admin/banking" element={<SuperAdminOnly><AdminBanking /></SuperAdminOnly>} />
             </Route>
           </Routes>
         </Suspense>
