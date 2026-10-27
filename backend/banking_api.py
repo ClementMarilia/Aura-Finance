@@ -137,6 +137,8 @@ def create_banking_router(*, db, get_current_user, require_super_admin, is_super
             "allowed": allowed,
             "enabled": banking_enabled(),
             "configured": banking_configured(),
+            "provider_restricted": os.getenv("ENABLE_BANKING_MODE", "restricted").lower() == "restricted",
+            "provider_eligible": is_provider_eligible(user, is_super_admin),
             "can_connect": allowed and is_provider_eligible(user, is_super_admin)
                            and banking_enabled() and banking_configured(),
         }
