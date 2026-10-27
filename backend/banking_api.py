@@ -45,6 +45,13 @@ def is_allowed(user, is_super_admin):
     return is_super_admin(user) or user.get("banking_access") == "approved"
 
 
+def is_provider_eligible(user, is_super_admin):
+    # Restricted Production is for the Control Panel owner's own linked accounts.
+    # Admin approval alone does NOT authorize use by third parties.
+    mode = os.getenv("ENABLE_BANKING_MODE", "restricted").lower()
+    return mode == "sandbox" or (mode == "restricted" and is_super_admin(user))
+
+
 def jwt_for_provider():
     application_id = os.getenv("ENABLE_BANKING_APP_ID", "")
     key = os.getenv("ENABLE_BANKING_PRIVATE_KEY", "").replace("\\n", "\n")
@@ -107,9 +114,11 @@ def create_banking_router(*, db, get_current_user, require_super_admin, is_super
             raise HTTPException(403, "Conexão bancária depende de aprovação da administradora")
         return user
 
-    def require_provider():
+    def require_provider(user=None):
         if not banking_enabled() or not banking_configured():
             raise HTTPException(503, "Integração bancária ainda não foi configurada")
+        if user is not None and not is_provider_eligible(user, is_super_admin):
+            raise HTTPException(403, "Provedor restrito a contas próprias da administradora")
 
     async def track(action, actor_id, target_id, status):
         # Admin never receives financial data from these calls.
@@ -126,7 +135,8 @@ def create_banking_router(*, db, get_current_user, require_super_admin, is_super
             "allowed": allowed,
             "enabled": banking_enabled(),
             "configured": banking_configured(),
-            "can_connect": allowed and banking_enabled() and banking_configured(),
+            "can_connect": allowed and is_provider_eligible(user, is_super_admin)
+                           and banking_enabled() and banking_configured(),
         }
 
     @router.post("/banking/request")
@@ -188,7 +198,7 @@ def create_banking_router(*, db, get_current_user, require_super_admin, is_super
     @router.get("/banking/institutions")
     async def institutions(country: str = Query(default="IT", pattern="^[A-Z]{2}$"),
                            user=Depends(require_banking)):
-        require_provider()
+        require_provider(user)
         result = await provider_request("GET", "/aspsps")
         items = result.get("aspsps", []) if isinstance(result, dict) else []
         return [{"name": bank["name"], "country": bank["country"]}
@@ -196,7 +206,7 @@ def create_banking_router(*, db, get_current_user, require_super_admin, is_super
 
     @router.post("/banking/connect")
     async def start_connect(payload: NewConnection, user=Depends(require_banking)):
-        require_provider()
+        require_provider(user)
         banks = await provider_request("GET", "/aspsps")
         if not any(b.get("name") == payload.institution and b.get("country") == payload.country
                    for b in banks.get("aspsps", [])):
@@ -241,7 +251,9 @@ def create_banking_router(*, db, get_current_user, require_super_admin, is_super
         if code and not error:
             # Re-check authorization on callback; revocation wins over prior consent.
             owner = await db.users.find_one({"id": record["user_id"]})
-            if owner and owner.get("status", "active") == "active" and is_allowed(owner, is_super_admin):
+            if (owner and owner.get("status", "active") == "active"
+                    and is_allowed(owner, is_super_admin)
+                    and is_provider_eligible(owner, is_super_admin)):
                 session = await provider_request("POST", "/sessions", payload={"code": code})
                 if session.get("session_id") and session.get("accounts"):
                     accounts_data = {a.get("uid"): a.get("identification_hash")
@@ -273,7 +285,7 @@ def create_banking_router(*, db, get_current_user, require_super_admin, is_super
     @router.post("/banking/connections/{connection_id}/sync")
     async def sync_preview(connection_id: str, user=Depends(require_banking)):
         """Read-only POC: preview is isolated from wallet balances and ledger."""
-        require_provider()
+        require_provider(user)
         item = await db.bank_connections.find_one({
             "id": connection_id, "user_id": user["id"], "status": "connected",
             "syncing": {"$ne": True},
