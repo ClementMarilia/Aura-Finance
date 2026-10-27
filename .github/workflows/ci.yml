@@ -69,12 +69,7 @@ jobs:
           corepack prepare yarn@1.22.22 --activate
 
       - name: Install locked dependencies
-        run: |
-          # Temporary lockfile regeneration, revert after committing the regenerated file.
-          yarn install --non-interactive
-          echo "___AURA_LOCK_DIFF_BEGIN___"
-          git diff -- yarn.lock
-          echo "___AURA_LOCK_DIFF_END___"
+        run: yarn install --frozen-lockfile --non-interactive
 
       - name: Run tests
         run: yarn test --watchAll=false --runInBand --coverage
