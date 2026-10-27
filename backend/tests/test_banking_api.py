@@ -28,6 +28,9 @@ class FakeCursor:
     def __init__(self, items):
         self.items = items
 
+    def sort(self, key, direction):
+        return self
+
     async def to_list(self, length):
         return self.items[:length]
 
@@ -41,8 +44,19 @@ class FakeAudit:
 
 
 class FakeConnections:
-    def __init__(self):
+    def __init__(self, items=None):
+        self.items = items or []
         self.updated = []
+
+    def find(self, query, projection=None):
+        matching = [
+            item for item in self.items
+            if item["user_id"] == query.get("user_id") and item.get("status") != "deleted"
+        ]
+        return FakeCursor([{
+            k: v for k, v in item.items()
+            if k not in {"session_id", "user_id", "_id"}
+        } for item in matching])
 
     async def update_many(self, query, update):
         self.updated.append((query, update))
@@ -171,3 +185,23 @@ def test_inactive_accounts_cannot_be_approved():
     response = client.patch("/api/admin/banking/users/person", json={"status": "approved"})
     assert response.status_code == 409
     assert not db.users.updates
+
+def test_connection_list_is_isolated_and_hides_provider_session():
+    db = FakeDb([
+        {"id": "alice", "role": "USER", "status": "active", "banking_access": "approved"},
+        {"id": "bob", "role": "USER", "status": "active", "banking_access": "approved"},
+    ])
+    db.bank_connections = FakeConnections([
+        {"id": "alice-connection", "user_id": "alice", "status": "connected",
+         "session_id": "secret-session-1", "institution": "Example Bank",
+         "country": "IT", "accounts": [], "created_at": "2026-10-01"},
+        {"id": "bob-connection", "user_id": "bob", "status": "connected",
+         "session_id": "secret-session-2", "institution": "Other Bank",
+         "country": "IT", "accounts": [], "created_at": "2026-10-01"},
+    ])
+    response = client_with(db, {"id": "alice"}).get("/api/banking/connections")
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["id"] == "alice-connection"
+    assert "session_id" not in response.text
+    assert "Other Bank" not in response.text
