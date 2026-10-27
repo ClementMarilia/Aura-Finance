@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "dependencies": {
-    "@hookform/resolvers": "5.0.1",
+    "@hookform/resolvers": "5.9.2",
     "@radix-ui/react-accordion": "1.2.8",
     "@radix-ui/react-alert-dialog": "1.1.11",
     "@radix-ui/react-aspect-ratio": "1.1.4",
@@ -57,7 +57,7 @@
     "tailwindcss-animate": "1.0.7",
     "tesseract.js": "7.0.0",
     "vaul": "1.1.2",
-    "zod": "3.24.4"
+    "zod": "4.6.7"
   },
   "scripts": {
     "start": "node scripts/copy-reader-assets.js && craco start",
@@ -118,7 +118,7 @@
     "flatted": "3.4.2",
     "qs": "6.16.0",
     "diff": "4.0.4",
-    "follow-redirects": "1.16.0",
+    "follow-redirects": "1.16.2",
     "path-to-regexp": "0.1.13",
     "rollup": "2.80.0",
     "postcss": "8.5.23",
@@ -158,7 +158,10 @@
     "**/micromatch/picomatch": "2.3.2",
     "**/readdirp/picomatch": "2.3.2",
     "**/jest-util/picomatch": "2.3.2",
-    "**/tinyglobby/picomatch": "4.0.4"
+    "**/tinyglobby/picomatch": "4.0.4",
+    "dompurify": "3.4.17",
+    "launch-editor": "2.14.2",
+    "body-parser": "1.20.9"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }
