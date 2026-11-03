@@ -599,7 +599,7 @@ export default function Transactions() {
               <Plus size={16} className="mr-1" /> {tr("Novo lançamento")}
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg" data-testid="new-transaction-dialog">
+          <DialogContent\n            className="max-w-lg"\n            style={{ maxHeight: "calc(100dvh - 2rem)", overflowY: "auto", overscrollBehavior: "contain" }}\n            data-testid="new-transaction-dialog"\n          >
             <DialogHeader><DialogTitle>{editing ? tr("Editar lançamento") : tr("Novo lançamento")}</DialogTitle></DialogHeader>
             <form onSubmit={submit} className="space-y-3">
               {!editing && <ReceiptScanner onResult={applyReceipt} initialFile={sharedReceipt} autoStart={entryMode === "escanear"} />}
