@@ -32,6 +32,7 @@ export default function VoiceEntry({ onResult }) {
       toast.success(tr("Ouvi e preenchi. Confira antes de salvar."));
     };
     instance.onerror = (event) => {
+      setListening(false);
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         toast.error(tr("O microfone está bloqueado para este site. Libere a permissão nas configurações do navegador e tente novamente."));
       } else if (event.error === "no-speech") {
