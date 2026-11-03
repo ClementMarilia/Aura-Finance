@@ -10,9 +10,9 @@ const Recognition = typeof window !== "undefined"
   : null;
 
 // Dictates one sentence ("gastei 35 reais no mercado") and reports
-// { amount, type, description }. `autoStart` begins listening as soon as the
-// form opens, for the "falar" shortcut on the quick-add menu.
-export default function VoiceEntry({ onResult, autoStart = false }) {
+// { amount, type, description }. Listening starts only from this button so the
+// browser can request microphone access during a direct user action.
+export default function VoiceEntry({ onResult }) {
   const recognition = useRef(null);
   const [listening, setListening] = useState(false);
 
@@ -33,8 +33,10 @@ export default function VoiceEntry({ onResult, autoStart = false }) {
     };
     instance.onerror = (event) => {
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        toast.error(tr("Permita o microfone para falar o lançamento."));
-      } else if (event.error !== "aborted" && event.error !== "no-speech") {
+        toast.error(tr("O microfone está bloqueado para este site. Libere a permissão nas configurações do navegador e tente novamente."));
+      } else if (event.error === "no-speech") {
+        toast.error(tr("Não ouvi nenhuma fala. Toque no microfone e fale novamente."));
+      } else if (event.error !== "aborted") {
         toast.error(tr("Não foi possível ouvir agora. Tente de novo."));
       }
     };
@@ -45,13 +47,13 @@ export default function VoiceEntry({ onResult, autoStart = false }) {
       instance.start();
     } catch {
       setListening(false);
+      toast.error(tr("Não foi possível ouvir agora. Tente de novo."));
     }
   };
 
   useEffect(() => {
-    if (autoStart) start();
     return () => recognition.current?.abort();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!Recognition) return null;
   return (

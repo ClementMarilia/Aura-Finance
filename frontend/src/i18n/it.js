@@ -1248,6 +1248,8 @@ export default {
   "Não entendi. Tente algo como: gastei 35 reais no mercado.": "Non ho capito. Prova qualcosa come: ho speso 35 al mercato.",
   "Ouvi e preenchi. Confira antes de salvar.": "Ho ascoltato e compilato. Controlla prima di salvare.",
   "Permita o microfone para falar o lançamento.": "Consenti il microfono per dettare il movimento.",
+  "O microfone está bloqueado para este site. Libere a permissão nas configurações do navegador e tente novamente.": "L'accesso al microfono è bloccato per questo sito. Consenti l'accesso nelle impostazioni del browser e riprova.",
+  "Não ouvi nenhuma fala. Toque no microfone e fale novamente.": "Non ho sentito nulla. Tocca il microfono e parla di nuovo.",
   "Não foi possível ouvir agora. Tente de novo.": "Impossibile ascoltare ora. Riprova.",
   "Ouvindo... fale agora": "Ascolto... parla ora",
   "Falar o lançamento": "Detta il movimento",
