@@ -607,7 +607,7 @@ export default function Transactions() {
             <DialogHeader><DialogTitle>{editing ? tr("Editar lançamento") : tr("Novo lançamento")}</DialogTitle></DialogHeader>
             <form onSubmit={submit} className="space-y-3">
               {!editing && <ReceiptScanner onResult={applyReceipt} initialFile={sharedReceipt} autoStart={entryMode === "escanear"} />}
-              {!editing && <VoiceEntry onResult={applyVoice} autoStart={entryMode === "falar"} />}
+              {!editing && <VoiceEntry onResult={applyVoice} />}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>{tr("Tipo")}</Label>
