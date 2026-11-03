@@ -1248,6 +1248,8 @@ export default {
   "Não entendi. Tente algo como: gastei 35 reais no mercado.": "I didn't catch that. Try something like: spent 35 at the market.",
   "Ouvi e preenchi. Confira antes de salvar.": "Heard you and filled it in. Check before saving.",
   "Permita o microfone para falar o lançamento.": "Allow the microphone to speak an entry.",
+  "O microfone está bloqueado para este site. Libere a permissão nas configurações do navegador e tente novamente.": "Microphone access is blocked for this site. Allow it in your browser settings and try again.",
+  "Não ouvi nenhuma fala. Toque no microfone e fale novamente.": "I didn't hear anything. Tap the microphone and speak again.",
   "Não foi possível ouvir agora. Tente de novo.": "Couldn't listen right now. Try again.",
   "Ouvindo... fale agora": "Listening... speak now",
   "Falar o lançamento": "Speak the entry",
