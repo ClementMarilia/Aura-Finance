@@ -626,20 +626,6 @@ export default function Settings() {
             <p className="text-sm text-[#6B7068]">
               {tr("Nenhuma categoria de {kind} criada ainda.", { kind: KIND_LABEL[tab].toLowerCase() })}
             </p>
-            {tab === "expense" && (
-              <div className="mx-auto max-w-sm space-y-2">
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  {tr("Recupere as categorias padrão ausentes e uma Conta Principal com saldo zero, caso não exista carteira ativa. Seus lançamentos não serão alterados.")}
-                </p>
-                <Button type="button" variant="outline" className="rounded-xl"
-                  disabled={restoringDefaults || isSavingCategory}
-                  onClick={restoreDefaultCategories}
-                  data-testid="restore-default-categories">
-                  <RefreshCw size={16} className={`mr-2 ${restoringDefaults ? "animate-spin" : ""}`} />
-                  {restoringDefaults ? tr("Restaurando categorias...") : tr("Restaurar categorias padrão")}
-                </Button>
-              </div>
-            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -670,6 +656,20 @@ export default function Settings() {
                 </div>
               );
             })}
+          </div>
+        )}
+        {tab === "expense" && (
+          <div className="mt-4 space-y-2 border-t border-[#E5E4E0] pt-4" data-testid="restore-default-categories-section">
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+              {tr("Recupere as categorias padrão ausentes e uma Conta Principal com saldo zero, caso não exista carteira ativa. Seus lançamentos não serão alterados.")}
+            </p>
+            <Button type="button" variant="outline" className="rounded-xl"
+              disabled={restoringDefaults || isSavingCategory}
+              onClick={restoreDefaultCategories}
+              data-testid="restore-default-categories">
+              <RefreshCw size={16} className={`mr-2 ${restoringDefaults ? "animate-spin" : ""}`} />
+              {restoringDefaults ? tr("Restaurando categorias...") : tr("Restaurar categorias padrão")}
+            </Button>
           </div>
         )}
       </div>

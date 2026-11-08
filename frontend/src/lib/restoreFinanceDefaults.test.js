@@ -87,6 +87,24 @@ test("does not duplicate categories or create a wallet when active one exists", 
   expect(backend.postCreate.mock.calls.some(([path]) => path === "/accounts")).toBe(false);
 });
 
+test("preserves the three manually created categories and restores only eight missing ones", async () => {
+  const existing = [
+    { id: "manual-1", name: "Moradia", color: "#123456", kind: "expense", is_default: false },
+    { id: "manual-2", name: "Mercado", color: "#F1B85A", kind: "expense", is_default: false },
+    { id: "manual-3", name: "Transporte", color: "#F1B85A", kind: "expense", is_default: false },
+  ];
+  const backend = mockedBackend({ categories: existing });
+  const result = await restoreInitialFinanceDefaults({ ...backend, currency: "EUR" });
+  expect(result.createdCategories).toBe(8);
+  expect(result.createdAccount).toBe(true);
+  expect(result.categories.filter((category) => category.kind === "expense")).toHaveLength(11);
+  for (const original of existing) {
+    expect(result.categories).toContainEqual(original);
+  }
+  expect(backend.postCreate.mock.calls.filter(([path]) => path === "/categories")).toHaveLength(8);
+  expect(backend.postCreate.mock.calls.filter(([path]) => path === "/accounts")).toHaveLength(1);
+});
+
 test("treats concurrent category creation as success after confirming it exists", async () => {
   const backend = mockedBackend({ conflictingName: "Moradia" });
   const result = await restoreInitialFinanceDefaults({ ...backend });
