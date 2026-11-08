@@ -1267,4 +1267,10 @@ export default {
   "Redefinição dos dados em andamento": "Azzeramento dei dati in corso",
   "Esta conta já está sendo modificada": "Questo account è già in fase di modifica",
   "Não foi possível concluir a redefinição dos dados. Tente novamente.": "Impossibile completare l'azzeramento dei dati. Riprova.",
+  "Nenhuma categoria de {kind} criada ainda.": "Nessuna categoria di {kind} creata.",
+  "Recupere as categorias padrão ausentes e uma Conta Principal com saldo zero, caso não exista carteira ativa. Seus lançamentos não serão alterados.": "Ripristina le categorie predefinite mancanti e un Conto principale con saldo zero se non ci sono portafogli attivi. I movimenti non saranno modificati.",
+  "Restaurar categorias padrão": "Ripristina categorie predefinite",
+  "Restaurando categorias...": "Ripristino categorie...",
+  "Categorias padrão recuperadas. Você já pode criar lançamentos.": "Categorie predefinite ripristinate. Ora puoi aggiungere movimenti.",
+  "Nenhuma categoria de despesa foi recuperada. Tente novamente.": "Nessuna categoria di spesa ripristinata. Riprova.",
 };
