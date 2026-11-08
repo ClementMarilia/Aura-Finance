@@ -74,6 +74,11 @@ export default function Settings() {
   const [insightPrefs, setInsightPrefs] = useState(null);
   const [tab, setTab] = useState("expense"); // expense | income | both
   const [catFormOpen, setCatFormOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetImpact, setResetImpact] = useState(null);
+  const [resetForm, setResetForm] = useState({ password: "", confirmation: "" });
+  const [loadingResetImpact, setLoadingResetImpact] = useState(false);
+  const [resettingAccount, setResettingAccount] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteImpact, setDeleteImpact] = useState(null);
   const [deleteForm, setDeleteForm] = useState({ password: "", confirmation: "" });
@@ -203,6 +208,46 @@ export default function Settings() {
     }
   };
 
+  const openAccountReset = async () => {
+    setResetOpen(true);
+    setResetImpact(null);
+    setResetForm({ password: "", confirmation: "" });
+    setLoadingResetImpact(true);
+    try {
+      const { data } = await api.get("/auth/account/reset-impact");
+      setResetImpact(data);
+    } catch (err) {
+      toast.error(formatApiError(err));
+      setResetOpen(false);
+    } finally {
+      setLoadingResetImpact(false);
+    }
+  };
+
+  const resetAccountData = async () => {
+    if (!resetImpact?.can_reset || resettingAccount) return;
+    if (!resetForm.password || resetForm.confirmation.trim() !== "ZERAR") return;
+    setResettingAccount(true);
+    try {
+      await api.post("/auth/account/reset", resetForm);
+      setResetOpen(false);
+      // Reload the entire application to discard financial data cached in memory.
+      window.location.assign("/");
+    } catch (err) {
+      toast.error(formatApiError(err));
+      if (err?.response?.status === 409) {
+        try {
+          const { data } = await api.get("/auth/account/reset-impact");
+          setResetImpact(data);
+        } catch {
+          // The original reset error remains visible.
+        }
+      }
+    } finally {
+      setResettingAccount(false);
+    }
+  };
+
   const openAccountDeletion = async () => {
     setDeleteOpen(true);
     setDeleteImpact(null);
@@ -265,6 +310,11 @@ export default function Settings() {
       setDeletingAccount(false);
     }
   };
+
+  const resetBlockerLabel = (blocker) => ({
+    pending_settlements: tr("Existem despesas compartilhadas ou acertos pendentes."),
+    shared_groups: tr("Você criou grupos com outras pessoas. Resolva esses grupos antes de zerar os dados."),
+  }[blocker] || blocker);
 
   const deletionBlockerLabel = (blocker) => ({
     pending_settlements: tr("Existem despesas compartilhadas ou acertos pendentes."),
@@ -736,7 +786,7 @@ export default function Settings() {
               {tr("Conta")}
             </h3>
             <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-              {tr("Exclua sua conta e remova definitivamente seus dados pessoais e financeiros.")}
+              {tr("Exporte seus dados, recomece do zero sem perder o acesso ou exclua a conta definitivamente.")}
             </p>
           </div>
           <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-700">
@@ -754,6 +804,16 @@ export default function Settings() {
           >
             <DownloadCloud size={16} className="mr-2" />
             {exportingData ? tr("Exportando dados...") : tr("Exportar meus dados")}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={openAccountReset}
+            data-testid="reset-own-account"
+            className="rounded-xl border-amber-300 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+          >
+            <RefreshCw size={16} className="mr-2" />
+            {tr("Zerar meus dados")}
           </Button>
           <Button
             type="button"
@@ -776,6 +836,102 @@ export default function Settings() {
         onConfirm={remove}
         testId="cat-confirm-delete"
       />
+
+      <Dialog
+        open={resetOpen}
+        onOpenChange={(open) => {
+          if (!resettingAccount) setResetOpen(open);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto" data-testid="reset-account-dialog">
+          <DialogHeader>
+            <DialogTitle>{tr("Zerar meus dados")}</DialogTitle>
+          </DialogHeader>
+          {loadingResetImpact ? (
+            <div className="py-8 text-center text-sm text-[#6B7068]">
+              {tr("Verificando sua conta...")}
+            </div>
+          ) : resetImpact && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 flex-shrink-0 text-amber-700" size={20} />
+                  <div>
+                    <p className="font-semibold text-amber-900">{tr("Atenção: esta ação não pode ser desfeita.")}</p>
+                    <p className="mt-1 text-sm text-amber-800">
+                      {tr("Serão apagados seus lançamentos, carteiras, categorias, metas, recorrências, importações, grupos pessoais e preferências financeiras. Seu login, senha e aprovação permanecerão ativos.")}
+                    </p>
+                    {resetImpact.impact?.shared_expenses > 0 && (
+                      <p className="mt-2 text-sm text-amber-800">
+                        {tr("Históricos compartilhados concluídos poderão permanecer anonimizados para outras pessoas.")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {resetImpact.blockers?.length > 0 && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-4" data-testid="reset-account-blockers">
+                  <p className="font-semibold text-rose-800">{tr("Não é possível zerar enquanto houver pendências")}</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-rose-800">
+                    {resetImpact.blockers.map((blocker) => (
+                      <li key={blocker}>{resetBlockerLabel(blocker)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {resetImpact.can_reset && (
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="reset-account-password">{tr("Senha atual")}</Label>
+                    <Input
+                      id="reset-account-password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={resetForm.password}
+                      onChange={(event) => setResetForm((current) => ({
+                        ...current,
+                        password: event.target.value,
+                      }))}
+                      data-testid="reset-account-password"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="reset-account-confirmation">{tr("Digite ZERAR para confirmar")}</Label>
+                    <Input
+                      id="reset-account-confirmation"
+                      value={resetForm.confirmation}
+                      onChange={(event) => setResetForm((current) => ({
+                        ...current,
+                        confirmation: event.target.value,
+                      }))}
+                      placeholder="ZERAR"
+                      autoComplete="off"
+                      data-testid="reset-account-confirmation"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={() => setResetOpen(false)}
+              disabled={resettingAccount} className="rounded-xl">
+              {tr("Cancelar")}
+            </Button>
+            {resetImpact?.can_reset && (
+              <Button
+                type="button"
+                onClick={resetAccountData}
+                disabled={resettingAccount || !resetForm.password || resetForm.confirmation.trim() !== "ZERAR"}
+                data-testid="confirm-reset-own-account"
+                className="rounded-xl bg-[#B45309] text-white hover:bg-[#92400E]"
+              >
+                {resettingAccount ? tr("Apagando dados...") : tr("Confirmar e zerar dados")}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={deleteOpen}
