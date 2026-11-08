@@ -790,6 +790,8 @@ def is_super_admin_user(user: dict) -> bool:
 def ensure_active_user(user: dict) -> dict:
     if user.get("deletion_in_progress"):
         raise HTTPException(status_code=403, detail="Conta em processo de exclusão")
+    if user.get("reset_in_progress"):
+        raise HTTPException(status_code=403, detail="Redefinição dos dados em andamento")
     status = account_status(user)
     if status == "pending":
         raise HTTPException(
@@ -978,6 +980,17 @@ class EmailTemplateIn(BaseModel):
 class AccountDeletionIn(BaseModel):
     password: str
     confirmation: str
+
+
+class AccountResetIn(BaseModel):
+    password: str = Field(min_length=1)
+    confirmation: str = Field(min_length=1)
+
+
+class AccountResetImpactOut(BaseModel):
+    can_reset: bool
+    blockers: List[str]
+    impact: dict[str, int]
 
 
 class AccountDeletionImpactOut(BaseModel):
@@ -2099,6 +2112,28 @@ async def build_account_deletion_impact(user: dict) -> dict:
     }
 
 
+async def build_account_reset_impact(user: dict) -> dict:
+    """Prevent resetting obligations or deleting groups still used by others."""
+    user_id = user["id"]
+    impact = await user_financial_impact(user_id)
+    blockers = []
+    if impact.get("pending_settlements", 0) > 0:
+        blockers.append("pending_settlements")
+    owned_groups = await db.groups.find(
+        {"creator_id": user_id}, {"_id": 0, "member_ids": 1}
+    ).to_list(1000)
+    if any(
+        any(member_id != user_id for member_id in group.get("member_ids", []))
+        for group in owned_groups
+    ):
+        blockers.append("shared_groups")
+    return {
+        "can_reset": not blockers,
+        "blockers": blockers,
+        "impact": impact,
+    }
+
+
 async def anonymize_user_in_shared_history(
     user_id: str,
     anonymous_user_id: str,
@@ -2179,7 +2214,8 @@ async def anonymize_user_in_shared_history(
     )
 
 
-async def delete_user_owned_data(user_id: str) -> None:
+async def delete_user_financial_data(user_id: str) -> None:
+    """Remove personal finance data without deleting authentication."""
     await db.people.delete_many({"owner_user_id": user_id})
     await db.categories.delete_many({"user_id": user_id})
     await db.accounts.delete_many({"user_id": user_id})
@@ -2196,6 +2232,23 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.insight_feedback.delete_many({"user_id": user_id})
     await db.insight_history.delete_many({"user_id": user_id})
     await db.files.delete_many({"user_id": user_id})
+    for collection_name, owner_field in (
+        ("import_rules", "user_id"),
+        ("idempotency_requests", "owner_id"),
+        ("data_export_requests", "user_id"),
+    ):
+        collection = getattr(db, collection_name, None)
+        if collection is not None:
+            await collection.delete_many({owner_field: user_id})
+    await db.groups.delete_many({"creator_id": user_id})
+    await db.groups.update_many(
+        {"member_ids": user_id},
+        {"$pull": {"member_ids": user_id, "admin_ids": user_id}},
+    )
+
+
+async def delete_user_owned_data(user_id: str) -> None:
+    await delete_user_financial_data(user_id)
     await db.websocket_tickets.delete_many({"user_id": user_id})
     auth_sessions = getattr(db, "auth_sessions", None)
     if auth_sessions is not None:
@@ -2203,12 +2256,6 @@ async def delete_user_owned_data(user_id: str) -> None:
     await db.password_reset_tokens.delete_many({"user_id": user_id})
     await db.password_reset_requests.delete_many({"user_id": user_id})
     await db.email_delivery_logs.delete_many({"user_id": user_id})
-    await db.groups.delete_many({"creator_id": user_id})
-    await db.groups.update_many(
-        {"member_ids": user_id},
-        {"$pull": {"member_ids": user_id, "admin_ids": user_id}},
-    )
-
 
 @api.get("/auth/account/export")
 async def export_own_data(request: Request, user=Depends(get_current_user)):
@@ -2296,6 +2343,91 @@ async def account_deletion_impact(user=Depends(get_current_user)):
     return await build_account_deletion_impact(user)
 
 
+@api.get("/auth/account/reset-impact", response_model=AccountResetImpactOut)
+async def account_reset_impact(user=Depends(get_current_user)):
+    return await build_account_reset_impact(user)
+
+
+@api.post("/auth/account/reset")
+async def reset_own_account(
+    payload: AccountResetIn,
+    request: Request = None,
+    user=Depends(get_current_user),
+):
+    candidate = await db.users.find_one({"id": user["id"]})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if not verify_password(payload.password, candidate.get("password_hash", "")):
+        raise HTTPException(status_code=400, detail="Senha atual incorreta")
+    if payload.confirmation.strip() != "ZERAR":
+        raise HTTPException(status_code=400, detail="Digite ZERAR para confirmar")
+
+    preview = await build_account_reset_impact(candidate)
+    if not preview["can_reset"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Resolva as pendências compartilhadas antes de zerar os dados.",
+                "blockers": preview["blockers"],
+                "impact": preview["impact"],
+            },
+        )
+
+    lock = await db.users.update_one(
+        {
+            "id": user["id"],
+            "reset_in_progress": {"$ne": True},
+            "deletion_in_progress": {"$ne": True},
+        },
+        {"$set": {"reset_in_progress": True}},
+    )
+    if not lock.matched_count:
+        raise HTTPException(status_code=409, detail="Esta conta já está sendo modificada")
+
+    try:
+        await audit_event("account_reset_started", request, user_id=user["id"])
+        recheck = await build_account_reset_impact(candidate)
+        if not recheck["can_reset"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Novas pendências foram encontradas. Revise sua conta e tente novamente.",
+                    "blockers": recheck["blockers"],
+                    "impact": recheck["impact"],
+                },
+            )
+
+        await ws_manager.disconnect_user(user["id"], code=4003)
+        await anonymize_user_in_shared_history(user["id"], f"reset:{new_id()}")
+        await delete_user_financial_data(user["id"])
+        # Preserve login, approval, role, currency, language and active sessions.
+        await db.users.update_one(
+            {"id": user["id"], "reset_in_progress": True},
+            {"$unset": {
+                "dashboard_widgets": "",
+                "dashboard_widgets_version": "",
+                "insight_prefs": "",
+                "notif_prefs": "",
+            }},
+        )
+        await audit_event("account_reset_completed", request, user_id=user["id"])
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Self-service account reset failed: user=%s", user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível concluir a redefinição dos dados. Tente novamente.",
+        )
+    finally:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$unset": {"reset_in_progress": ""}},
+        )
+
+    return {"ok": True}
+
+
 @api.delete("/auth/account")
 async def delete_own_account(
     payload: AccountDeletionIn,
@@ -2328,6 +2460,7 @@ async def delete_own_account(
         {
             "id": user["id"],
             "deletion_in_progress": {"$ne": True},
+            "reset_in_progress": {"$ne": True},
         },
         {"$set": {"deletion_in_progress": True}},
     )
