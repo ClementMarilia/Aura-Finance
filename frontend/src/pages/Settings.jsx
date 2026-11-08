@@ -66,6 +66,7 @@ export default function Settings() {
     applyUpdate,
   } = usePWAUpdate();
   const [cats, setCats] = useState([]);
+  const [restoringDefaults, setRestoringDefaults] = useState(false);
   const [form, setForm] = useState(defaultCatForm());
   const [editing, setEditing] = useState(null);
   const { isRunning: isSavingCategory, run: runCategorySave } = useSingleFlight();
@@ -188,6 +189,32 @@ export default function Settings() {
     setConfirmDel(null);
     toast.success(tr("Categoria excluída"));
     load();
+  };
+
+  const restoreDefaultCategories = async () => {
+    if (restoringDefaults || isSavingCategory) return;
+    setRestoringDefaults(true);
+    try {
+      // Load repair-only code on demand to protect the initial bundle budget.
+      const { restoreInitialFinanceDefaults } = await import("@/lib/restoreFinanceDefaults");
+      const result = await restoreInitialFinanceDefaults({
+        api, postCreate, currency: user?.currency || "EUR",
+      });
+      setCats(result.categories);
+      if (result.categories.some(c => (c.kind || "expense") === "expense")) {
+        setTab("expense");
+        toast.success(tr("Categorias padrão recuperadas. Você já pode criar lançamentos."));
+      } else {
+        toast.info(tr("Nenhuma categoria de despesa foi recuperada. Tente novamente."));
+      }
+    } catch (error) {
+      toast.error(formatApiError(error));
+      // Partial success is possible if a request fails mid-recovery. Fetching
+      // current data makes the next retry resume from the missing category.
+      try { await load(); } catch { /* Keep the original error visible. */ }
+    } finally {
+      setRestoringDefaults(false);
+    }
   };
 
   const filteredCats = cats.filter(c => {
@@ -595,8 +622,24 @@ export default function Settings() {
         </div>
 
         {filteredCats.length === 0 ? (
-          <div className="text-sm text-[#6B7068] py-8 text-center">
-            Nenhuma categoria de {KIND_LABEL[tab].toLowerCase()} criada ainda.
+          <div className="space-y-3 py-6 text-center">
+            <p className="text-sm text-[#6B7068]">
+              {tr("Nenhuma categoria de {kind} criada ainda.", { kind: KIND_LABEL[tab].toLowerCase() })}
+            </p>
+            {tab === "expense" && (
+              <div className="mx-auto max-w-sm space-y-2">
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {tr("Recupere as categorias padrão ausentes e uma Conta Principal com saldo zero, caso não exista carteira ativa. Seus lançamentos não serão alterados.")}
+                </p>
+                <Button type="button" variant="outline" className="rounded-xl"
+                  disabled={restoringDefaults || isSavingCategory}
+                  onClick={restoreDefaultCategories}
+                  data-testid="restore-default-categories">
+                  <RefreshCw size={16} className={`mr-2 ${restoringDefaults ? "animate-spin" : ""}`} />
+                  {restoringDefaults ? tr("Restaurando categorias...") : tr("Restaurar categorias padrão")}
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

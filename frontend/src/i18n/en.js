@@ -1267,4 +1267,10 @@ export default {
   "Redefinição dos dados em andamento": "Data reset in progress",
   "Esta conta já está sendo modificada": "This account is already being modified",
   "Não foi possível concluir a redefinição dos dados. Tente novamente.": "Could not complete the data reset. Try again.",
+  "Nenhuma categoria de {kind} criada ainda.": "No {kind} category created yet.",
+  "Recupere as categorias padrão ausentes e uma Conta Principal com saldo zero, caso não exista carteira ativa. Seus lançamentos não serão alterados.": "Restore missing default categories and a zero-balance Main Account if no active wallet exists. Your transactions will not be changed.",
+  "Restaurar categorias padrão": "Restore default categories",
+  "Restaurando categorias...": "Restoring categories...",
+  "Categorias padrão recuperadas. Você já pode criar lançamentos.": "Default categories restored. You can now add transactions.",
+  "Nenhuma categoria de despesa foi recuperada. Tente novamente.": "No expense categories were restored. Try again.",
 };
