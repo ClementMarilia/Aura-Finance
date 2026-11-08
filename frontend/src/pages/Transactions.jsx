@@ -79,6 +79,12 @@ export default function Transactions() {
   const [cats, setCats] = useState([]);
   const [accs, setAccs] = useState([]);
   const [accsLoaded, setAccsLoaded] = useState(false);
+  const [transactionViewport, setTransactionViewport] = useState({
+    top: 0,
+    height: typeof window !== "undefined"
+      ? (window.visualViewport?.height || window.innerHeight)
+      : 700,
+  });
   const [people, setPeople] = useState([]);
   const now = new Date();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -153,12 +159,49 @@ export default function Transactions() {
   }, [filterStatus, filterType, filterCategoryId, filterYear, filterMonth, filterAccountId, filterCurrency]);
 
   useEffect(() => {
-    api.get("/categories").then(r => setCats(r.data));
-    api.get("/accounts").then(r => setAccs(r.data)).catch(() => {}).finally(() => setAccsLoaded(true));
+    let active = true;
+    // Categories are loaded first because a fully empty legacy reset is
+    // automatically repaired by this endpoint before accounts are fetched.
+    const loadInitialData = async () => {
+      try {
+        const { data } = await api.get("/categories");
+        if (active) setCats(data);
+      } catch (err) {
+        if (active) toast.error(formatApiError(err));
+      }
+      try {
+        const { data } = await api.get("/accounts");
+        if (active) setAccs(data);
+      } catch (err) {
+        if (active) toast.error(formatApiError(err));
+      } finally {
+        if (active) setAccsLoaded(true);
+      }
+    };
+    loadInitialData();
     api.get("/reports/filter-options").then(r => {
-      setPeople((r.data?.participants || []).filter(person => !person.self));
-    });
+      if (active) setPeople((r.data?.participants || []).filter(person => !person.self));
+    }).catch(() => {});
+    return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const viewport = window.visualViewport;
+    const updateViewport = () => setTransactionViewport({
+      top: viewport?.offsetTop ?? 0,
+      height: viewport?.height ?? window.innerHeight,
+    });
+    updateViewport();
+    viewport?.addEventListener("resize", updateViewport);
+    viewport?.addEventListener("scroll", updateViewport);
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      viewport?.removeEventListener("resize", updateViewport);
+      viewport?.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("resize", updateViewport);
+    };
+  }, [open]);
 
   const sourceAccount = form.type === "transfer"
     ? accs.find(a => a.id === form.from_account_id)
@@ -600,12 +643,16 @@ export default function Transactions() {
             </Button>
           </DialogTrigger>
           <DialogContent
-            className="max-w-lg"
-            style={{ maxHeight: "calc(100dvh - 2rem)", overflowY: "auto", overscrollBehavior: "contain" }}
+            className="transaction-dialog max-w-lg"
+            style={{
+              "--tx-visible-top": `${transactionViewport.top}px`,
+              "--tx-visible-height": `${transactionViewport.height}px`,
+            }}
             data-testid="new-transaction-dialog"
           >
-            <DialogHeader><DialogTitle>{editing ? tr("Editar lançamento") : tr("Novo lançamento")}</DialogTitle></DialogHeader>
-            <form onSubmit={submit} className="space-y-3">
+            <DialogHeader className="transaction-dialog-header"><DialogTitle>{editing ? tr("Editar lançamento") : tr("Novo lançamento")}</DialogTitle></DialogHeader>
+            <form onSubmit={submit} className="transaction-dialog-form">
+              <div className="transaction-dialog-fields space-y-3">
               {!editing && <ReceiptScanner onResult={applyReceipt} initialFile={sharedReceipt} autoStart={entryMode === "escanear"} />}
               {!editing && <VoiceEntry onResult={applyVoice} />}
               <div className="grid grid-cols-2 gap-3">
@@ -841,9 +888,12 @@ export default function Transactions() {
                   <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} data-testid="tx-notes-input" />
                 </div>
               </div>
-              <Button type="submit" disabled={rateLoading} data-testid="tx-submit-button" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
-                {rateLoading ? tr("Buscando cotação...") : editing ? tr("Salvar alterações") : tr("Salvar")}
-              </Button>
+              </div>
+              <div className="transaction-dialog-actions">
+                <Button type="submit" disabled={rateLoading} data-testid="tx-submit-button" className="w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl">
+                  {rateLoading ? tr("Buscando cotação...") : editing ? tr("Salvar alterações") : tr("Salvar")}
+                </Button>
+              </div>
             </form>
           </DialogContent>
         </Dialog>
