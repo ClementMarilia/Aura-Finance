@@ -20,7 +20,6 @@ import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { translate as tr } from "@/i18n";
 import { useNavigate } from "react-router-dom";
 import { useThemedColor } from "@/lib/colors";
-import { restoreInitialFinanceDefaults } from "@/lib/restoreFinanceDefaults";
 
 const NOTIF_LABELS = {
   shared_expense_added: { title: tr("Despesas compartilhadas"), desc: tr("Quando você é adicionado a uma nova despesa.") },
@@ -196,6 +195,8 @@ export default function Settings() {
     if (restoringDefaults || isSavingCategory) return;
     setRestoringDefaults(true);
     try {
+      // Load repair-only code on demand to protect the initial bundle budget.
+      const { restoreInitialFinanceDefaults } = await import("@/lib/restoreFinanceDefaults");
       const result = await restoreInitialFinanceDefaults({
         api, postCreate, currency: user?.currency || "EUR",
       });
