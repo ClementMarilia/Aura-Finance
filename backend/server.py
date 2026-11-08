@@ -2909,15 +2909,32 @@ async def list_categories(user=Depends(get_current_user)):
         {"user_id": user["id"]},
         {"_id": 0, "name_key": 0},
     ).to_list(500)
-    # Repair accounts reset before the default-data restoration was introduced.
-    # The two collections must both be empty, to avoid replacing a user's
-    # intentionally customized categories or wallets.
-    if not categories and not await db.accounts.find_one({"user_id": user["id"]}):
-        await seed_user_defaults(user["id"], user.get("currency", "EUR"))
-        categories = await db.categories.find(
-            {"user_id": user["id"]},
-            {"_id": 0, "name_key": 0},
-        ).to_list(500)
+    # A legacy reset could leave the five *default income* categories in
+    # place: the startup income backfill runs independently from onboarding.
+    # Restore only the untouched empty/partial baseline, not intentionally
+    # customized data, and never bring old transactions back.
+    default_income_keys = {
+        category_name_key(name)
+        for name, _icon, _color, kind in DEFAULT_CATEGORIES
+        if kind == "income"
+    }
+    partial_reset_categories = all(
+        category.get("is_default") is True
+        and category.get("kind") == "income"
+        and category_name_key(category.get("name")) in default_income_keys
+        for category in categories
+    )
+    if partial_reset_categories and not await db.accounts.find_one(
+        {"user_id": user["id"]},
+    ):
+        # Do not auto-initialize an actively used account with existing
+        # transactions: this case is only the empty post-reset state.
+        if not await db.transactions.count_documents({"user_id": user["id"]}):
+            await seed_user_defaults(user["id"], user.get("currency", "EUR"))
+            categories = await db.categories.find(
+                {"user_id": user["id"]},
+                {"_id": 0, "name_key": 0},
+            ).to_list(500)
     return categories
 
 
