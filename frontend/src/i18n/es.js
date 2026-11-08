@@ -1267,4 +1267,10 @@ export default {
   "Redefinição dos dados em andamento": "Restablecimiento de datos en curso",
   "Esta conta já está sendo modificada": "Esta cuenta ya se está modificando",
   "Não foi possível concluir a redefinição dos dados. Tente novamente.": "No se pudo completar el borrado de datos. Inténtalo de nuevo.",
+  "Nenhuma categoria de {kind} criada ainda.": "Todavía no se ha creado ninguna categoría de {kind}.",
+  "Recupere as categorias padrão ausentes e uma Conta Principal com saldo zero, caso não exista carteira ativa. Seus lançamentos não serão alterados.": "Restaura las categorías predeterminadas que faltan y una Cuenta principal con saldo cero si no hay carteras activas. Tus movimientos no se modificarán.",
+  "Restaurar categorias padrão": "Restaurar categorías predeterminadas",
+  "Restaurando categorias...": "Restaurando categorías...",
+  "Categorias padrão recuperadas. Você já pode criar lançamentos.": "Categorías predeterminadas restauradas. Ya puedes añadir movimientos.",
+  "Nenhuma categoria de despesa foi recuperada. Tente novamente.": "No se ha restaurado ninguna categoría de gastos. Inténtalo de nuevo.",
 };
