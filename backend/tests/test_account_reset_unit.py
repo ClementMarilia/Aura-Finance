@@ -177,6 +177,82 @@ def test_legacy_reset_recreates_defaults_when_categories_and_accounts_empty(monk
     seed_defaults.assert_awaited_once_with("user-1", "EUR")
 
 
+def test_income_only_default_categories_after_reset_are_repaired(monkeypatch):
+    income_defaults = [
+        {
+            "name": name,
+            "kind": "income",
+            "is_default": True,
+        }
+        for name, _icon, _color, kind in server.DEFAULT_CATEGORIES
+        if kind == "income"
+    ]
+    repaired_categories = income_defaults + [{
+        "name": "Moradia", "kind": "expense", "is_default": True,
+    }]
+    db = financial_db()
+    db.accounts.find_one = AsyncMock(return_value=None)
+    results = [income_defaults]
+
+    def find_categories(*_args, **_kwargs):
+        return ListCursor(results[-1])
+
+    db.categories.find = find_categories
+    monkeypatch.setattr(server, "db", db)
+
+    async def fake_seed(_user_id, _currency):
+        results.append(repaired_categories)
+
+    seed = AsyncMock(side_effect=fake_seed)
+    monkeypatch.setattr(server, "seed_user_defaults", seed)
+    actual = asyncio.run(server.list_categories(
+        user={"id": "user-1", "currency": "EUR"}
+    ))
+    seed.assert_awaited_once_with("user-1", "EUR")
+    assert len(actual) == 6
+    assert any(category["kind"] == "expense" for category in actual)
+    db.transactions.count_documents.assert_awaited_once_with(
+        {"user_id": "user-1"}
+    )
+
+
+def test_income_only_categories_do_not_repair_when_customized(monkeypatch):
+    db = financial_db()
+    db.accounts.find_one = AsyncMock(return_value=None)
+    db.categories.find = lambda *_args, **_kwargs: ListCursor([{
+        "name": "Receita personalizada",
+        "kind": "income",
+        "is_default": False,
+    }])
+    monkeypatch.setattr(server, "db", db)
+    seed_defaults = AsyncMock()
+    monkeypatch.setattr(server, "seed_user_defaults", seed_defaults)
+    actual = asyncio.run(server.list_categories(
+        user={"id": "user-1", "currency": "EUR"},
+    ))
+    assert len(actual) == 1
+    seed_defaults.assert_not_awaited()
+
+
+def test_income_only_categories_do_not_repair_with_existing_transactions(monkeypatch):
+    db = financial_db()
+    db.accounts.find_one = AsyncMock(return_value=None)
+    db.transactions.count_documents = AsyncMock(return_value=1)
+    db.categories.find = lambda *_args, **_kwargs: ListCursor([{
+        "name": "Salário",
+        "kind": "income",
+        "is_default": True,
+    }])
+    monkeypatch.setattr(server, "db", db)
+    seed_defaults = AsyncMock()
+    monkeypatch.setattr(server, "seed_user_defaults", seed_defaults)
+    actual = asyncio.run(server.list_categories(
+        user={"id": "user-1", "currency": "EUR"},
+    ))
+    assert len(actual) == 1
+    seed_defaults.assert_not_awaited()
+
+
 def test_empty_categories_with_existing_wallet_are_not_overwritten(monkeypatch):
     db = financial_db()
     db.accounts.find_one = AsyncMock(return_value={"id": "wallet-1"})
