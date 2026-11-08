@@ -129,6 +129,8 @@ def test_reset_preserves_account_and_session_but_clears_financial_data(monkeypat
     monkeypatch.setattr(server, "db", db)
     monkeypatch.setattr(server, "audit_event", AsyncMock())
     monkeypatch.setattr(server.ws_manager, "disconnect_user", AsyncMock())
+    seed_defaults = AsyncMock()
+    monkeypatch.setattr(server, "seed_user_defaults", seed_defaults)
 
     result = asyncio.run(server.reset_own_account(
         server.AccountResetIn(
@@ -139,6 +141,7 @@ def test_reset_preserves_account_and_session_but_clears_financial_data(monkeypat
     ))
 
     assert result == {"ok": True}
+    seed_defaults.assert_awaited_once_with("user-1", "EUR")
     db.users.delete_one.assert_not_awaited()
     db.auth_sessions.delete_many.assert_not_awaited()
     db.password_reset_tokens.delete_many.assert_not_awaited()
@@ -158,3 +161,30 @@ def test_reset_preserves_account_and_session_but_clears_financial_data(monkeypat
         "insight_prefs", "notif_prefs",
     }
     assert calls[-1].args[1] == {"$unset": {"reset_in_progress": ""}}
+
+
+def test_legacy_reset_recreates_defaults_when_categories_and_accounts_empty(monkeypatch):
+    db = financial_db()
+    db.accounts.find_one = AsyncMock(return_value=None)
+    db.categories.find = lambda *_args, **_kwargs: ListCursor()
+    # The only scenario that should be repaired is a fully empty reset.
+    monkeypatch.setattr(server, "db", db)
+    seed_defaults = AsyncMock()
+    monkeypatch.setattr(server, "seed_user_defaults", seed_defaults)
+
+    result = asyncio.run(server.list_categories(user={"id": "user-1", "currency": "EUR"}))
+    assert result == []
+    seed_defaults.assert_awaited_once_with("user-1", "EUR")
+
+
+def test_empty_categories_with_existing_wallet_are_not_overwritten(monkeypatch):
+    db = financial_db()
+    db.accounts.find_one = AsyncMock(return_value={"id": "wallet-1"})
+    db.categories.find = lambda *_args, **_kwargs: ListCursor()
+    monkeypatch.setattr(server, "db", db)
+    seed_defaults = AsyncMock()
+    monkeypatch.setattr(server, "seed_user_defaults", seed_defaults)
+
+    result = asyncio.run(server.list_categories(user={"id": "user-1", "currency": "EUR"}))
+    assert result == []
+    seed_defaults.assert_not_awaited()

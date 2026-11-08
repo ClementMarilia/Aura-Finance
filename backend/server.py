@@ -2400,6 +2400,8 @@ async def reset_own_account(
         await ws_manager.disconnect_user(user["id"], code=4003)
         await anonymize_user_in_shared_history(user["id"], f"reset:{new_id()}")
         await delete_user_financial_data(user["id"])
+        # A clean slate must still be usable: recreate the onboarding defaults.
+        await seed_user_defaults(user["id"], candidate.get("currency", "EUR"))
         # Preserve login, approval, role, currency, language and active sessions.
         await db.users.update_one(
             {"id": user["id"], "reset_in_progress": True},
@@ -2903,10 +2905,20 @@ async def reject_user(user_id: str, admin=Depends(require_admin)):
 # ---------- Categories ----------
 @api.get("/categories")
 async def list_categories(user=Depends(get_current_user)):
-    return await db.categories.find(
+    categories = await db.categories.find(
         {"user_id": user["id"]},
         {"_id": 0, "name_key": 0},
     ).to_list(500)
+    # Repair accounts reset before the default-data restoration was introduced.
+    # The two collections must both be empty, to avoid replacing a user's
+    # intentionally customized categories or wallets.
+    if not categories and not await db.accounts.find_one({"user_id": user["id"]}):
+        await seed_user_defaults(user["id"], user.get("currency", "EUR"))
+        categories = await db.categories.find(
+            {"user_id": user["id"]},
+            {"_id": 0, "name_key": 0},
+        ).to_list(500)
+    return categories
 
 
 @api.post("/categories")

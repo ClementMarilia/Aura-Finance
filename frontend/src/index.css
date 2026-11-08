@@ -353,3 +353,70 @@ table thead th { font-weight: 500; letter-spacing: 0.04em; }
 }
 .auth-in { animation: auth-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
 @media (prefers-reduced-motion: reduce) { .auth-in { animation: none; } }
+
+
+/* The transaction editor must fit the actual visible iOS Safari viewport.
+   Keep its heading and Save action outside the only scrollable region. */
+.transaction-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  overscroll-behavior: contain;
+}
+.transaction-dialog-header {
+  flex: 0 0 auto;
+  padding: 1.25rem 3.5rem 0.875rem 1.25rem;
+  text-align: left;
+}
+.transaction-dialog-form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.transaction-dialog-fields {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.5rem 1.25rem 1rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+.transaction-dialog-actions {
+  flex: 0 0 auto;
+  padding: 0.875rem 1.25rem;
+  background-color: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 639px) {
+  .transaction-dialog {
+    top: calc(var(--tx-visible-top, 0px) + max(0.5rem, env(safe-area-inset-top)));
+    left: 0.5rem;
+    right: 0.5rem;
+    width: calc(100% - 1rem);
+    height: calc(
+      var(--tx-visible-height, 100dvh) -
+      max(0.5rem, env(safe-area-inset-top)) -
+      max(0.5rem, env(safe-area-inset-bottom))
+    );
+    max-height: none;
+    transform: none;
+    border-radius: 1rem;
+    animation: none !important;
+  }
+
+  .transaction-dialog :is(input, textarea, select, [role="combobox"]) {
+    font-size: 16px; /* Avoid Safari autofocus zoom and viewport clipping. */
+  }
+
+  .transaction-dialog-actions {
+    padding-bottom: max(0.875rem, env(safe-area-inset-bottom));
+  }
+}
