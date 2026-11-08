@@ -4,9 +4,10 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import InstallPrompt from "@/components/InstallPrompt";
-import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
+
 import { translate as tr } from "@/i18n";
 
+const PWAUpdatePrompt = lazy(() => import("@/components/PWAUpdatePrompt"));
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
@@ -74,7 +75,7 @@ function App() {
       <BrowserRouter>
         <Toaster position="top-right" richColors />
         <InstallPrompt />
-        <PWAUpdatePrompt />
+        <Suspense fallback={null}><PWAUpdatePrompt /></Suspense>
         <Suspense fallback={<RouteLoading />}>
           <Routes>
             <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
