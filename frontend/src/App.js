@@ -42,9 +42,13 @@ function RouteLoading() {
   );
 }
 
+function AuthLoading() {
+  return <div className="p-10 text-[#6B7068]">{tr("Carregando...")}</div>;
+}
+
 function Protected({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="p-10 text-[#6B7068]">{tr("Carregando...")}</div>;
+  if (loading) return <AuthLoading />;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
@@ -58,7 +62,7 @@ function PublicOnly({ children }) {
 
 function AdminOnly({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="p-10 text-[#6B7068]">{tr("Carregando...")}</div>;
+  if (loading) return <AuthLoading />;
   if (!user?.is_admin) return <Navigate to="/" replace />;
   return children;
 }
