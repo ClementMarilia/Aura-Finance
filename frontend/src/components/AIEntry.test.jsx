@@ -22,6 +22,8 @@ async function render(onResult, source = "own") {
   await act(async () => { root.render(<AIEntry onResult={onResult} />); });
 }
 async function send(text) {
+  const toggle = container.querySelector("button[aria-expanded]");
+  if (toggle?.getAttribute("aria-expanded") === "false") await act(async () => toggle.click());
   const textarea = container.querySelector("textarea");
   await act(async () => {
     Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set.call(textarea, text);
@@ -70,4 +72,25 @@ test("failed AI keeps the text and offers explicit basic entry without another p
   await act(async () => fallback.click());
   expect(onBasicResult).toHaveBeenCalledWith(expect.objectContaining({ amount: 20, type: "expense" }));
   expect(api.post).toHaveBeenCalledTimes(1);
+});
+
+test("assistant is collapsed by default and expands on demand", async () => {
+  await render(jest.fn());
+  const toggle = container.querySelector("button[aria-expanded]");
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(container.textContent).toContain("Assistente com IA");
+  expect(container.querySelector("#ai-command")).toBeNull();
+  expect(api.post).not.toHaveBeenCalled();
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(container.querySelector("#ai-command")).not.toBeNull();
+  await act(async () => toggle.click());
+  expect(container.querySelector("#ai-command")).toBeNull();
+});
+
+test("voice quick-add expands the assistant without another tap", async () => {
+  api.get.mockResolvedValue({ data: { source: "own" } });
+  await act(async () => root.render(<AIEntry onResult={jest.fn()} expandInitially />));
+  expect(container.querySelector("button[aria-expanded]").getAttribute("aria-expanded")).toBe("true");
+  expect(container.querySelector("#ai-command")).not.toBeNull();
 });
