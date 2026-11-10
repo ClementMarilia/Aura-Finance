@@ -13,6 +13,7 @@ export default function AISettings() {
   const [config, setConfig] = useState(null);
   const [source, setSource] = useState("off");
   const [provider, setProvider] = useState("gemini");
+  const [model, setModel] = useState("");
   const [key, setKey] = useState("");
   const [consent, setConsent] = useState(false);
   const [reference, setReference] = useState("");
@@ -20,7 +21,7 @@ export default function AISettings() {
   const flight = useRef(false);
   const load = async () => {
     const { data } = await api.get("/ai/settings");
-    setConfig(data); setSource(data.source); setProvider(data.provider);
+    setConfig(data); setSource(data.source); setProvider(data.provider); setModel(data.model || data.default_models?.[data.provider] || "");
   };
   useEffect(() => { load().catch(error => toast.error(aiError(error))); }, []);
   const run = async action => {
@@ -39,7 +40,7 @@ export default function AISettings() {
     <p>{tr("Escolha sua própria conexão ou contrate a IA oferecida pelo Aura.")}</p>
     {user?.is_super_admin && <Button asChild variant="outline"><Link to="/admin/ia">{tr("Administrar planos de IA")}</Link></Button>}
     <form className="card-soft space-y-4" onSubmit={event => { event.preventDefault(); run(async () => {
-      await api.put("/ai/settings", { source, provider, consent: true, ...(key ? { key } : {}) });
+      await api.put("/ai/settings", { source, provider, model: model || config.default_models?.[provider], consent: true, ...(key ? { key } : {}) });
       setKey(""); setConsent(false);
     }); }}>
       <label className="block" htmlFor="ai-source">{tr("Conexão de IA")}</label>
@@ -50,8 +51,12 @@ export default function AISettings() {
       {source === "own" && <>
         {!config.ready && <p role="alert">{tr("A IA ainda não foi configurada pela administradora.")}</p>}
         <label className="block" htmlFor="ai-provider">{tr("Provedor")}</label>
-        <select id="ai-provider" className="w-full border rounded-lg p-2 bg-transparent" value={provider} onChange={event => { setProvider(event.target.value); setKey(""); }} disabled={busy}>
-          <option value="gemini">Gemini · gemini-2.5-flash-lite</option><option value="openai">OpenAI · gpt-4.1-mini</option>
+        <select id="ai-provider" className="w-full border rounded-lg p-2 bg-transparent" value={provider} onChange={event => { setProvider(event.target.value); setModel(config.default_models?.[event.target.value] || ""); setKey(""); }} disabled={busy}>
+          <option value="gemini">Gemini</option><option value="openai">OpenAI</option>
+        </select>
+        <label className="block" htmlFor="ai-model">{tr("Modelo de IA")}</label>
+        <select id="ai-model" className="w-full border rounded-lg p-2 bg-transparent" value={model} onChange={event => setModel(event.target.value)} disabled={busy}>
+          {(config.models?.[provider] || []).map(value => <option key={value} value={value}>{value}</option>)}
         </select>
         <label className="block" htmlFor="ai-key">{tr("Chave de API")}</label>
         <Input id="ai-key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} maxLength={512} disabled={busy} />

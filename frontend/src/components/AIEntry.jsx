@@ -5,11 +5,13 @@ import api from "@/lib/api";
 import VoiceEntry from "@/components/VoiceEntry";
 import { Button } from "@/components/ui/button";
 import { aiError, localToday } from "@/lib/aiAssistant";
+import { parseVoiceEntry } from "@/lib/voiceEntry";
 import { startRecording } from "@/lib/aiRecorder";
 import { getLanguage, translate as tr } from "@/i18n";
 
 export default function AIEntry({ onResult, onBasicResult }) {
   const [text, setText] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -28,6 +30,7 @@ export default function AIEntry({ onResult, onBasicResult }) {
     if (flight.current) return;
     flight.current = true;
     setBusy(true);
+    setErrorMessage("");
     try {
       const { data } = await api.post("/ai/interpret", { ...input, today: localToday(), language: getLanguage() }, { timeout: 95000 });
       if (!alive.current) return;
@@ -36,7 +39,7 @@ export default function AIEntry({ onResult, onBasicResult }) {
       if (data.draft.question) toast.info(data.draft.question);
       else toast.success(tr("Ouvi e preenchi. Confira antes de salvar."));
     } catch (error) {
-      if (alive.current) toast.error(aiError(error));
+      if (alive.current) { setErrorMessage(aiError(error)); toast.error(aiError(error)); }
     } finally {
       flight.current = false;
       if (alive.current) setBusy(false);
@@ -72,6 +75,15 @@ export default function AIEntry({ onResult, onBasicResult }) {
         <Button type="button" variant="outline" disabled={busy || starting} aria-pressed={recording} onClick={record}>
           {recording ? tr("Parar e interpretar") : tr("Gravar até 30 segundos")}</Button>
       </div>
+      {errorMessage && <div role="alert" className="rounded-lg border p-3 space-y-2 text-sm">
+        <p>{errorMessage}</p>
+        <p>{tr("Você pode continuar pelo formulário. Seu texto foi mantido; nenhum lançamento foi salvo.")}</p>
+        {text.trim() && onBasicResult && <Button type="button" variant="outline" disabled={busy || recording} onClick={() => {
+          onBasicResult(parseVoiceEntry(text));
+          setQuestion(tr("Confira valor, data, categoria e conta antes de salvar."));
+          setErrorMessage("");
+        }}>{tr("Usar preenchimento básico sem IA")}</Button>}
+      </div>}
       <p role="status" className="text-sm">{question}</p>
       <p className="text-xs">{tr("Cada interpretação concluída usa um comando. Revise antes de salvar.")}</p>
       <p className="text-xs">{tr("O texto ou áudio e os nomes das suas categorias e contas serão enviados ao provedor escolhido.")}</p>
