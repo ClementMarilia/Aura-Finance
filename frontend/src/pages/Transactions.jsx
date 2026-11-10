@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import AmountInput from "@/components/AmountInput";
 import ReceiptScanner from "@/components/ReceiptScanner";
-import VoiceEntry from "@/components/VoiceEntry";
+import AIEntry from "@/components/AIEntry";
 import { takeSharedReceipt } from "@/lib/sharedReceipt";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -380,6 +380,20 @@ export default function Transactions() {
     }));
   };
 
+  const applyAI = (draft) => {
+    setForm(current => ({
+      ...current,
+      type: draft.type,
+      amount: draft.amount ? draft.amount.toFixed(2) : "",
+      description: draft.description || "",
+      date: draft.date || current.date,
+      category_id: draft.category_id || "",
+      account_id: draft.account_id || "",
+      currency: draft.currency || curr,
+      payment_method: "",
+    }));
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     const amount = Number(form.amount);
@@ -654,7 +668,7 @@ export default function Transactions() {
             <form onSubmit={submit} className="transaction-dialog-form">
               <div className="transaction-dialog-fields space-y-3">
               {!editing && <ReceiptScanner onResult={applyReceipt} initialFile={sharedReceipt} autoStart={entryMode === "escanear"} />}
-              {!editing && <VoiceEntry onResult={applyVoice} />}
+              {!editing && <AIEntry onResult={applyAI} onBasicResult={applyVoice} />}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>{tr("Tipo")}</Label>

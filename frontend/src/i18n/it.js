@@ -1,4 +1,6 @@
 export default {
+  "Administrar planos de IA": "Gestisci piani IA",
+  "Inteligência artificial": "Intelligenza artificiale",
   "Salvando...": "Salvataggio...",
   "Insights": "Analisi",
   "Pendentes": "In sospeso",
@@ -886,7 +888,6 @@ export default {
   "Acerto": "Regolamento",
   "Acertos": "Regolamenti",
   "Aguardando confirmação": "In attesa di conferma",
-  "Aguardando pagamento": "In attesa di pagamento",
   "Ao confirmar, o valor entrará na carteira escolhida e reduzirá a dívida.": "Alla conferma, l'importo entrerà nel conto scelto e ridurrà il debito.",
   "Buscando...": "Ricerca...",
   "Cancelar": "Annulla",

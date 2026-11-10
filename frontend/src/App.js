@@ -27,6 +27,8 @@ const Notifications = lazy(() => import("@/pages/Notifications"));
 const Goals = lazy(() => import("@/pages/Goals"));
 const Recurrences = lazy(() => import("@/pages/Recurrences"));
 const Wallets = lazy(() => import("@/pages/Wallets"));
+const AISettings = lazy(() => import("@/pages/AISettings"));
+const AdminAI = lazy(() => import("@/pages/AdminAI"));
 const AdminUsers = lazy(() => import("@/pages/AdminUsers"));
 const People = lazy(() => import("@/pages/People"));
 const FinancialStatement = lazy(() => import("@/pages/FinancialStatement"));
@@ -97,6 +99,8 @@ function App() {
               <Route path="acertos" element={<Settlements />} />
               <Route path="relatorios" element={<Reports />} />
               <Route path="perfil" element={<Profile />} />
+              <Route path="configuracoes/ia" element={<AISettings />} />
+              <Route path="admin/ia" element={<AdminOnly><AdminAI /></AdminOnly>} />
               <Route path="configuracoes" element={<Settings />} />
               <Route path="notificacoes" element={<Notifications />} />
               <Route path="metas" element={<Goals />} />

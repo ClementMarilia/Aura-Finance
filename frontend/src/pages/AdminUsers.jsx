@@ -274,6 +274,7 @@ export default function AdminUsers() {
 
   return (
     <div className="space-y-6 max-w-5xl" data-testid="admin-users-page">
+      {user?.is_super_admin && <Button asChild variant="outline"><Link to="/admin/ia">{tr("Administrar planos de IA")}</Link></Button>}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>

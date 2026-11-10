@@ -74,6 +74,13 @@ Cada card no Dashboard navega direto para a tela com filtro aplicado, mostrando 
 - Comparações entre meses usam períodos equivalentes e ritmo diário quando os meses têm quantidades diferentes de dias. Somente valores realizados são tratados como gastos; pendências continuam reservadas no orçamento disponível.
 - **Relatórios anuais**: cards, **comparação YoY**, barras mensais, exportação CSV/PDF (jsPDF).
 
+### Assistente de lançamentos com IA
+- Conexão própria OpenAI/Gemini ou Plano IA Aura de €5/mês, aprovado manualmente pela superadministradora.
+- Até 300 interpretações por mês no plano Aura, por texto ou áudio de até 30 segundos.
+- A IA preenche um rascunho de receita/despesa; o usuário revisa e salva pelo formulário existente.
+- Chaves próprias criptografadas no backend. Sem troca automática para provedor pago.
+- Configuração e limites: [docs/AI_ASSISTANT.md](docs/AI_ASSISTANT.md).
+
 ### Conta & segurança
 - Auth JWT + bcrypt.
 - **Interface multilíngue** em Português, Italiano, Inglês e Espanhol. O primeiro acesso considera o idioma do dispositivo; a escolha manual é salva no perfil e acompanha o usuário em outros dispositivos.

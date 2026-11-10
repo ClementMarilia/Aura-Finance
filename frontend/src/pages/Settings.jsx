@@ -386,6 +386,8 @@ export default function Settings() {
     <div className="space-y-6 max-w-2xl" data-testid="settings-page">
       <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Outfit" }}>{tr("Configurações")}</h1>
 
+      <Button variant="outline" onClick={() => navigate("/configuracoes/ia")}>{tr("Inteligência artificial")}</Button>
+
       <div className="card-soft" data-testid="language-section">
         <h3 className="text-lg font-semibold mb-1" style={{ fontFamily: "Outfit" }}>{tr("Idioma")}</h3>
         <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
