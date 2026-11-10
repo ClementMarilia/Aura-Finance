@@ -668,7 +668,7 @@ export default function Transactions() {
             <form onSubmit={submit} className="transaction-dialog-form">
               <div className="transaction-dialog-fields space-y-3">
               {!editing && <ReceiptScanner onResult={applyReceipt} initialFile={sharedReceipt} autoStart={entryMode === "escanear"} />}
-              {!editing && <AIEntry onResult={applyAI} onBasicResult={applyVoice} />}
+              {!editing && <AIEntry onResult={applyAI} onBasicResult={applyVoice} expandInitially={entryMode === "falar"} />}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>{tr("Tipo")}</Label>
