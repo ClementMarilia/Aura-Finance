@@ -1,4 +1,6 @@
 export default {
+  "Administrar planos de IA": "Manage AI plans",
+  "Inteligência artificial": "Artificial intelligence",
   "Salvando...": "Saving...",
   "Crelith Finance — Controle Financeiro": "Crelith Finance — Financial Management",
   "Olá,": "Hello,",
@@ -886,7 +888,6 @@ export default {
   "Acerto": "Settlement",
   "Acertos": "Settlements",
   "Aguardando confirmação": "Awaiting confirmation",
-  "Aguardando pagamento": "Awaiting payment",
   "Ao confirmar, o valor entrará na carteira escolhida e reduzirá a dívida.": "When confirmed, the amount will enter the selected account and reduce the debt.",
   "Buscando...": "Searching...",
   "Cancelar": "Cancel",

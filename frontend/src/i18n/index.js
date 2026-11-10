@@ -425,3 +425,10 @@ export function translate(message, variables = {}) {
 }
 
 document.documentElement.lang = currentLanguage;
+
+// Optional feature catalogs are loaded with their route, keeping startup small.
+export function registerMessages(catalogs) {
+  for (const [language, catalog] of Object.entries(catalogs)) {
+    Object.assign(messages[language], catalog);
+  }
+}

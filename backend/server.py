@@ -2248,6 +2248,11 @@ async def delete_user_financial_data(user_id: str) -> None:
 
 
 async def delete_user_owned_data(user_id: str) -> None:
+    for name, query in (("ai_connections", {"_id": user_id}), ("ai_plans", {"_id": user_id}),
+                        ("ai_plan_events", {"user_id": user_id})):
+        collection = getattr(db, name, None)
+        if collection is not None:
+            await collection.delete_many(query)
     await delete_user_financial_data(user_id)
     await db.websocket_tickets.delete_many({"user_id": user_id})
     auth_sessions = getattr(db, "auth_sessions", None)
@@ -2772,6 +2777,11 @@ async def delete_admin_user(
             {"member_ids": user_id},
             {"$pull": {"member_ids": user_id, "admin_ids": user_id}},
         )
+        for name, query in (("ai_connections", {"_id": user_id}), ("ai_plans", {"_id": user_id}),
+                            ("ai_plan_events", {"user_id": user_id})):
+            collection = getattr(db, name, None)
+            if collection is not None:
+                await collection.delete_many(query)
         deleted = await db.users.delete_one({
             "id": user_id,
             "deletion_in_progress": True,
@@ -10074,6 +10084,16 @@ app.include_router(create_statement_import_router(
     transaction_model=TransactionIn,
     new_id=new_id,
     now_iso=now_iso,
+))
+
+from ai_assistant import create_ai_router  # noqa: E402
+
+app.include_router(create_ai_router(
+    db=db,
+    get_current_user=get_current_user,
+    require_super_admin=require_super_admin,
+    push_notification=push_notification,
+    admin_email=configured_super_admin_email,
 ))
 
 app.add_middleware(
