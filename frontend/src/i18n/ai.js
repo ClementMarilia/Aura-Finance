@@ -70,7 +70,14 @@ registerMessages({
     "Plano IA Aura": "Aura AI Plan",
     "Nova solicitação do Plano IA Aura.": "New Aura AI Plan request.",
     "Pagamento informado. Confira antes de ativar o plano.": "Payment reported. Verify before activating the plan.",
-    "O status do seu Plano IA Aura foi atualizado.": "Your Aura AI Plan status has been updated."
+    "O status do seu Plano IA Aura foi atualizado.": "Your Aura AI Plan status has been updated.",
+    "Modelo de IA": "AI model",
+    "Este modelo não está disponível para sua chave. Escolha outro modelo nas configurações de IA.": "This model is unavailable for your key. Choose another model in AI settings.",
+    "O provedor não permite esta conexão na região do servidor. Use outro provedor ou o formulário manual.": "The provider does not allow this connection in the server region. Use another provider or the manual form.",
+    "O provedor recusou a solicitação. Confira o modelo e as permissões da chave nas configurações de IA.": "The provider rejected the request. Check the model and key permissions in AI settings.",
+    "Você pode continuar pelo formulário. Seu texto foi mantido; nenhum lançamento foi salvo.": "You can continue in the form. Your text was kept; no entry was saved.",
+    "Confira valor, data, categoria e conta antes de salvar.": "Check the amount, date, category and account before saving.",
+    "Usar preenchimento básico sem IA": "Use basic entry without AI"
   },
   "it": {
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 comandi al mese, tramite testo o audio fino a 30 secondi. Nessun rinnovo automatico.",
@@ -141,7 +148,14 @@ registerMessages({
     "Plano IA Aura": "Piano IA Aura",
     "Nova solicitação do Plano IA Aura.": "Nuova richiesta del Piano IA Aura.",
     "Pagamento informado. Confira antes de ativar o plano.": "Pagamento segnalato. Verifica prima di attivare il piano.",
-    "O status do seu Plano IA Aura foi atualizado.": "Lo stato del tuo Piano IA Aura è stato aggiornato."
+    "O status do seu Plano IA Aura foi atualizado.": "Lo stato del tuo Piano IA Aura è stato aggiornato.",
+    "Modelo de IA": "Modello IA",
+    "Este modelo não está disponível para sua chave. Escolha outro modelo nas configurações de IA.": "Questo modello non è disponibile per la tua chiave. Scegli un altro modello nelle impostazioni IA.",
+    "O provedor não permite esta conexão na região do servidor. Use outro provedor ou o formulário manual.": "Il fornitore non consente questa connessione nella regione del server. Usa un altro fornitore o il modulo manuale.",
+    "O provedor recusou a solicitação. Confira o modelo e as permissões da chave nas configurações de IA.": "Il fornitore ha rifiutato la richiesta. Controlla modello e permessi della chiave nelle impostazioni IA.",
+    "Você pode continuar pelo formulário. Seu texto foi mantido; nenhum lançamento foi salvo.": "Puoi continuare nel modulo. Il testo è stato conservato; nessun movimento è stato salvato.",
+    "Confira valor, data, categoria e conta antes de salvar.": "Controlla importo, data, categoria e conto prima di salvare.",
+    "Usar preenchimento básico sem IA": "Usa compilazione semplice senza IA"
   },
   "es": {
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 comandos al mes, por texto o audio de hasta 30 segundos. Sin renovación automática.",
@@ -212,6 +226,13 @@ registerMessages({
     "Plano IA Aura": "Plan IA Aura",
     "Nova solicitação do Plano IA Aura.": "Nueva solicitud del Plan IA Aura.",
     "Pagamento informado. Confira antes de ativar o plano.": "Pago informado. Comprueba antes de activar el plan.",
-    "O status do seu Plano IA Aura foi atualizado.": "El estado de tu Plan IA Aura ha sido actualizado."
+    "O status do seu Plano IA Aura foi atualizado.": "El estado de tu Plan IA Aura ha sido actualizado.",
+    "Modelo de IA": "Modelo de IA",
+    "Este modelo não está disponível para sua chave. Escolha outro modelo nas configurações de IA.": "Este modelo no está disponible para tu clave. Elige otro en la configuración de IA.",
+    "O provedor não permite esta conexão na região do servidor. Use outro provedor ou o formulário manual.": "El proveedor no permite esta conexión en la región del servidor. Usa otro proveedor o el formulario manual.",
+    "O provedor recusou a solicitação. Confira o modelo e as permissões da chave nas configurações de IA.": "El proveedor rechazó la solicitud. Revisa el modelo y los permisos de la clave en la configuración de IA.",
+    "Você pode continuar pelo formulário. Seu texto foi mantido; nenhum lançamento foi salvo.": "Puedes continuar en el formulario. Tu texto se conservó; no se guardó ningún movimiento.",
+    "Confira valor, data, categoria e conta antes de salvar.": "Revisa importe, fecha, categoría y cuenta antes de guardar.",
+    "Usar preenchimento básico sem IA": "Usar relleno básico sin IA"
   }
 });

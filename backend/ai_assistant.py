@@ -22,6 +22,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pymongo import ReturnDocument
 
 MODELS = {"openai": "gpt-4.1-mini", "gemini": "gemini-2.5-flash-lite"}
+MODEL_OPTIONS = {
+    "openai": ["gpt-4.1-mini"],
+    "gemini": ["gemini-2.5-flash-lite", "gemini-3.5-flash-lite"],
+}
 LIMIT = 300
 # Each command reserves one bounded attempt, even on provider failure. This
 # prevents retry storms from spending unbounded money behind a successful quota.
@@ -69,6 +73,7 @@ class Connection(Input):
     source: Literal["own", "aura", "off"]
     provider: Literal["openai", "gemini"] = "gemini"
     key: str | None = Field(default=None, min_length=10, max_length=512)
+    model: str | None = Field(default=None, max_length=80)
     consent: Literal[True]
 
 
@@ -141,6 +146,19 @@ def post_provider(url, **kwargs):
         raise HTTPException(400, "AI_KEY_REJECTED")
     if response.status_code == 429:
         raise HTTPException(429, "AI_PROVIDER_LIMIT")
+    if response.status_code == 404:
+        raise HTTPException(400, "AI_MODEL_UNAVAILABLE")
+    if response.status_code == 400:
+        # Only map known categories; never expose provider messages or keys.
+        try:
+            message = str(response.json().get("error", {}).get("message", "")).lower()
+        except (ValueError, AttributeError, TypeError):
+            message = ""
+        if "api key" in message or "api_key" in message:
+            raise HTTPException(400, "AI_KEY_REJECTED")
+        if "location" in message or "region" in message or "country" in message:
+            raise HTTPException(400, "AI_REGION_UNSUPPORTED")
+        raise HTTPException(400, "AI_REQUEST_REJECTED")
     if response.status_code != 200:
         raise HTTPException(503, "AI_PROVIDER_UNAVAILABLE")
     try:
@@ -149,8 +167,11 @@ def post_provider(url, **kwargs):
         raise HTTPException(502, "AI_INVALID_RESPONSE") from None
 
 
-def call_provider(provider, key, context, text, audio=None):
+def call_provider(provider, key, context, text, audio=None, model=None):
     """Fixed hosts/models/output caps; never accepts a user-controlled URL."""
+    model = model or MODELS[provider]
+    if model not in MODEL_OPTIONS[provider]:
+        raise HTTPException(422, "AI_MODEL_UNAVAILABLE")
     if provider == "openai":
         headers = {"Authorization": f"Bearer {key}"}
         if audio:
@@ -165,7 +186,7 @@ def call_provider(provider, key, context, text, audio=None):
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
             json={
-                "model": MODELS[provider],
+                "model": model,
                 "max_completion_tokens": 700,
                 "response_format": {"type": "json_object"},
                 "messages": [
@@ -186,7 +207,7 @@ def call_provider(provider, key, context, text, audio=None):
             }
         )
     result = post_provider(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{MODELS[provider]}:generateContent",
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         headers={"x-goog-api-key": key},
         json={
             "systemInstruction": {"parts": [{"text": context}]},
@@ -194,7 +215,11 @@ def call_provider(provider, key, context, text, audio=None):
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "maxOutputTokens": 700,
-                "thinkingConfig": {"thinkingBudget": 0},
+                "thinkingConfig": (
+                    {"thinkingBudget": 0}
+                    if model.startswith("gemini-2.5-")
+                    else {"thinkingLevel": "MINIMAL"}
+                ),
             },
         },
     )
@@ -253,6 +278,9 @@ def create_ai_router(
         return {
             "source": config.get("source", "off"),
             "provider": config.get("provider", "gemini"),
+            "model": config.get("model", MODELS.get(config.get("provider", "gemini"))),
+            "models": MODEL_OPTIONS,
+            "default_models": MODELS,
             "has_key": bool(config.get("encrypted_key")),
             "ready": ready,
             "aura_available": available,
@@ -266,11 +294,15 @@ def create_ai_router(
 
     @router.put("/ai/settings")
     async def save_connection(payload: Connection, user=Depends(get_current_user)):
+        model = payload.model or MODELS[payload.provider]
+        if model not in MODEL_OPTIONS[payload.provider]:
+            raise HTTPException(422, "AI_MODEL_UNAVAILABLE")
         await ensure_settings(user["id"])
         current = await db.ai_connections.find_one({"_id": user["id"]}) or {}
         changes = {
             "source": payload.source,
             "provider": payload.provider,
+            "model": model,
             "consented_at": utcnow().isoformat(),
         }
         if payload.source == "own":
@@ -457,6 +489,13 @@ def create_ai_router(
                 key = cipher().decrypt(config["encrypted_key"].encode()).decode()
             except InvalidToken:
                 raise HTTPException(503, "AI_NOT_CONFIGURED") from None
+        model = (
+            MODELS[provider]
+            if source == "aura"
+            else config.get("model", MODELS[provider])
+        )
+        if model not in MODEL_OPTIONS[provider]:
+            raise HTTPException(400, "AI_MODEL_UNAVAILABLE")
         # Cross-worker lease and cooldown. Covers both calls of an OpenAI audio
         # command, and remains valid beyond their maximum combined timeout.
         now = utcnow()
@@ -532,7 +571,7 @@ def create_ai_router(
                 raise HTTPException(422, "AI_CONTEXT_TOO_LARGE")
             try:
                 result = await asyncio.to_thread(
-                    call_provider, provider, key, context, payload.text, audio
+                    call_provider, provider, key, context, payload.text, audio, model
                 )
                 draft = Draft.model_validate(result)
             except (KeyError, IndexError, TypeError, ValueError, ValidationError):

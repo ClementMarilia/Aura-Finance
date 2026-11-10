@@ -437,3 +437,81 @@ def test_audio_metadata_and_trailing_bytes_are_not_forwarded():
     original = base64.b64decode(wav(1))
     encoded = base64.b64encode(original + b"private trailing metadata").decode()
     assert ai.read_audio(encoded) == original
+
+
+@pytest.mark.parametrize(
+    "status,code", [(404, "AI_MODEL_UNAVAILABLE"), (400, "AI_REQUEST_REJECTED")]
+)
+def test_model_and_request_errors_are_distinct_from_outage(monkeypatch, status, code):
+    monkeypatch.setattr(
+        ai.requests,
+        "post",
+        lambda *args, **kwargs: SimpleNamespace(
+            status_code=status,
+            json=lambda: {"error": {"message": "unsupported model parameter"}},
+        ),
+    )
+    with pytest.raises(HTTPException) as error:
+        ai.post_provider(
+            "https://generativelanguage.googleapis.com/v1beta/models/test:generateContent"
+        )
+    assert error.value.detail == code
+
+
+def test_gemini_modern_model_uses_compatible_thinking_config(monkeypatch):
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return {"candidates": [{"content": {"parts": [{"text": '{"amount":32}'}]}}]}
+
+    monkeypatch.setattr(ai, "post_provider", post)
+    ai.call_provider(
+        "gemini", "private", "context", "paid 32", model="gemini-3.5-flash-lite"
+    )
+    assert "/gemini-3.5-flash-lite:generateContent" in calls[0][0]
+    assert calls[0][1]["json"]["generationConfig"]["thinkingConfig"] == {
+        "thinkingLevel": "MINIMAL"
+    }
+
+
+def test_model_selection_preserves_key_and_rejects_other_provider_models(setup):
+    s = setup
+    assert (
+        s.client.put(
+            "/api/ai/settings",
+            json={
+                "source": "own",
+                "provider": "gemini",
+                "key": "own-gemini-secret",
+                "consent": True,
+            },
+        ).status_code
+        == 200
+    )
+    assert (
+        s.client.put(
+            "/api/ai/settings",
+            json={
+                "source": "own",
+                "provider": "gemini",
+                "model": "gemini-3.5-flash-lite",
+                "consent": True,
+            },
+        ).status_code
+        == 200
+    )
+    assert s.client.get("/api/ai/settings").json()["model"] == "gemini-3.5-flash-lite"
+    assert s.client.get("/api/ai/settings").json()["has_key"] is True
+    assert (
+        s.client.put(
+            "/api/ai/settings",
+            json={
+                "source": "own",
+                "provider": "gemini",
+                "model": "gpt-4.1-mini",
+                "consent": True,
+            },
+        ).status_code
+        == 422
+    )

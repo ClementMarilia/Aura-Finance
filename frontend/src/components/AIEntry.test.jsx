@@ -58,3 +58,16 @@ test("a provider limit does not save a draft or switch to a paid connection", as
   expect(api.post).toHaveBeenCalledTimes(1);
   expect(onResult).not.toHaveBeenCalled();
 });
+
+test("failed AI keeps the text and offers explicit basic entry without another provider call", async () => {
+  const onBasicResult = jest.fn();
+  api.get.mockResolvedValue({ data: { source: "own" } });
+  api.post.mockRejectedValue({ response: { data: { detail: "AI_MODEL_UNAVAILABLE" } } });
+  await act(async () => { root.render(<AIEntry onResult={jest.fn()} onBasicResult={onBasicResult} />); });
+  await send("Gastei 20 no mercado");
+  expect(container.querySelector("textarea").value).toBe("Gastei 20 no mercado");
+  const fallback = [...container.querySelectorAll("button")].find(node => node.textContent === "Usar preenchimento básico sem IA");
+  await act(async () => fallback.click());
+  expect(onBasicResult).toHaveBeenCalledWith(expect.objectContaining({ amount: 20, type: "expense" }));
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
