@@ -1,5 +1,6 @@
 import {
   defaultAccountFor,
+  applyAIDraftToForm,
   transactionFiltersFromSearchParams,
   transactionPayloadFromForm,
   transactionQueryParams,
@@ -110,4 +111,19 @@ describe("default wallet for new entries", () => {
     expect(defaultAccountFor([], "EUR")).toBeNull();
     expect(defaultAccountFor(undefined, "EUR")).toBeNull();
   });
+});
+
+
+test("AI purchase keeps reimbursement details in notes and preserves the pending due date", () => {
+  const form = applyAIDraftToForm({ status: "paid", notes: "", date: "2026-11-11" }, {
+    type: "expense", status: "pending", amount: 269.99, description: "Compra RAM Amazon",
+    notes: "Comprei no cartão da Nathalia; ainda tenho que pagar a ela.",
+    date: "2026-12-15", account_id: "revolut", currency: "EUR",
+  }, "EUR");
+  expect(form).toEqual(expect.objectContaining({ status: "pending", date: "2026-12-15", amount: "269.99", account_id: "revolut", description: "Compra RAM Amazon", notes: "Comprei no cartão da Nathalia; ainda tenho que pagar a ela." }));
+  expect(transactionPayloadFromForm(form, { sourceCurrency: "EUR", exchangeRate: 1 }).notes).toBe(form.notes);
+});
+
+test("older AI drafts without notes keep manually entered observations", () => {
+  expect(applyAIDraftToForm({ notes: "Manual" }, { type: "expense", description: "Compra" }, "EUR").notes).toBe("Manual");
 });

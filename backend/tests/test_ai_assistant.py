@@ -1175,3 +1175,28 @@ def test_invalid_provider_output_logs_only_schema_fields(setup, monkeypatch, cap
     assert "PRIVATE" not in caplog.text
     assert s.raw.transactions.count_documents({}) == 0
     assert s.raw.ai_plans.find_one({"_id": "alice"})["used"] == 0
+
+
+def test_ai_notes_are_validated_returned_and_preserved_in_followup(setup, monkeypatch):
+    s = setup
+    subscribe(s)
+    notes = "Comprei no cartão da Nathalia e ainda tenho que pagar a ela."
+    contexts = []
+    def provider(*args):
+        contexts.append(args[2])
+        return {"type": "expense", "status": "pending", "amount": 269.99,
+                "description": "Compra RAM Amazon", "notes": notes, "date": "2026-12-15"}
+    monkeypatch.setattr(ai, "call_provider", provider)
+    first = command(s, text="Compra Amazon, adc em observações que comprei no cartão da Nathalia")
+    assert first.status_code == 200
+    draft = first.json()["draft"]
+    assert draft["notes"] == notes
+    assert draft["description"] == "Compra RAM Amazon"
+    s.raw.ai_connections.update_one({"_id": "alice"}, {"$unset": {"busy_until": ""}})
+    followup = command(s, previous_draft=draft, clarifications=[{"question": "Conta?", "answer": "Revolut"}])
+    assert followup.status_code == 200
+    assert followup.json()["draft"]["notes"] == notes
+    assert notes in contexts[-1]
+    assert s.raw.transactions.count_documents({}) == 0
+    with pytest.raises(ValueError):
+        ai.Draft(type="expense", description="Compra", notes="x" * 1001)

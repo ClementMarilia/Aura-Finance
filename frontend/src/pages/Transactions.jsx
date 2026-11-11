@@ -72,6 +72,22 @@ export function transactionPayloadFromForm(form, {
 
 export { defaultAccountFor };
 
+export function applyAIDraftToForm(current, draft, currency) {
+  return {
+    ...current,
+    type: draft.type,
+    status: draft.status === "paid" ? "paid" : "pending",
+    amount: draft.amount ? draft.amount.toFixed(2) : "",
+    description: draft.description || "",
+    notes: draft.notes ?? current.notes,
+    date: draft.date || current.date,
+    category_id: draft.category_id || "",
+    account_id: draft.account_id || "",
+    currency: draft.currency || currency,
+    payment_method: "",
+  };
+}
+
 export default function Transactions() {
   const { user } = useAuth();
   const curr = user?.currency || "EUR";
@@ -381,18 +397,7 @@ export default function Transactions() {
   };
 
   const applyAI = (draft) => {
-    setForm(current => ({
-      ...current,
-      type: draft.type,
-      status: draft.status === "paid" ? "paid" : "pending",
-      amount: draft.amount ? draft.amount.toFixed(2) : "",
-      description: draft.description || "",
-      date: draft.date || current.date,
-      category_id: draft.category_id || "",
-      account_id: draft.account_id || "",
-      currency: draft.currency || curr,
-      payment_method: "",
-    }));
+    setForm(current => applyAIDraftToForm(current, draft, curr));
   };
 
   const submit = async (e) => {
