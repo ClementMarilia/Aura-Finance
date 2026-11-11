@@ -102,6 +102,10 @@ class Payment(Input):
     reference: str = Field(default="", max_length=160)
 
 
+class MasterLimit(Input):
+    command_limit: int = Field(ge=1, le=1000000, strict=True)
+
+
 class Decision(Input):
     request_id: str = Field(min_length=1, max_length=64)
     action: Literal["approve", "reject", "suspend", "request_payment", "adjust"]
@@ -326,6 +330,11 @@ def call_provider(
     )
 
 
+def master_limits(config):
+    limit = config.get("master_command_limit", LIMIT)
+    return limit, limit + max(60, limit // 5)
+
+
 def plan_limits(plan):
     limit = plan.get("command_limit", LIMIT)
     attempts = plan.get("attempt_limit", MAX_ATTEMPTS)
@@ -394,14 +403,15 @@ def create_ai_router(
         start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         period = start.strftime("%Y-%m")
         current = config.get("master_period") == period
+        limit, attempt_limit = master_limits(config)
         return {
             "request_id": f"master:{period}",
             "status": "active",
             "access_type": "master",
             "starts_at": start.isoformat(),
             "expires_at": next_month(start).isoformat(),
-            "command_limit": LIMIT,
-            "attempt_limit": MAX_ATTEMPTS,
+            "command_limit": limit,
+            "attempt_limit": attempt_limit,
             "used": config.get("master_used", 0) if current else 0,
             "attempts": config.get("master_attempts", 0) if current else 0,
         }
@@ -412,6 +422,23 @@ def create_ai_router(
         except Exception:
             # Payment/subscription state is authoritative even if push is down.
             pass
+
+    @router.get("/admin/ai/master-settings")
+    async def get_master_settings(admin=Depends(require_super_admin)):
+        config = await db.ai_connections.find_one({"_id": admin["id"]}) or {}
+        return public_plan(master_plan(config))
+
+    @router.put("/admin/ai/master-settings")
+    async def update_master_settings(
+        payload: MasterLimit, admin=Depends(require_super_admin)
+    ):
+        await ensure_settings(admin["id"])
+        config = await db.ai_connections.find_one_and_update(
+            {"_id": admin["id"]},
+            {"$set": {"master_command_limit": payload.command_limit}},
+            return_document=ReturnDocument.AFTER,
+        )
+        return public_plan(master_plan(config))
 
     @router.get("/ai/settings")
     async def settings(user=Depends(get_current_user)):
@@ -451,7 +478,7 @@ def create_ai_router(
             "aura_available": available,
             "aura_provider": provider,
             "price_eur": 5,
-            "limit": LIMIT,
+            "limit": plan["command_limit"] if master else LIMIT,
             "max_audio_seconds": 30,
             "payment_instructions": os.environ.get("AURA_AI_PAYMENT_INSTRUCTIONS", ""),
             "plan": public_plan(plan),
@@ -744,6 +771,7 @@ def create_ai_router(
         master = source == "aura" and is_super_admin_user(user)
         try:
             if master:
+                limit, attempt_limit = master_limits(config)
                 period = now.strftime("%Y-%m")
                 await db.ai_connections.update_one(
                     {"_id": uid, "master_period": {"$ne": period}},
@@ -759,8 +787,11 @@ def create_ai_router(
                     {
                         "_id": uid,
                         "master_period": period,
-                        "master_used": {"$lt": LIMIT},
-                        "master_attempts": {"$lt": MAX_ATTEMPTS},
+                        "master_used": {"$lt": limit},
+                        "master_attempts": {"$lt": attempt_limit},
+                        "master_command_limit": config.get(
+                            "master_command_limit", {"$exists": False}
+                        ),
                     },
                     {"$inc": {"master_used": 1, "master_attempts": 1}},
                     return_document=ReturnDocument.AFTER,

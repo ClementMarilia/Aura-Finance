@@ -84,7 +84,8 @@ export default function AISettings() {
       <p>{tr("Selecione IA do Aura e salve a conexão para usar. A chave do serviço deve estar configurada no servidor.")}</p>
       {!config.aura_available && <p role="alert">{tr("A IA ainda não foi configurada pela administradora.")}</p>}
       <p>{tr("Comandos utilizados")}: {plan?.used || 0} / {plan?.command_limit || 300}</p>
-      <p>{tr("O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.")}</p>
+      <Button asChild variant="outline"><Link to="/admin/ia#master-limit">{tr("Gerenciar meu limite")}</Link></Button>
+      <p>{tr("O limite mensal é renovado automaticamente, sem reiniciar ao reconectar.")}</p>
       {plan?.expires_at && <p>{tr("Próxima renovação")}: {new Date(plan.expires_at).toLocaleString()}</p>}
     </section> : <section className="card-soft space-y-4">
       <h2 className="text-xl font-semibold">{tr("IA do Aura")}</h2>

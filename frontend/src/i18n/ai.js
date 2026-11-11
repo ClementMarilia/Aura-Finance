@@ -115,7 +115,14 @@ registerMessages({
     "O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.": "The 300-command allowance renews automatically each month and does not reset when reconnecting.",
     "Próxima renovação": "Next renewal",
     "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Your monthly Aura AI limit has been reached. You can continue with your own AI.",
-    "Informe uma chave de API válida para sua conexão pessoal.": "Enter a valid API key for your personal connection."
+    "Informe uma chave de API válida para sua conexão pessoal.": "Enter a valid API key for your personal connection.",
+    "Meu limite da IA do Aura": "My Aura AI limit",
+    "Limite mensal de comandos": "Monthly command limit",
+    "Você pode aumentar ou reduzir seu limite. O uso já registrado não será zerado, e o valor escolhido permanece nos próximos meses.": "You can raise or lower your limit. Recorded usage will not reset, and your chosen limit stays for future months.",
+    "Aumentar o limite permite mais consumo na chave da IA do Aura.": "Raising the limit allows more usage on the Aura AI key.",
+    "Salvar meu limite": "Save my limit",
+    "Gerenciar meu limite": "Manage my limit",
+    "O limite mensal é renovado automaticamente, sem reiniciar ao reconectar.": "The monthly allowance renews automatically and does not reset when reconnecting."
   },
   "it": {
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 comandi al mese, tramite testo o audio fino a 30 secondi. Nessun rinnovo automatico.",
@@ -231,7 +238,14 @@ registerMessages({
     "O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.": "Il limite di 300 comandi si rinnova automaticamente ogni mese e non viene azzerato riconnettendosi.",
     "Próxima renovação": "Prossimo rinnovo",
     "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Hai raggiunto il limite mensile dell’IA di Aura. Puoi continuare con la tua IA.",
-    "Informe uma chave de API válida para sua conexão pessoal.": "Inserisci una chiave API valida per la tua connessione personale."
+    "Informe uma chave de API válida para sua conexão pessoal.": "Inserisci una chiave API valida per la tua connessione personale.",
+    "Meu limite da IA do Aura": "Il mio limite IA di Aura",
+    "Limite mensal de comandos": "Limite mensile di comandi",
+    "Você pode aumentar ou reduzir seu limite. O uso já registrado não será zerado, e o valor escolhido permanece nos próximos meses.": "Puoi aumentare o ridurre il limite. L’utilizzo registrato non viene azzerato e il limite scelto resta per i mesi successivi.",
+    "Aumentar o limite permite mais consumo na chave da IA do Aura.": "Aumentare il limite consente più utilizzo della chiave IA di Aura.",
+    "Salvar meu limite": "Salva il mio limite",
+    "Gerenciar meu limite": "Gestisci il mio limite",
+    "O limite mensal é renovado automaticamente, sem reiniciar ao reconectar.": "Il limite mensile si rinnova automaticamente e non viene azzerato riconnettendosi."
   },
   "es": {
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 comandos al mes, por texto o audio de hasta 30 segundos. Sin renovación automática.",
@@ -347,6 +361,13 @@ registerMessages({
     "O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.": "El límite de 300 comandos se renueva automáticamente cada mes y no se reinicia al reconectar.",
     "Próxima renovação": "Próxima renovación",
     "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Alcanzaste tu límite mensual de IA de Aura. Puedes continuar con tu propia IA.",
-    "Informe uma chave de API válida para sua conexão pessoal.": "Introduce una clave API válida para tu conexión personal."
+    "Informe uma chave de API válida para sua conexão pessoal.": "Introduce una clave API válida para tu conexión personal.",
+    "Meu limite da IA do Aura": "Mi límite de IA de Aura",
+    "Limite mensal de comandos": "Límite mensual de comandos",
+    "Você pode aumentar ou reduzir seu limite. O uso já registrado não será zerado, e o valor escolhido permanece nos próximos meses.": "Puedes aumentar o reducir tu límite. El uso registrado no se reinicia y el límite elegido se mantiene los próximos meses.",
+    "Aumentar o limite permite mais consumo na chave da IA do Aura.": "Aumentar el límite permite más consumo con la clave de IA de Aura.",
+    "Salvar meu limite": "Guardar mi límite",
+    "Gerenciar meu limite": "Administrar mi límite",
+    "O limite mensal é renovado automaticamente, sem reiniciar ao reconectar.": "El límite mensual se renueva automáticamente y no se reinicia al reconectar."
   }
 });
