@@ -1106,3 +1106,40 @@ def test_invalid_master_limit_cannot_change_the_counter(setup, value):
         == 422
     )
     assert s.raw.ai_connections.count_documents({}) == 0
+
+
+def test_payment_status_and_followup_are_preserved(setup, monkeypatch):
+    s = setup
+    subscribe(s)
+    captured = []
+    def provider(*args):
+        captured.append(args[2])
+        assert 'status (paid|pending)' in args[2]
+        assert 'reimbursement is still owed' in args[2]
+        return {'type': 'expense', 'status': 'pending', 'amount': 269.99, 'description': 'Amazon RAM', 'date': '2026-12-15', 'currency': 'EUR', 'question': 'Qual conta?'}
+    monkeypatch.setattr(ai, 'call_provider', provider)
+    first = command(s, text='Comprei no cartão da Nathalia, ainda tenho que pagar a ela, 269.99 euros dia 15 de dezembro')
+    assert first.status_code == 200
+    draft = first.json()['draft']
+    assert draft['status'] == 'pending'
+    assert draft['date'] == '2026-12-15'
+    s.raw.ai_connections.update_one({'_id': 'alice'}, {'$unset': {'busy_until': ''}})
+    result = command(s, text='Compra Amazon', previous_draft=draft, clarifications=[{'question': 'Qual conta?', 'answer': 'Registrar como dívida para pagar depois'}])
+    assert result.status_code == 200
+    assert 'Registrar como d' in captured[-1]
+    assert '269.99' in captured[-1]
+    assert s.raw.transactions.count_documents({}) == 0
+
+
+@pytest.mark.parametrize('status', ['paid', 'pending'])
+def test_draft_preserves_payment_status(status):
+    assert ai.Draft(type='expense', description='Compra', status=status).status == status
+
+
+def test_missing_status_defaults_pending():
+    assert ai.Draft(type='expense', description='Compra').status == 'pending'
+
+
+def test_clarification_history_bounded():
+    with pytest.raises(ValueError):
+        ai.Command(today='2026-11-11', clarifications=[{'question': 'Conta?', 'answer': 'Revolut'}] * 9)

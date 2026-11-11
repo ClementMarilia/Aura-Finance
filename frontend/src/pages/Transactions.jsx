@@ -384,6 +384,7 @@ export default function Transactions() {
     setForm(current => ({
       ...current,
       type: draft.type,
+      status: draft.status === "paid" ? "paid" : "pending",
       amount: draft.amount ? draft.amount.toFixed(2) : "",
       description: draft.description || "",
       date: draft.date || current.date,

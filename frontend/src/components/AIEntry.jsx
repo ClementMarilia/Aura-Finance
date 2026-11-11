@@ -16,6 +16,9 @@ export default function AIEntry({ onResult, onBasicResult, expandInitially = fal
   const [errorMessage, setErrorMessage] = useState("");
   const [usedModel, setUsedModel] = useState("");
   const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [conversation, setConversation] = useState([]);
+  const [previousDraft, setPreviousDraft] = useState(null);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -33,15 +36,19 @@ export default function AIEntry({ onResult, onBasicResult, expandInitially = fal
   // Open automatically when the mobile quick-add voice action was selected.
   useEffect(() => { if (expandInitially) setExpanded(true); }, [expandInitially]);
 
-  const interpret = async (input) => {
+  const interpret = async (input, followUp = false) => {
     if (flight.current) return;
     flight.current = true;
     setBusy(true);
     setErrorMessage("");
     try {
-      const { data } = await api.post("/ai/interpret", { ...input, today: localToday(), language: getLanguage() }, { timeout: 150000 });
+      const turns = followUp ? [...conversation, { question, answer: answer.trim() }] : [];
+      const { data } = await api.post("/ai/interpret", { ...input, ...(followUp ? { previous_draft: previousDraft, clarifications: turns } : {}), today: localToday(), language: getLanguage() }, { timeout: 150000 });
       if (!alive.current) return;
       onResult(data.draft);
+      setPreviousDraft(data.draft);
+      setConversation(turns);
+      setAnswer("");
       setUsedModel(data.model || "");
       setQuestion(data.draft.question || "");
       if (data.draft.question) toast.info(data.draft.question);
@@ -107,7 +114,17 @@ export default function AIEntry({ onResult, onBasicResult, expandInitially = fal
           setErrorMessage("");
         }}>{tr("Usar preenchimento básico sem IA")}</Button>}
       </div>}
-      {question && <p role="status" className="text-sm">{question}</p>}
+      {question && <div className="space-y-2 rounded-lg border p-2">
+        <p role="status" className="text-sm">{question}</p>
+        {previousDraft && <>
+          <label className="block text-sm" htmlFor="ai-answer">{tr("Sua resposta")}</label>
+          <textarea id="ai-answer" className="w-full rounded-lg border p-2 bg-transparent" maxLength={1000}
+            value={answer} onChange={event => setAnswer(event.target.value)} disabled={busy || recording || starting} />
+          <Button type="button" disabled={busy || recording || starting || !answer.trim() || conversation.length >= 8}
+            onClick={() => interpret({ text: text.trim() }, true)}>{tr("Responder e atualizar")}</Button>
+          {conversation.length >= 8 && <p className="text-sm">{tr("Atualize a descrição e use Preencher com IA para iniciar novamente.")}</p>}
+        </>}
+      </div>}
       {usedModel && <p className="text-xs">{tr("Último modelo utilizado")}: {usedModel}</p>}
       <p className="text-xs">{tr("Cada interpretação concluída usa um comando. Revise antes de salvar.")}</p>
       <p className="text-xs">{tr("O texto ou áudio e os nomes das suas categorias e contas serão enviados ao provedor escolhido.")}</p>
