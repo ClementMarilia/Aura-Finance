@@ -1018,3 +1018,91 @@ def test_off_mode_ignores_personal_fields_but_own_mode_validates_them(setup):
         ).status_code
         == 422
     )
+
+
+def test_master_can_raise_quota_and_continue_without_resetting_usage(setup):
+    s = setup
+    s.user["id"] = "admin"
+    master_connection(s)
+    assert command(s).status_code == 200
+    s.raw.ai_connections.update_one(
+        {}, {"$set": {"master_used": 300}, "$unset": {"busy_until": ""}}
+    )
+    assert command(s).json()["detail"] == "AI_MASTER_LIMIT"
+    result = s.client.put("/api/admin/ai/master-settings", json={"command_limit": 5000})
+    assert result.status_code == 200 and result.json()["used"] == 300
+    assert result.json()["command_limit"] == 5000
+    assert s.client.get("/api/ai/settings").json()["limit"] == 5000
+    s.raw.ai_connections.update_one({}, {"$unset": {"busy_until": ""}})
+    assert command(s).status_code == 200
+    assert s.client.get("/api/ai/settings").json()["plan"]["used"] == 301
+
+
+def test_master_limit_persists_across_reconnect_and_month_rollover(setup, monkeypatch):
+    s = setup
+    s.user["id"] = "admin"
+    master_connection(s)
+    monkeypatch.setattr(
+        ai, "utcnow", lambda: datetime(2026, 11, 20, tzinfo=timezone.utc)
+    )
+    assert (
+        s.client.put(
+            "/api/admin/ai/master-settings", json={"command_limit": 1200}
+        ).status_code
+        == 200
+    )
+    assert command(s).status_code == 200
+    s.client.delete("/api/ai/settings")
+    master_connection(s)
+    assert s.client.get("/api/admin/ai/master-settings").json()["used"] == 1
+    monkeypatch.setattr(
+        ai, "utcnow", lambda: datetime(2026, 12, 1, tzinfo=timezone.utc)
+    )
+    assert command(s).status_code == 200
+    plan = s.client.get("/api/admin/ai/master-settings").json()
+    assert plan["used"] == 1 and plan["command_limit"] == 1200
+
+
+def test_master_can_reduce_limit_below_current_usage_without_erasing_usage(setup):
+    s = setup
+    s.user["id"] = "admin"
+    master_connection(s)
+    assert command(s).status_code == 200
+    s.raw.ai_connections.update_one(
+        {}, {"$set": {"master_used": 10}, "$unset": {"busy_until": ""}}
+    )
+    result = s.client.put("/api/admin/ai/master-settings", json={"command_limit": 5})
+    assert result.json()["used"] == 10 and result.json()["remaining"] == 0
+    assert command(s).json()["detail"] == "AI_MASTER_LIMIT"
+
+
+def test_regular_admin_cannot_change_master_quota_or_target_other_users(setup):
+    s = setup
+    s.actor["id"] = "ordinary-admin"
+    assert s.client.get("/api/admin/ai/master-settings").status_code == 403
+    assert (
+        s.client.put(
+            "/api/admin/ai/master-settings", json={"command_limit": 10000}
+        ).status_code
+        == 403
+    )
+    s.actor["id"] = "admin"
+    assert (
+        s.client.put(
+            "/api/admin/ai/master-settings",
+            json={"command_limit": 1000, "user_id": "victim"},
+        ).status_code
+        == 422
+    )
+
+
+@pytest.mark.parametrize("value", [0, -1, 1.5, True, 1000001])
+def test_invalid_master_limit_cannot_change_the_counter(setup, value):
+    s = setup
+    assert (
+        s.client.put(
+            "/api/admin/ai/master-settings", json={"command_limit": value}
+        ).status_code
+        == 422
+    )
+    assert s.raw.ai_connections.count_documents({}) == 0

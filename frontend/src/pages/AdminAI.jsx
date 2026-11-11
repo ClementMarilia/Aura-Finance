@@ -9,14 +9,30 @@ import { translate as tr } from "@/i18n";
 
 export default function AdminAI() {
   const [plans, setPlans] = useState(null);
+  const [master, setMaster] = useState(null);
+  const [masterLimit, setMasterLimit] = useState("300");
   const [busy, setBusy] = useState(false);
   const [decision, setDecision] = useState(null);
   const [hours, setHours] = useState("24");
   const [limit, setLimit] = useState("20");
   const [payment, setPayment] = useState(false);
   const flight = useRef(false);
-  const load = async () => { const { data } = await api.get("/admin/ai/plans"); setPlans(data); };
+  const load = async () => {
+    const [plansResult, masterResult] = await Promise.all([api.get("/admin/ai/plans"), api.get("/admin/ai/master-settings")]);
+    setPlans(plansResult.data); setMaster(masterResult.data); setMasterLimit(String(masterResult.data.command_limit));
+  };
   useEffect(() => { load().catch(error => toast.error(aiError(error))); }, []);
+  const saveMasterLimit = async event => {
+    event.preventDefault();
+    const value = Number(masterLimit);
+    if (flight.current || !Number.isInteger(value) || value < 1 || value > 1000000) return;
+    flight.current = true; setBusy(true);
+    try {
+      const { data } = await api.put("/admin/ai/master-settings", { command_limit: value });
+      setMaster(data); setMasterLimit(String(data.command_limit)); toast.success(tr("Atualizado"));
+    } catch (error) { toast.error(aiError(error)); }
+    finally { flight.current = false; setBusy(false); }
+  };
   const openDecision = (plan, action, accessType = "paid") => {
     setHours(accessType === "courtesy" ? "720" : "24");
     setLimit(String(action === "adjust" ? plan.command_limit || 300 : accessType === "trial" ? 20 : 300));
@@ -47,6 +63,15 @@ export default function AdminAI() {
   return <div className="max-w-3xl space-y-5">
     <h1 className="text-3xl font-semibold">{tr("Administrar planos de IA")}</h1>
     <p>{tr("Escolha teste gratuito, cortesia ou plano pago para cada solicitação. O acesso vence automaticamente.")}</p>
+    {master && <form id="master-limit" className="card-soft space-y-3" onSubmit={saveMasterLimit}>
+      <h2 className="text-xl font-semibold">{tr("Meu limite da IA do Aura")}</h2>
+      <p>{tr("Comandos utilizados")}: {master.used || 0} / {master.command_limit}</p>
+      <label className="block" htmlFor="master-command-limit">{tr("Limite mensal de comandos")}</label>
+      <Input id="master-command-limit" type="number" min={1} max={1000000} step={1} value={masterLimit} onChange={event => setMasterLimit(event.target.value)} disabled={busy} required />
+      <p className="text-sm">{tr("Você pode aumentar ou reduzir seu limite. O uso já registrado não será zerado, e o valor escolhido permanece nos próximos meses.")}</p>
+      <p className="text-sm">{tr("Aumentar o limite permite mais consumo na chave da IA do Aura.")}</p>
+      <Button type="submit" disabled={busy || !Number.isInteger(Number(masterLimit)) || Number(masterLimit) < 1 || Number(masterLimit) > 1000000}>{tr("Salvar meu limite")}</Button>
+    </form>}
     <Button variant="outline" disabled={busy} onClick={() => load().catch(error => toast.error(aiError(error)))}>{tr("Atualizar")}</Button>
     {!plans && <p role="status">{tr("Carregando...")}</p>}
     {plans?.length === 0 && <p>{tr("Nenhuma solicitação de IA.")}</p>}
