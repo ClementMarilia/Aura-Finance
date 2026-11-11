@@ -18,7 +18,7 @@ from typing import Literal
 import requests
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from pymongo import ReturnDocument
 
 MODELS = {"openai": "gpt-4.1-mini", "gemini": "gemini-2.5-flash-lite"}
@@ -75,6 +75,19 @@ class Connection(Input):
     key: str | None = Field(default=None, min_length=10, max_length=512)
     model: str | None = Field(default=None, max_length=80)
     consent: Literal[True]
+
+    @model_validator(mode="before")
+    @classmethod
+    def ignore_personal_fields_for_service_connection(cls, values):
+        if isinstance(values, dict) and values.get("source") in {"aura", "off"}:
+            # Browser autofill/old clients may submit a hidden personal key.
+            # Neither Aura nor disabling AI should validate or store it.
+            return {
+                key: value
+                for key, value in values.items()
+                if key not in {"key", "provider", "model"}
+            }
+        return values
 
 
 class Command(Input):
@@ -446,18 +459,17 @@ def create_ai_router(
 
     @router.put("/ai/settings")
     async def save_connection(payload: Connection, user=Depends(get_current_user)):
-        model = payload.model or "auto"
-        if model != "auto" and model not in MODEL_OPTIONS[payload.provider]:
-            raise HTTPException(422, "AI_MODEL_UNAVAILABLE")
         await ensure_settings(user["id"])
         current = await db.ai_connections.find_one({"_id": user["id"]}) or {}
         changes = {
             "source": payload.source,
-            "provider": payload.provider,
-            "model": model,
             "consented_at": utcnow().isoformat(),
         }
         if payload.source == "own":
+            model = payload.model or "auto"
+            if model != "auto" and model not in MODEL_OPTIONS[payload.provider]:
+                raise HTTPException(422, "AI_MODEL_UNAVAILABLE")
+            changes.update(provider=payload.provider, model=model)
             if payload.key:
                 changes["encrypted_key"] = (
                     cipher().encrypt(payload.key.encode()).decode()

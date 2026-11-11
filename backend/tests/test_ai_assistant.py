@@ -932,3 +932,89 @@ def test_revoked_master_role_stops_direct_access(setup):
     s.user["role"] = "MEMBER"
     s.raw.ai_connections.update_one({}, {"$unset": {"busy_until": ""}})
     assert command(s).status_code == 403
+
+
+def test_aura_save_ignores_hidden_nine_character_personal_key(setup):
+    s = setup
+    s.user["role"] = "SUPER_ADMIN"
+    response = s.client.put(
+        "/api/ai/settings",
+        json={
+            "source": "aura",
+            "provider": "gemini",
+            "model": "gemini-3.5-flash-lite",
+            "key": "short-key",
+            "consent": True,
+        },
+    )
+    assert response.status_code == 200
+    stored = s.raw.ai_connections.find_one()
+    assert stored["source"] == "aura" and "encrypted_key" not in stored
+    assert command(s).status_code == 200
+
+
+def test_aura_switch_preserves_personal_provider_model_and_encrypted_key(setup):
+    s = setup
+    own = {
+        "source": "own",
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "key": "personal-private-test-key",
+        "consent": True,
+    }
+    assert s.client.put("/api/ai/settings", json=own).status_code == 200
+    before = s.raw.ai_connections.find_one()
+    assert (
+        s.client.put(
+            "/api/ai/settings",
+            json={
+                "source": "aura",
+                "provider": "gemini",
+                "model": "no-longer-valid",
+                "key": "short-key",
+                "consent": True,
+            },
+        ).status_code
+        == 200
+    )
+    after = s.raw.ai_connections.find_one()
+    assert after["provider"] == before["provider"] == "openai"
+    assert after["model"] == before["model"] == "gpt-4.1-mini"
+    assert after["encrypted_key"] == before["encrypted_key"]
+    own.pop("key")
+    assert s.client.put("/api/ai/settings", json=own).status_code == 200
+
+
+def test_off_mode_ignores_personal_fields_but_own_mode_validates_them(setup):
+    s = setup
+    assert (
+        s.client.put(
+            "/api/ai/settings",
+            json={
+                "source": "off",
+                "key": "short-key",
+                "provider": "invalid",
+                "consent": True,
+            },
+        ).status_code
+        == 200
+    )
+    assert (
+        s.client.put(
+            "/api/ai/settings",
+            json={"source": "own", "key": "short-key", "consent": True},
+        ).status_code
+        == 422
+    )
+    assert (
+        s.client.put(
+            "/api/ai/settings",
+            json={
+                "source": "aura",
+                "key": "short-key",
+                "master_access": True,
+                "consent": True,
+            },
+        ).status_code
+        == 422
+    )

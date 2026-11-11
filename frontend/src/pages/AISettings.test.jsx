@@ -42,3 +42,18 @@ test("client admin flag alone never hides the server-required request flow", asy
   expect(button("Solicitar acesso à IA do Aura")).toBeDefined();
   expect(container.textContent).not.toContain("Acesso master à IA do Aura");
 });
+
+test("switching from a personal key to Aura sends only the source and consent", async () => {
+  api.get.mockResolvedValue({ data: { ...config(true), source: "own" } });
+  api.put.mockResolvedValue({ data: { ok: true } });
+  await act(async () => root.render(<AISettings />));
+  await act(async () => {
+    const key = container.querySelector('#ai-key');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(key, "short-key");
+    key.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => { const source = container.querySelector('#ai-source'); source.value="aura"; source.dispatchEvent(new Event("change",{bubbles:true})); });
+  await act(async () => container.querySelector('input[type="checkbox"]').click());
+  await act(async () => button("Salvar conexão").click());
+  expect(api.put).toHaveBeenCalledWith("/ai/settings", { source: "aura", consent: true });
+});

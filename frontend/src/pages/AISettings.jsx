@@ -42,11 +42,13 @@ export default function AISettings() {
     <p>{tr("Escolha sua própria conexão ou contrate a IA oferecida pelo Aura.")}</p>
     {user?.is_super_admin && <Button asChild variant="outline"><Link to="/admin/ia">{tr("Administrar planos de IA")}</Link></Button>}
     <form className="card-soft space-y-4" onSubmit={event => { event.preventDefault(); run(async () => {
-      await api.put("/ai/settings", { source, provider, model: model || config.default_models?.[provider], consent: true, ...(key ? { key } : {}) });
+      await api.put("/ai/settings", { source, consent: true, ...(source === "own" ? {
+        provider, model: model || config.default_models?.[provider], ...(key ? { key } : {}),
+      } : {}) });
       setKey(""); setConsent(false);
     }); }}>
       <label className="block" htmlFor="ai-source">{tr("Conexão de IA")}</label>
-      <select id="ai-source" className="w-full border rounded-lg p-2 bg-transparent" value={source} onChange={event => setSource(event.target.value)} disabled={busy}>
+      <select id="ai-source" className="w-full border rounded-lg p-2 bg-transparent" value={source} onChange={event => { setSource(event.target.value); setKey(""); }} disabled={busy}>
         <option value="off">{tr("Desativada")}</option><option value="own">{tr("Minha própria IA")}</option>
         <option value="aura">{tr("IA do Aura")}</option>
       </select>
