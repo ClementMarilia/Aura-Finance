@@ -1,0 +1,44 @@
+import React, { act } from "react";
+import { createRoot } from "react-dom/client";
+import AdminAI from "./AdminAI";
+import api from "@/lib/api";
+
+jest.mock("@/lib/api", () => ({ __esModule: true, default: { get: jest.fn(), post: jest.fn() } }));
+jest.mock("@/i18n", () => ({ registerMessages: jest.fn(), translate: message => message }));
+jest.mock("sonner", () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
+
+let root, container;
+beforeEach(() => {
+  global.IS_REACT_ACT_ENVIRONMENT = true;
+  container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
+  jest.clearAllMocks();
+  api.get.mockResolvedValue({ data: [{ user_id: "alice", email: "alice@example.com", request_id: "request-1", status: "pending" }] });
+  api.post.mockResolvedValue({ data: { ok: true } });
+});
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); });
+const button = text => [...document.querySelectorAll("button")].find(node => node.textContent === text);
+
+test("free trial starts with editable 24 hours and 20 commands and needs explicit confirmation", async () => {
+  await act(async () => root.render(<AdminAI />));
+  await act(async () => button("Liberar teste gratuito").click());
+  expect(document.getElementById("grant-hours").value).toBe("24");
+  expect(document.getElementById("grant-limit").value).toBe("20");
+  expect(api.post).not.toHaveBeenCalled();
+  await act(async () => button("Confirmar").click());
+  expect(api.post).toHaveBeenCalledWith("/admin/ai/plans/alice", expect.objectContaining({
+    action: "approve", access_type: "trial", duration_hours: 24, command_limit: 20, payment_confirmed: false,
+  }));
+});
+
+test("paid access cannot be approved without the payment checkbox", async () => {
+  await act(async () => root.render(<AdminAI />));
+  await act(async () => button("Confirmar pagamento e ativar").click());
+  expect(button("Confirmar").disabled).toBe(true);
+  expect(api.post).not.toHaveBeenCalled();
+  await act(async () => document.querySelector('input[type="checkbox"]').click());
+  expect(button("Confirmar").disabled).toBe(false);
+  await act(async () => button("Confirmar").click());
+  expect(api.post).toHaveBeenCalledWith("/admin/ai/plans/alice", expect.objectContaining({
+    access_type: "paid", payment_confirmed: true,
+  }));
+});

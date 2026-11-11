@@ -35,9 +35,12 @@ export function localToday() {
 }
 
 export const PLAN_STATUS = {
-  pending: "Aguardando pagamento",
+  pending: "Aguardando aprovação",
+  payment_required: "Pagamento solicitado",
   payment_reported: "Pagamento informado; aguardando confirmação",
   active: "Ativo",
   rejected: "Rejeitado",
   suspended: "Suspenso",
 };
+
+export const ACCESS_TYPES = { trial: "Teste gratuito", courtesy: "Cortesia", paid: "Plano pago" };

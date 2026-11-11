@@ -14,6 +14,7 @@ export default function AIEntry({ onResult, onBasicResult, expandInitially = fal
   const [expanded, setExpanded] = useState(expandInitially);
   const [text, setText] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [usedModel, setUsedModel] = useState("");
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -38,9 +39,10 @@ export default function AIEntry({ onResult, onBasicResult, expandInitially = fal
     setBusy(true);
     setErrorMessage("");
     try {
-      const { data } = await api.post("/ai/interpret", { ...input, today: localToday(), language: getLanguage() }, { timeout: 95000 });
+      const { data } = await api.post("/ai/interpret", { ...input, today: localToday(), language: getLanguage() }, { timeout: 150000 });
       if (!alive.current) return;
       onResult(data.draft);
+      setUsedModel(data.model || "");
       setQuestion(data.draft.question || "");
       if (data.draft.question) toast.info(data.draft.question);
       else toast.success(tr("Ouvi e preenchi. Confira antes de salvar."));
@@ -106,6 +108,7 @@ export default function AIEntry({ onResult, onBasicResult, expandInitially = fal
         }}>{tr("Usar preenchimento básico sem IA")}</Button>}
       </div>}
       {question && <p role="status" className="text-sm">{question}</p>}
+      {usedModel && <p className="text-xs">{tr("Último modelo utilizado")}: {usedModel}</p>}
       <p className="text-xs">{tr("Cada interpretação concluída usa um comando. Revise antes de salvar.")}</p>
       <p className="text-xs">{tr("O texto ou áudio e os nomes das suas categorias e contas serão enviados ao provedor escolhido.")}</p>
     </> : <><p className="text-sm">{tr("Conecte sua própria IA ou solicite o Plano IA Aura de €5/mês.")}</p>

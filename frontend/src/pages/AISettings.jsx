@@ -5,7 +5,7 @@ import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { aiError, PLAN_STATUS } from "@/lib/aiAssistant";
+import { aiError, PLAN_STATUS, ACCESS_TYPES } from "@/lib/aiAssistant";
 import { translate as tr } from "@/i18n";
 
 export default function AISettings() {
@@ -17,6 +17,7 @@ export default function AISettings() {
   const [key, setKey] = useState("");
   const [consent, setConsent] = useState(false);
   const [reference, setReference] = useState("");
+  const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const flight = useRef(false);
   const load = async () => {
@@ -31,9 +32,10 @@ export default function AISettings() {
     catch (error) { toast.error(aiError(error)); }
     finally { flight.current = false; setBusy(false); }
   };
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const plan = config?.plan;
-  const active = plan?.status === "active" && new Date(plan.expires_at) > new Date();
-  const waiting = ["pending", "payment_reported"].includes(plan?.status);
+  const active = plan?.status === "active" && new Date(plan.expires_at).getTime() > now;
+  const waiting = ["pending", "payment_required", "payment_reported"].includes(plan?.status);
   if (!config) return <p role="status">{tr("Carregando...")}</p>;
   return <div className="max-w-2xl space-y-6">
     <h1 className="text-3xl font-semibold">{tr("Inteligência artificial")}</h1>
@@ -46,7 +48,7 @@ export default function AISettings() {
       <label className="block" htmlFor="ai-source">{tr("Conexão de IA")}</label>
       <select id="ai-source" className="w-full border rounded-lg p-2 bg-transparent" value={source} onChange={event => setSource(event.target.value)} disabled={busy}>
         <option value="off">{tr("Desativada")}</option><option value="own">{tr("Minha própria IA")}</option>
-        <option value="aura">{tr("Plano IA Aura — €5/mês")}</option>
+        <option value="aura">{tr("IA do Aura")}</option>
       </select>
       {source === "own" && <>
         {!config.ready && <p role="alert">{tr("A IA ainda não foi configurada pela administradora.")}</p>}
@@ -56,8 +58,10 @@ export default function AISettings() {
         </select>
         <label className="block" htmlFor="ai-model">{tr("Modelo de IA")}</label>
         <select id="ai-model" className="w-full border rounded-lg p-2 bg-transparent" value={model} onChange={event => setModel(event.target.value)} disabled={busy}>
-          {(config.models?.[provider] || []).map(value => <option key={value} value={value}>{value}</option>)}
+          {(config.models?.[provider] || []).map(value => <option key={value} value={value}>{value === "auto" ? tr("Automático — encontrar modelo disponível") : value}</option>)}
         </select>
+        <p className="text-sm">{tr("O modo automático procura modelos compatíveis no mesmo provedor. Não altera sua conta nem ativa cobrança.")}</p>
+        {config.last_model && <p className="text-sm">{tr("Último modelo utilizado")}: {config.last_model}</p>}
         <label className="block" htmlFor="ai-key">{tr("Chave de API")}</label>
         <Input id="ai-key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} maxLength={512} disabled={busy} />
         <p className="text-sm">{config.has_key ? tr("Existe uma chave salva. Deixe vazio para mantê-la no mesmo provedor.") : tr("Crie sua chave na plataforma do provedor e cole aqui.")}</p>
@@ -73,25 +77,28 @@ export default function AISettings() {
         <Button type="button" variant="outline" disabled={busy} onClick={() => run(async () => { await api.delete("/ai/settings"); setKey(""); })}>{tr("Desconectar e apagar chave")}</Button></div>
     </form>
     <section className="card-soft space-y-4">
-      <h2 className="text-xl font-semibold">{tr("Plano IA Aura — €5/mês")}</h2>
-      <p>{tr("300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.")}</p>
-      <p className="text-sm">{tr("A mensalidade dá acesso ao serviço. Não é saldo de créditos no provedor.")}</p>
-      {!config.aura_available && <p role="alert">{tr("A IA ainda não foi configurada pela administradora.")}</p>}
+      <h2 className="text-xl font-semibold">{tr("IA do Aura")}</h2>
+      <p>{tr("Solicite acesso. A administradora pode liberar um teste gratuito, uma cortesia ou solicitar o pagamento do plano.")}</p>
+      <p className="text-sm">{tr("Plano pago: €5 por mês, com 300 comandos e sem renovação automática.")}</p>
+      {!config.aura_available && <p role="status">{tr("A IA ainda não foi configurada pela administradora.")}</p>}
       {plan && <div className="space-y-2" role="status">
-        <p>{tr("Status")}: {plan.status === "active" && !active ? tr("Vencido") : tr(PLAN_STATUS[plan.status] || "Aguardando")}</p>
-        {plan.expires_at && <p>{tr("Validade")}: {new Date(plan.expires_at).toLocaleDateString()}</p>}
-        {active && <><p>{tr("Comandos utilizados")}: {plan.used || 0} / 300</p>
-          <progress className="w-full" aria-label={tr("Comandos utilizados")} value={plan.used || 0} max={300} /></>}
-        {active && plan.attempts >= 360 && <p>{tr("Limite de tentativas atingido. Entre em contato com a administradora.")}</p>}
+        <p>{tr("Status")}: {plan.status === "active" && !active ? tr("Vencido") : plan.effective_status === "exhausted" ? tr("Limite atingido") : tr(PLAN_STATUS[plan.status] || "Aguardando")}</p>
+        {plan.starts_at && <p>{tr("Tipo de acesso")}: {tr(ACCESS_TYPES[plan.access_type] || "Plano pago")}</p>}
+        {plan.expires_at && <p>{tr("Validade")}: {new Date(plan.expires_at).toLocaleString()}</p>}
+        {active && <><p>{tr("Comandos utilizados")}: {plan.used || 0} / {plan.command_limit || 300}</p>
+          <p>{tr("Comandos restantes")}: {plan.remaining ?? Math.max(0, (plan.command_limit || 300) - (plan.used || 0))}</p>
+          <progress className="w-full" aria-label={tr("Comandos utilizados")} value={plan.used || 0} max={plan.command_limit || 300} /></>}
+        {active && plan.attempts >= (plan.attempt_limit || 360) && <p>{tr("Limite de tentativas atingido. Entre em contato com a administradora.")}</p>}
       </div>}
-      <p className="whitespace-pre-wrap text-sm">{config.payment_instructions || tr("As instruções de pagamento ainda não foram configuradas.")}</p>
-      {!active && !waiting && <Button disabled={busy || !config.aura_available || !config.payment_instructions} onClick={() => run(() => api.post("/ai/plan/request"))}>{tr("Solicitar plano — €5/mês")}</Button>}
-      {plan?.status === "pending" && <>
+      {(!active || plan?.effective_status === "exhausted") && !waiting && <Button disabled={busy} onClick={() => run(() => api.post("/ai/plan/request"))}>{tr("Solicitar acesso à IA do Aura")}</Button>}
+      {["payment_required", "payment_reported"].includes(plan?.status) && <p className="whitespace-pre-wrap text-sm">{config.payment_instructions || tr("As instruções de pagamento ainda não foram configuradas.")}</p>}
+      {plan?.status === "payment_required" && <>
         <label className="block" htmlFor="ai-reference">{tr("Referência do pagamento (opcional)")}</label>
         <Input id="ai-reference" maxLength={160} value={reference} onChange={event => setReference(event.target.value)} disabled={busy} />
         <Button disabled={busy} onClick={() => run(() => api.post("/ai/plan/payment", { request_id: plan.request_id, reference }))}>{tr("Já realizei o pagamento")}</Button>
       </>}
-      <p className="text-sm">{tr("Informar o pagamento não ativa o plano. A administradora precisa confirmar o recebimento.")}</p>
+      {waiting && <p className="text-sm">{tr("Sua solicitação foi enviada à administradora. O acesso depende de aprovação.")}</p>}
+      <p className="text-sm">{tr("Ao vencer o prazo ou atingir o limite, somente a IA do Aura é bloqueada. Você pode continuar com sua própria IA.")}</p>
     </section>
     <Button asChild variant="outline"><Link to="/lancamentos?novo=1">{tr("Testar nos lançamentos")}</Link></Button>
   </div>;

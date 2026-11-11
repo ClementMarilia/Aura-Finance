@@ -1,49 +1,66 @@
-# AI entry assistant and manual monthly plan
+# AI connections and administrator-controlled Aura access
 
-## Product behavior
+## Two independent connections
 
-- Settings → Artificial intelligence: off, own OpenAI/Gemini connection, or Aura.
-- Own keys: encrypted at rest, never returned by the API; no Aura subscription required. The selected provider bills the user. No automatic paid fallback.
-- Integrated models: OpenAI `gpt-4.1-mini`, Gemini `gemini-2.5-flash-lite`. OpenAI audio uses `gpt-4o-mini-transcribe`; Gemini receives WAV directly.
-- Aura costs **€5 for one calendar month starting at manual payment approval**, with 300 completed interpretations. There is no credit wallet, automatic debit or automatic renewal. Renewal can be requested after expiration; unused commands do not roll over.
-- One income or expense per command. Audio is limited to 30 seconds, server-validated 16 kHz mono PCM WAV. Missing/ambiguous values remain for user review; multiple entries, transfers and recurrences are outside this first release.
-- The assistant fills the existing transaction form. It never calls transaction creation itself. Saving still requires the user's normal form confirmation.
-- Failed calls refund the command quota; a separate 360-attempt cap per paid period bounds repeated failures. Requests use a cross-worker lease and short cooldown. Models, hosts, context size and output size are fixed/bounded. This is not an exact currency-denominated spending cap; monitor provider costs and pricing changes.
-- Provider output IDs are checked against the authenticated user's categories/accounts; incompatible category kinds/account currencies are discarded.
-- No bank balances or transaction history are sent. Commands and category/account names go to the chosen provider; audio is not persisted. Provider data policies still apply.
-- Disconnect removes the stored key. Financial reset preserves subscription and connection; account deletion removes them.
+- **Own AI:** each user saves an encrypted OpenAI or Gemini API key. Provider limits and billing belong to that user's provider account. No Aura grant, trial or payment is required.
+- **Aura AI:** server-owned credentials; every user requests access and the superadministrator decides whether to grant a trial, courtesy access, request payment, reject or suspend.
+- Choosing a different connection remains an explicit user action with consent. An Aura expiry or quota never blocks the own-key connection. No automatic paid fallback, billing activation or automatic renewal.
 
-## Enable in the backend environment
+## Access lifecycle
 
-No existing environment variables are changed. These are new **backend-only** variables:
+1. `POST /api/ai/plan/request` creates a pending request and notifies the superadministrator. Payment instructions and provider readiness are not prerequisites for requesting access.
+2. The admin selects:
+   - Trial: default **24 hours / 20 completed commands**, editable to 1–8760 hours and 1–300 commands.
+   - Courtesy: default **720 hours / 300 commands**, same editable limits, no payment required.
+   - Request payment: requires payment instructions in the backend environment; notifies the user and changes the state to `payment_required` without granting access.
+   - Paid activation: requires explicit confirmation of receipt of **€5**, grants **one calendar month / 300 commands**.
+   - Reject or suspend.
+3. User-reported payment changes state to `payment_reported`. It never grants access. Legacy pending requests can still report payment through the old API flow.
+4. Active grants can have expiry and total command limit changed, with an optimistic version check. The duration is measured from the adjustment time. Usage and attempt counts are never reset by this operation.
+5. Expiration and quotas are checked on **every server-side interpretation request**, including the exact expiry boundary. No scheduler, browser session or background job is required. The stored state can remain `active`, while `effective_status` reports `expired` or `exhausted`.
+6. Users can request access again after expiry, suspension, rejection or exhaustion of successful commands. A new request never self-grants or resets an active entitlement into another approved trial. Each new grant needs an explicit admin decision.
+
+Conditional updates bind request ID, access version and user ID. Duplicate approvals and stale adjustments do not extend or reset access. Previous decisions and resulting grants are recorded in `ai_plan_events`. Admin views contain access metadata and command counts only, never financial entries or provider keys. Notifications link to the relevant screen.
+
+Legacy paid subscriptions without the new fields remain valid with 300 commands and 360 attempts. No data migration or finance data rewrite is required.
+
+## Automatic model selection
+
+Own-key settings offer **Automatic** or a manual model. Explicit existing selections are preserved. New connections default to automatic; Aura always uses automatic within its configured provider.
+
+Automatic selection queries the provider's model list and filters to reviewed models compatible with the current integration:
+
+- OpenAI: `gpt-4.1-mini`, `gpt-4o-mini`.
+- Gemini: `gemini-3.5-flash-lite`, `gemini-2.5-flash-lite` (in that priority order).
+
+If a listed model rejects generation as unavailable (HTTP 404), another compatible model of the **same provider** is tried. Quota, credential, region and general outage errors do not trigger retries or a different provider. Preview and unknown models are excluded. Model listing is not treated as proof of inference access; the generated draft must also validate. There is no guarantee against a provider outage or exhausted quota. The last successfully used model is shown to the user.
+
+OpenAI audio is transcribed once with `gpt-4o-mini-transcribe` even if model selection subsequently tries another model. Gemini receives normalized WAV directly. Audio stays in memory and is not persisted.
+
+## Entries and resource limits
+
+- One income or expense per command. Maximum 1500 text characters; 30 seconds of server-validated 16 kHz mono PCM WAV for audio.
+- The assistant fills a draft in the existing form and never creates a transaction itself. The user reviews and confirms saving. Category/account IDs are scoped to the authenticated user; incompatible IDs are discarded.
+- Only commands and category/account names go to the provider. No balances or transaction history are sent. Provider data policies still apply.
+- Successful interpretations consume one command. Failed interpretations refund the successful-command count but remain attempts. Paid grants allow 360 attempts; free grants allow their command limit plus 20% (minimum 5) extra attempts.
+- Fixed hosts, reviewed models, context/output caps, a cross-worker lease and cooldown bound attempts. These are not a currency-denominated hard spending cap: monitor provider prices/costs.
+- Provider failures preserve the text and offer explicit basic parsing without AI; there is no silent provider switch.
+- Disconnect deletes the key. A finance reset preserves the connection/grant; account deletion removes them.
+
+## Backend setup
 
 | Variable | Purpose |
 | --- | --- |
-| `AI_ENCRYPTION_KEY` | Dedicated Fernet key for user-owned provider keys. Generate securely with `Fernet.generate_key()` from `cryptography`; keep it stable and backed up in your secrets manager. Losing it requires reconnecting user keys. Never reuse JWT_SECRET. |
-| `AURA_AI_PROVIDER` | `gemini` (default) or `openai`. Determines the model included in the paid plan. |
-| `AURA_GEMINI_API_KEY` | Server-owned Gemini API key when Aura uses Gemini. |
-| `AURA_OPENAI_API_KEY` | Server-owned OpenAI API key when Aura uses OpenAI. Existing API credits can be consumed by this key. |
-| `AURA_AI_PAYMENT_INSTRUCTIONS` | Payment instructions shown to users. Plain text, including the recipient/reference/contact route as appropriate. |
+| `AI_ENCRYPTION_KEY` | Stable, dedicated Fernet key for own connections; generate with `Fernet.generate_key()`. Keep it in your secrets manager. Losing it requires reconnecting stored keys. Never reuse JWT_SECRET. |
+| `AURA_AI_PROVIDER` | `gemini` (default) or `openai`. |
+| `AURA_GEMINI_API_KEY` | Server Gemini credential if Aura uses Gemini. |
+| `AURA_OPENAI_API_KEY` | Server OpenAI credential if Aura uses OpenAI. |
+| `AURA_AI_PAYMENT_INSTRUCTIONS` | Plain-text payment instructions, needed only when the admin requests payment. |
 
-Until these are configured, own-key setup and/or paid requests show an unavailable/configuration message. Do not put secrets in React environment variables, source files, PRs or chat.
+No credentials belong in React environment variables, code, PRs or chat. Missing Aura credentials block grant approval and inference, while requests can still be collected. Own-key operation only needs the encryption key plus the user's provider credential.
 
-Superadministrator at `/admin/ia`: view requests, confirm actual receipt of €5, approve or reject, suspend an active plan. Payment reporting by a user does not activate service. Conditional transitions and request IDs prevent duplicate approval or old confirmations activating a new request. `ai_plan_events` records administrative decisions, previous state and resulting entitlement. Admin views expose subscription metadata and command counts only, never financial entries or keys. Notifications link to the request screen.
-
-Collections: `ai_connections` and `ai_plans` use the existing UUID user ID as Mongo `_id` (inherently unique). `ai_plan_events` holds decision history. No migration or finance data rewrite is required.
+Collections `ai_connections` and `ai_plans` use the UUID user ID as unique Mongo `_id`. `ai_plan_events` stores decisions. All approval/adjustment/payment requests use the existing authenticated backend and superadministrator authorization.
 
 ## Verification
 
-Isolated API tests use MongoDB-compatible in-memory queries and mocked provider calls. Recorder tests validate WAV format, sample conversion and duration cap. Real provider credentials, audio devices and production billing have not been used by these tests. After setting backend secrets, verify on a phone: connect a key, dictate one entry, inspect the draft, save manually; then test a manually approved Aura account and a provider quota failure.
-
-Validation on this implementation:
-
-| Check | Result |
-| --- | --- |
-| Isolated backend suite | 314 tests passed, including 20 AI-specific cases |
-| Frontend suite with coverage | 28 suites, 121 tests passed |
-| Production build | Passed |
-| Initial JS bundle budget | 199.81 KiB gzip / 200 KiB maximum |
-| Translation catalogs and PWA checks | Passed |
-| Production dependency audit | No applicable high/critical vulnerabilities |
-
-AI translation messages load with feature routes so the initial bundle stays within the existing budget. The existing basic speech parser remains available when external AI is off.
+Isolated API tests cover expiry boundaries, free and paid grants, manual payment, notifications, own-key independence, legacy paid records, quotas, stale/duplicate decisions, and automatic model fallback without paid-source changes. UI tests cover trial defaults, explicit confirmation and payment gating. Real credentials and production account data are not used in tests.

@@ -23,7 +23,7 @@ from pymongo import ReturnDocument
 
 MODELS = {"openai": "gpt-4.1-mini", "gemini": "gemini-2.5-flash-lite"}
 MODEL_OPTIONS = {
-    "openai": ["gpt-4.1-mini"],
+    "openai": ["gpt-4.1-mini", "gpt-4o-mini"],
     "gemini": ["gemini-2.5-flash-lite", "gemini-3.5-flash-lite"],
 }
 LIMIT = 300
@@ -91,8 +91,12 @@ class Payment(Input):
 
 class Decision(Input):
     request_id: str = Field(min_length=1, max_length=64)
-    action: Literal["approve", "reject", "suspend"]
+    action: Literal["approve", "reject", "suspend", "request_payment", "adjust"]
     payment_confirmed: bool = False
+    access_type: Literal["trial", "courtesy", "paid"] = "paid"
+    duration_hours: int = Field(default=24, ge=1, le=8760, strict=True)
+    command_limit: int = Field(default=20, ge=1, le=300, strict=True)
+    expected_version: str | None = Field(default=None, max_length=64)
 
 
 class Draft(Input):
@@ -167,9 +171,88 @@ def post_provider(url, **kwargs):
         raise HTTPException(502, "AI_INVALID_RESPONSE") from None
 
 
-def call_provider(provider, key, context, text, audio=None, model=None):
+def available_models(provider, key):
+    """Discover availability, restricted to reviewed text/audio-compatible models."""
+    url = (
+        "https://api.openai.com/v1/models"
+        if provider == "openai"
+        else "https://generativelanguage.googleapis.com/v1beta/models"
+    )
+    headers = (
+        {"Authorization": f"Bearer {key}"}
+        if provider == "openai"
+        else {"x-goog-api-key": key}
+    )
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            params={"pageSize": 1000} if provider == "gemini" else None,
+            timeout=(5, 10),
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        raise HTTPException(503, "AI_PROVIDER_UNAVAILABLE") from None
+    if response.status_code in (401, 403):
+        raise HTTPException(400, "AI_KEY_REJECTED")
+    if response.status_code == 429:
+        raise HTTPException(429, "AI_PROVIDER_LIMIT")
+    if response.status_code != 200:
+        raise HTTPException(503, "AI_PROVIDER_UNAVAILABLE")
+    try:
+        data = response.json()
+        listed = (
+            {item["id"] for item in data.get("data", [])}
+            if provider == "openai"
+            else {
+                item["name"].removeprefix("models/")
+                for item in data.get("models", [])
+                if "generateContent" in item.get("supportedGenerationMethods", [])
+            }
+        )
+    except (KeyError, TypeError, ValueError, AttributeError):
+        raise HTTPException(502, "AI_INVALID_RESPONSE") from None
+    # Current Gemini generation first; manual selections remain unchanged.
+    priority = (
+        list(reversed(MODEL_OPTIONS[provider]))
+        if provider == "gemini"
+        else MODEL_OPTIONS[provider]
+    )
+    candidates = [model for model in priority if model in listed]
+    if not candidates:
+        raise HTTPException(400, "AI_MODEL_UNAVAILABLE")
+    return candidates
+
+
+def call_provider(
+    provider, key, context, text, audio=None, model=None, preferred_model=None
+):
     """Fixed hosts/models/output caps; never accepts a user-controlled URL."""
     model = model or MODELS[provider]
+    if model == "auto":
+        candidates = available_models(provider, key)
+        if preferred_model in candidates:
+            candidates.remove(preferred_model)
+            candidates.insert(0, preferred_model)
+        if provider == "openai" and audio:
+            transcription = post_provider(
+                "https://api.openai.com/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {key}"},
+                files={"file": ("command.wav", audio, "audio/wav")},
+                data={"model": "gpt-4o-mini-transcribe", "response_format": "json"},
+            )
+            text, audio = str(transcription.get("text", ""))[:1500], None
+        for candidate in candidates:
+            try:
+                result = call_provider(provider, key, context, text, audio, candidate)
+                result["_model"] = candidate
+                return result
+            except HTTPException as error:
+                # Retry only a missing model; never bypass quota, retry paid
+                # inference after a timeout, or change provider/billing source.
+                if error.detail != "AI_MODEL_UNAVAILABLE":
+                    raise
+        raise HTTPException(400, "AI_MODEL_UNAVAILABLE")
     if model not in MODEL_OPTIONS[provider]:
         raise HTTPException(422, "AI_MODEL_UNAVAILABLE")
     if provider == "openai":
@@ -230,10 +313,16 @@ def call_provider(provider, key, context, text, audio=None, model=None):
     )
 
 
+def plan_limits(plan):
+    limit = plan.get("command_limit", LIMIT)
+    attempts = plan.get("attempt_limit", MAX_ATTEMPTS)
+    return limit, attempts
+
+
 def public_plan(plan):
     if not plan:
         return None
-    return {
+    result = {
         key: plan.get(key)
         for key in (
             "request_id",
@@ -246,6 +335,29 @@ def public_plan(plan):
             "attempts",
         )
     }
+    limit, attempts = plan_limits(plan)
+    result.update(
+        command_limit=limit,
+        attempt_limit=attempts,
+        access_type=plan.get("access_type", "paid"),
+        access_version=plan.get("access_version", "legacy"),
+        remaining=max(0, limit - plan.get("used", 0)),
+    )
+    expired = plan.get("expires_at", "") <= utcnow().isoformat()
+    result["effective_status"] = (
+        (
+            "expired"
+            if expired
+            else (
+                "exhausted"
+                if plan.get("used", 0) >= limit or plan.get("attempts", 0) >= attempts
+                else "active"
+            )
+        )
+        if plan.get("status") == "active"
+        else plan.get("status")
+    )
+    return result
 
 
 def create_ai_router(
@@ -278,9 +390,20 @@ def create_ai_router(
         return {
             "source": config.get("source", "off"),
             "provider": config.get("provider", "gemini"),
-            "model": config.get("model", MODELS.get(config.get("provider", "gemini"))),
-            "models": MODEL_OPTIONS,
-            "default_models": MODELS,
+            "model": config.get(
+                "model",
+                (
+                    MODELS.get(config.get("provider", "gemini"))
+                    if config.get("encrypted_key")
+                    else "auto"
+                ),
+            ),
+            "models": {
+                provider: ["auto", *models]
+                for provider, models in MODEL_OPTIONS.items()
+            },
+            "last_model": config.get("last_model"),
+            "default_models": {"openai": "auto", "gemini": "auto"},
             "has_key": bool(config.get("encrypted_key")),
             "ready": ready,
             "aura_available": available,
@@ -294,8 +417,8 @@ def create_ai_router(
 
     @router.put("/ai/settings")
     async def save_connection(payload: Connection, user=Depends(get_current_user)):
-        model = payload.model or MODELS[payload.provider]
-        if model not in MODEL_OPTIONS[payload.provider]:
+        model = payload.model or "auto"
+        if model != "auto" and model not in MODEL_OPTIONS[payload.provider]:
             raise HTTPException(422, "AI_MODEL_UNAVAILABLE")
         await ensure_settings(user["id"])
         current = await db.ai_connections.find_one({"_id": user["id"]}) or {}
@@ -332,9 +455,6 @@ def create_ai_router(
 
     @router.post("/ai/plan/request")
     async def request_plan(user=Depends(get_current_user)):
-        aura_provider()
-        if not os.environ.get("AURA_AI_PAYMENT_INSTRUCTIONS"):
-            raise HTTPException(503, "AI_PAYMENT_NOT_CONFIGURED")
         uid, now = user["id"], utcnow().isoformat()
         # Single document per user, unique by Mongo _id. Conditional transition
         # prevents duplicate requests and requests replacing a live subscription.
@@ -347,6 +467,21 @@ def create_ai_router(
                 "$or": [
                     {"status": {"$in": ["none", "rejected", "suspended"]}},
                     {"status": "active", "expires_at": {"$lte": now}},
+                    {
+                        "status": "active",
+                        "$expr": {
+                            "$gte": [
+                                "$attempts",
+                                {"$ifNull": ["$attempt_limit", MAX_ATTEMPTS]},
+                            ]
+                        },
+                    },
+                    {
+                        "status": "active",
+                        "$expr": {
+                            "$gte": ["$used", {"$ifNull": ["$command_limit", LIMIT]}]
+                        },
+                    },
                 ],
             },
             {
@@ -363,6 +498,10 @@ def create_ai_router(
                     "expires_at": "",
                     "reviewed_at": "",
                     "reviewed_by": "",
+                    "command_limit": "",
+                    "attempt_limit": "",
+                    "access_type": "",
+                    "access_version": "",
                 },
             },
             return_document=ReturnDocument.AFTER,
@@ -377,7 +516,11 @@ def create_ai_router(
     @router.post("/ai/plan/payment")
     async def mark_paid(payload: Payment, user=Depends(get_current_user)):
         changed = await db.ai_plans.update_one(
-            {"_id": user["id"], "request_id": payload.request_id, "status": "pending"},
+            {
+                "_id": user["id"],
+                "request_id": payload.request_id,
+                "status": {"$in": ["pending", "payment_required"]},
+            },
             {"$set": {"status": "payment_reported", "reference": payload.reference}},
         )
         if not changed.modified_count:
@@ -412,35 +555,72 @@ def create_ai_router(
 
     @router.post("/admin/ai/plans/{uid}")
     async def decide(uid: str, payload: Decision, admin=Depends(require_super_admin)):
+        now = utcnow()
+        query = {"_id": uid, "request_id": payload.request_id}
         if payload.action == "approve":
-            if not payload.payment_confirmed:
+            if payload.access_type == "paid" and not payload.payment_confirmed:
                 raise HTTPException(422, "AI_CONFIRM_PAYMENT")
             aura_provider()
-            now = utcnow()
+            paid = payload.access_type == "paid"
+            limit = LIMIT if paid else payload.command_limit
             changes = {
                 "status": "active",
+                "access_type": payload.access_type,
                 "starts_at": now.isoformat(),
-                "expires_at": next_month(now).isoformat(),
+                "expires_at": (
+                    next_month(now)
+                    if paid
+                    else now + timedelta(hours=payload.duration_hours)
+                ).isoformat(),
                 "used": 0,
                 "attempts": 0,
+                "command_limit": limit,
+                "attempt_limit": MAX_ATTEMPTS if paid else limit + max(5, limit // 5),
+                "access_version": str(uuid.uuid4()),
             }
-            statuses = ["pending", "payment_reported"]
-        else:
-            changes = {
-                "status": "rejected" if payload.action == "reject" else "suspended"
+            query["status"] = {
+                "$in": ["pending", "payment_required", "payment_reported"]
             }
-            statuses = (
-                ["pending", "payment_reported"]
-                if payload.action == "reject"
-                else ["active"]
+        elif payload.action == "adjust":
+            if not payload.expected_version:
+                raise HTTPException(422, "AI_REQUEST_CHANGED")
+            query.update(status="active", expires_at={"$gt": now.isoformat()})
+            query["access_version"] = (
+                {"$exists": False}
+                if payload.expected_version == "legacy"
+                else payload.expected_version
             )
+            changes = {
+                "expires_at": (
+                    now + timedelta(hours=payload.duration_hours)
+                ).isoformat(),
+                "command_limit": payload.command_limit,
+                "attempt_limit": payload.command_limit
+                + max(5, payload.command_limit // 5),
+                "access_version": str(uuid.uuid4()),
+            }
+        else:
+            if payload.action == "request_payment":
+                if not os.environ.get("AURA_AI_PAYMENT_INSTRUCTIONS"):
+                    raise HTTPException(503, "AI_PAYMENT_NOT_CONFIGURED")
+                changes = {"status": "payment_required"}
+                query["status"] = "pending"
+            else:
+                changes = {
+                    "status": "rejected" if payload.action == "reject" else "suspended"
+                }
+                query["status"] = (
+                    {"$in": ["pending", "payment_required", "payment_reported"]}
+                    if payload.action == "reject"
+                    else "active"
+                )
         previous = await db.ai_plans.find_one_and_update(
-            {"_id": uid, "request_id": payload.request_id, "status": {"$in": statuses}},
+            query,
             {
                 "$set": {
                     **changes,
                     "reviewed_by": admin["id"],
-                    "reviewed_at": utcnow().isoformat(),
+                    "reviewed_at": now.isoformat(),
                 }
             },
         )
@@ -489,12 +669,8 @@ def create_ai_router(
                 key = cipher().decrypt(config["encrypted_key"].encode()).decode()
             except InvalidToken:
                 raise HTTPException(503, "AI_NOT_CONFIGURED") from None
-        model = (
-            MODELS[provider]
-            if source == "aura"
-            else config.get("model", MODELS[provider])
-        )
-        if model not in MODEL_OPTIONS[provider]:
+        model = "auto" if source == "aura" else config.get("model", MODELS[provider])
+        if model != "auto" and model not in MODEL_OPTIONS[provider]:
             raise HTTPException(400, "AI_MODEL_UNAVAILABLE")
         # Cross-worker lease and cooldown. Covers both calls of an OpenAI audio
         # command, and remains valid beyond their maximum combined timeout.
@@ -510,7 +686,7 @@ def create_ai_router(
             },
             {
                 "$set": {
-                    "busy_until": (now + timedelta(seconds=100)).isoformat(),
+                    "busy_until": (now + timedelta(seconds=160)).isoformat(),
                     "lease": lease,
                 }
             },
@@ -520,13 +696,21 @@ def create_ai_router(
         reserved = None
         try:
             if source == "aura":
+                plan = await db.ai_plans.find_one({"_id": uid})
+                if not plan:
+                    raise HTTPException(403, "AI_PLAN_LIMIT")
+                limit, attempt_limit = plan_limits(plan)
                 reserved = await db.ai_plans.find_one_and_update(
                     {
                         "_id": uid,
+                        "request_id": plan["request_id"],
                         "status": "active",
                         "expires_at": {"$gt": now.isoformat()},
-                        "used": {"$lt": LIMIT},
-                        "attempts": {"$lt": MAX_ATTEMPTS},
+                        "used": {"$lt": limit},
+                        "attempts": {"$lt": attempt_limit},
+                        "access_version": plan.get(
+                            "access_version", {"$exists": False}
+                        ),
                     },
                     {"$inc": {"used": 1, "attempts": 1}},
                     return_document=ReturnDocument.AFTER,
@@ -571,8 +755,16 @@ def create_ai_router(
                 raise HTTPException(422, "AI_CONTEXT_TOO_LARGE")
             try:
                 result = await asyncio.to_thread(
-                    call_provider, provider, key, context, payload.text, audio, model
+                    call_provider,
+                    provider,
+                    key,
+                    context,
+                    payload.text,
+                    audio,
+                    model,
+                    config.get("last_model"),
                 )
+                selected_model = result.pop("_model", model)
                 draft = Draft.model_validate(result)
             except (KeyError, IndexError, TypeError, ValueError, ValidationError):
                 raise HTTPException(502, "AI_INVALID_RESPONSE") from None
@@ -590,7 +782,14 @@ def create_ai_router(
                 != account.get("currency", user.get("currency", "EUR"))
             ):
                 draft.account_id = None
-            return {"draft": draft.model_dump(mode="json"), "source": source}
+            await db.ai_connections.update_one(
+                {"_id": uid, "lease": lease}, {"$set": {"last_model": selected_model}}
+            )
+            return {
+                "draft": draft.model_dump(mode="json"),
+                "source": source,
+                "model": selected_model,
+            }
         except BaseException:
             if reserved:
                 await db.ai_plans.update_one(
