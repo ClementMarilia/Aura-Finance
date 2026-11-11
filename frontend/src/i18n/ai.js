@@ -114,7 +114,8 @@ registerMessages({
     "Selecione IA do Aura e salve a conexão para usar. A chave do serviço deve estar configurada no servidor.": "Select Aura AI and save the connection to use it. The service key must be configured on the server.",
     "O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.": "The 300-command allowance renews automatically each month and does not reset when reconnecting.",
     "Próxima renovação": "Next renewal",
-    "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Your monthly Aura AI limit has been reached. You can continue with your own AI."
+    "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Your monthly Aura AI limit has been reached. You can continue with your own AI.",
+    "Informe uma chave de API válida para sua conexão pessoal.": "Enter a valid API key for your personal connection."
   },
   "it": {
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 comandi al mese, tramite testo o audio fino a 30 secondi. Nessun rinnovo automatico.",
@@ -229,7 +230,8 @@ registerMessages({
     "Selecione IA do Aura e salve a conexão para usar. A chave do serviço deve estar configurada no servidor.": "Seleziona IA di Aura e salva la connessione per usarla. La chiave del servizio deve essere configurata sul server.",
     "O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.": "Il limite di 300 comandi si rinnova automaticamente ogni mese e non viene azzerato riconnettendosi.",
     "Próxima renovação": "Prossimo rinnovo",
-    "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Hai raggiunto il limite mensile dell’IA di Aura. Puoi continuare con la tua IA."
+    "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Hai raggiunto il limite mensile dell’IA di Aura. Puoi continuare con la tua IA.",
+    "Informe uma chave de API válida para sua conexão pessoal.": "Inserisci una chiave API valida per la tua connessione personale."
   },
   "es": {
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 comandos al mes, por texto o audio de hasta 30 segundos. Sin renovación automática.",
@@ -344,6 +346,7 @@ registerMessages({
     "Selecione IA do Aura e salve a conexão para usar. A chave do serviço deve estar configurada no servidor.": "Selecciona IA de Aura y guarda la conexión para usarla. La clave del servicio debe estar configurada en el servidor.",
     "O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.": "El límite de 300 comandos se renueva automáticamente cada mes y no se reinicia al reconectar.",
     "Próxima renovação": "Próxima renovación",
-    "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Alcanzaste tu límite mensual de IA de Aura. Puedes continuar con tu propia IA."
+    "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Alcanzaste tu límite mensual de IA de Aura. Puedes continuar con tu propia IA.",
+    "Informe uma chave de API válida para sua conexão pessoal.": "Introduce una clave API válida para tu conexión personal."
   }
 });

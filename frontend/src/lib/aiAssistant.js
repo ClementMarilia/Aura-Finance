@@ -27,6 +27,9 @@ const ERRORS = {
 
 export function aiError(error) {
   const code = error?.response?.data?.detail;
+  if (Array.isArray(code) && code.some(item => item?.loc?.includes("key"))) {
+    return tr("Informe uma chave de API válida para sua conexão pessoal.");
+  }
   return tr(ERRORS[code] || "Não foi possível concluir. Tente novamente.");
 }
 
