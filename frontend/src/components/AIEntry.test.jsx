@@ -94,3 +94,22 @@ test("voice quick-add expands the assistant without another tap", async () => {
   expect(container.querySelector("button[aria-expanded]").getAttribute("aria-expanded")).toBe("true");
   expect(container.querySelector("#ai-command")).not.toBeNull();
 });
+
+test("answers a question with the previous draft and updates without saving", async () => {
+  const onResult = jest.fn();
+  const draft = { type: "expense", status: "pending", amount: 269.99, description: "Amazon", date: "2026-12-15", question: "Qual conta?" };
+  api.post.mockResolvedValueOnce({ data: { draft } }).mockResolvedValueOnce({ data: { draft: { ...draft, question: "", account_id: "revolut" } } });
+  await render(onResult);
+  await send("Ainda tenho que pagar a Nathalia 269.99 euros");
+  const answer = container.querySelector("#ai-answer");
+  expect(answer).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set.call(answer, "Vou pagar pela Revolut");
+    answer.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => [...container.querySelectorAll("button")].find(node => node.textContent === "Responder e atualizar").click());
+  expect(api.post).toHaveBeenLastCalledWith("/ai/interpret", expect.objectContaining({ previous_draft: draft, clarifications: [{ question: "Qual conta?", answer: "Vou pagar pela Revolut" }] }), expect.any(Object));
+  expect(onResult).toHaveBeenLastCalledWith(expect.objectContaining({ status: "pending", amount: 269.99, account_id: "revolut" }));
+  expect(container.querySelector("#ai-answer")).toBeNull();
+  expect(api.post).toHaveBeenCalledTimes(2);
+});

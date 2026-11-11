@@ -2,6 +2,9 @@ import { registerMessages } from "@/i18n";
 
 registerMessages({
   "en": {
+    "Sua resposta": "Your answer",
+    "Responder e atualizar": "Reply and update",
+    "Atualize a descrição e use Preencher com IA para iniciar novamente.": "Update the description and use Fill with AI to start again.",
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 commands per month, using text or audio up to 30 seconds. No automatic renewal.",
     "A IA ainda não foi configurada pela administradora.": "AI has not been configured by the administrator yet.",
     "A IA não retornou um lançamento válido. Revise o texto e tente novamente.": "AI did not return a valid entry. Review your text and try again.",
@@ -125,6 +128,9 @@ registerMessages({
     "O limite mensal é renovado automaticamente, sem reiniciar ao reconectar.": "The monthly allowance renews automatically and does not reset when reconnecting."
   },
   "it": {
+    "Sua resposta": "La tua risposta",
+    "Responder e atualizar": "Rispondi e aggiorna",
+    "Atualize a descrição e use Preencher com IA para iniciar novamente.": "Aggiorna la descrizione e usa Compila con IA per ricominciare.",
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 comandi al mese, tramite testo o audio fino a 30 secondi. Nessun rinnovo automatico.",
     "A IA ainda não foi configurada pela administradora.": "L'IA non è ancora stata configurata dall'amministratrice.",
     "A IA não retornou um lançamento válido. Revise o texto e tente novamente.": "L'IA non ha restituito un movimento valido. Controlla il testo e riprova.",
@@ -248,6 +254,9 @@ registerMessages({
     "O limite mensal é renovado automaticamente, sem reiniciar ao reconectar.": "Il limite mensile si rinnova automaticamente e non viene azzerato riconnettendosi."
   },
   "es": {
+    "Sua resposta": "Tu respuesta",
+    "Responder e atualizar": "Responder y actualizar",
+    "Atualize a descrição e use Preencher com IA para iniciar novamente.": "Actualiza la descripción y usa Completar con IA para empezar de nuevo.",
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 comandos al mes, por texto o audio de hasta 30 segundos. Sin renovación automática.",
     "A IA ainda não foi configurada pela administradora.": "La administradora aún no ha configurado la IA.",
     "A IA não retornou um lançamento válido. Revise o texto e tente novamente.": "La IA no devolvió un movimiento válido. Revisa el texto e inténtalo de nuevo.",
