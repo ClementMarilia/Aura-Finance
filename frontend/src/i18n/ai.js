@@ -108,7 +108,13 @@ registerMessages({
     "Sua solicitação foi enviada à administradora. O acesso depende de aprovação.": "Your request was sent to the administrator. Access requires approval.",
     "Ao vencer o prazo ou atingir o limite, somente a IA do Aura é bloqueada. Você pode continuar com sua própria IA.": "When access expires or reaches its limit, only Aura AI is blocked. You can continue using your own AI.",
     "Aguardando aprovação": "Awaiting approval",
-    "Pagamento solicitado": "Payment requested"
+    "Pagamento solicitado": "Payment requested",
+    "Acesso master à IA do Aura": "Master access to Aura AI",
+    "Seu acesso master não precisa de aprovação ou pagamento.": "Your master access requires no approval or payment.",
+    "Selecione IA do Aura e salve a conexão para usar. A chave do serviço deve estar configurada no servidor.": "Select Aura AI and save the connection to use it. The service key must be configured on the server.",
+    "O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.": "The 300-command allowance renews automatically each month and does not reset when reconnecting.",
+    "Próxima renovação": "Next renewal",
+    "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Your monthly Aura AI limit has been reached. You can continue with your own AI."
   },
   "it": {
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 comandi al mese, tramite testo o audio fino a 30 secondi. Nessun rinnovo automatico.",
@@ -217,7 +223,13 @@ registerMessages({
     "Sua solicitação foi enviada à administradora. O acesso depende de aprovação.": "La richiesta è stata inviata all'amministratrice. L'accesso richiede approvazione.",
     "Ao vencer o prazo ou atingir o limite, somente a IA do Aura é bloqueada. Você pode continuar com sua própria IA.": "Alla scadenza o al raggiungimento del limite viene bloccata solo l'IA di Aura. Puoi continuare con la tua IA.",
     "Aguardando aprovação": "In attesa di approvazione",
-    "Pagamento solicitado": "Pagamento richiesto"
+    "Pagamento solicitado": "Pagamento richiesto",
+    "Acesso master à IA do Aura": "Accesso master all’IA di Aura",
+    "Seu acesso master não precisa de aprovação ou pagamento.": "Il tuo accesso master non richiede approvazione né pagamento.",
+    "Selecione IA do Aura e salve a conexão para usar. A chave do serviço deve estar configurada no servidor.": "Seleziona IA di Aura e salva la connessione per usarla. La chiave del servizio deve essere configurata sul server.",
+    "O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.": "Il limite di 300 comandi si rinnova automaticamente ogni mese e non viene azzerato riconnettendosi.",
+    "Próxima renovação": "Prossimo rinnovo",
+    "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Hai raggiunto il limite mensile dell’IA di Aura. Puoi continuare con la tua IA."
   },
   "es": {
     "300 comandos por mês, por texto ou áudio de até 30 segundos. Sem renovação automática.": "300 comandos al mes, por texto o audio de hasta 30 segundos. Sin renovación automática.",
@@ -326,6 +338,12 @@ registerMessages({
     "Sua solicitação foi enviada à administradora. O acesso depende de aprovação.": "Tu solicitud se envió a la administradora. El acceso requiere aprobación.",
     "Ao vencer o prazo ou atingir o limite, somente a IA do Aura é bloqueada. Você pode continuar com sua própria IA.": "Al vencer el plazo o alcanzar el límite, solo se bloquea la IA de Aura. Puedes seguir con tu propia IA.",
     "Aguardando aprovação": "Pendiente de aprobación",
-    "Pagamento solicitado": "Pago solicitado"
+    "Pagamento solicitado": "Pago solicitado",
+    "Acesso master à IA do Aura": "Acceso master a la IA de Aura",
+    "Seu acesso master não precisa de aprovação ou pagamento.": "Tu acceso master no requiere aprobación ni pago.",
+    "Selecione IA do Aura e salve a conexão para usar. A chave do serviço deve estar configurada no servidor.": "Selecciona IA de Aura y guarda la conexión para usarla. La clave del servicio debe estar configurada en el servidor.",
+    "O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.": "El límite de 300 comandos se renueva automáticamente cada mes y no se reinicia al reconectar.",
+    "Próxima renovação": "Próxima renovación",
+    "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.": "Alcanzaste tu límite mensual de IA de Aura. Puedes continuar con tu propia IA."
   }
 });

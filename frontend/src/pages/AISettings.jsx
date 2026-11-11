@@ -70,13 +70,21 @@ export default function AISettings() {
         <p className="text-sm">{tr("Limites e cobranças são da sua conta no provedor. Uma assinatura de chat não garante acesso à API.")}</p>
         <p className="text-sm">{tr("A modalidade gratuita do Gemini tem limites e regras próprias de uso de dados. Confira os termos do provedor.")}</p>
       </>}
-      {source === "aura" && <p>{tr("Ative a conexão após a aprovação do pagamento. O plano usa o provedor definido pela administradora.")}</p>}
+      {source === "aura" && <p>{config.master_access ? tr("Seu acesso master não precisa de aprovação ou pagamento.") : tr("Ative a conexão após a aprovação do pagamento. O plano usa o provedor definido pela administradora.")}</p>}
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} disabled={busy} />
         {tr("Autorizo enviar meus comandos e nomes de categorias e contas ao provedor escolhido. A chave será armazenada criptografada.")}</label>
       <div className="flex flex-wrap gap-2"><Button type="submit" disabled={busy || !consent || (source === "own" && !config.ready)}>{tr("Salvar conexão")}</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={() => run(async () => { await api.delete("/ai/settings"); setKey(""); })}>{tr("Desconectar e apagar chave")}</Button></div>
     </form>
-    <section className="card-soft space-y-4">
+    {config.master_access ? <section className="card-soft space-y-4">
+      <h2 className="text-xl font-semibold">{tr("Acesso master à IA do Aura")}</h2>
+      <p>{tr("Seu acesso master não precisa de aprovação ou pagamento.")}</p>
+      <p>{tr("Selecione IA do Aura e salve a conexão para usar. A chave do serviço deve estar configurada no servidor.")}</p>
+      {!config.aura_available && <p role="alert">{tr("A IA ainda não foi configurada pela administradora.")}</p>}
+      <p>{tr("Comandos utilizados")}: {plan?.used || 0} / {plan?.command_limit || 300}</p>
+      <p>{tr("O controle de 300 comandos é renovado automaticamente a cada mês, sem reiniciar ao reconectar.")}</p>
+      {plan?.expires_at && <p>{tr("Próxima renovação")}: {new Date(plan.expires_at).toLocaleString()}</p>}
+    </section> : <section className="card-soft space-y-4">
       <h2 className="text-xl font-semibold">{tr("IA do Aura")}</h2>
       <p>{tr("Solicite acesso. A administradora pode liberar um teste gratuito, uma cortesia ou solicitar o pagamento do plano.")}</p>
       <p className="text-sm">{tr("Plano pago: €5 por mês, com 300 comandos e sem renovação automática.")}</p>
@@ -99,7 +107,7 @@ export default function AISettings() {
       </>}
       {waiting && <p className="text-sm">{tr("Sua solicitação foi enviada à administradora. O acesso depende de aprovação.")}</p>}
       <p className="text-sm">{tr("Ao vencer o prazo ou atingir o limite, somente a IA do Aura é bloqueada. Você pode continuar com sua própria IA.")}</p>
-    </section>
+    </section>}
     <Button asChild variant="outline"><Link to="/lancamentos?novo=1">{tr("Testar nos lançamentos")}</Link></Button>
   </div>;
 }

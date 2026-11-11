@@ -361,7 +361,13 @@ def public_plan(plan):
 
 
 def create_ai_router(
-    *, db, get_current_user, require_super_admin, push_notification, admin_email
+    *,
+    db,
+    get_current_user,
+    require_super_admin,
+    push_notification,
+    admin_email,
+    is_super_admin_user=lambda user: False,
 ):
     router = APIRouter(prefix="/api")
 
@@ -369,6 +375,23 @@ def create_ai_router(
         await db.ai_connections.update_one(
             {"_id": uid}, {"$setOnInsert": {"source": "off"}}, upsert=True
         )
+
+    def master_plan(config):
+        now = utcnow()
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        period = start.strftime("%Y-%m")
+        current = config.get("master_period") == period
+        return {
+            "request_id": f"master:{period}",
+            "status": "active",
+            "access_type": "master",
+            "starts_at": start.isoformat(),
+            "expires_at": next_month(start).isoformat(),
+            "command_limit": LIMIT,
+            "attempt_limit": MAX_ATTEMPTS,
+            "used": config.get("master_used", 0) if current else 0,
+            "attempts": config.get("master_attempts", 0) if current else 0,
+        }
 
     async def notify(uid, message, link):
         try:
@@ -380,7 +403,12 @@ def create_ai_router(
     @router.get("/ai/settings")
     async def settings(user=Depends(get_current_user)):
         config = await db.ai_connections.find_one({"_id": user["id"]}) or {}
-        plan = await db.ai_plans.find_one({"_id": user["id"]})
+        master = is_super_admin_user(user)
+        plan = (
+            master_plan(config)
+            if master
+            else await db.ai_plans.find_one({"_id": user["id"]})
+        )
         ready = bool(os.environ.get("AI_ENCRYPTION_KEY"))
         try:
             provider = aura_provider()
@@ -388,6 +416,7 @@ def create_ai_router(
         except HTTPException:
             provider, available = "gemini", False
         return {
+            "master_access": master,
             "source": config.get("source", "off"),
             "provider": config.get("provider", "gemini"),
             "model": config.get(
@@ -455,6 +484,9 @@ def create_ai_router(
 
     @router.post("/ai/plan/request")
     async def request_plan(user=Depends(get_current_user)):
+        if is_super_admin_user(user):
+            config = await db.ai_connections.find_one({"_id": user["id"]}) or {}
+            return public_plan(master_plan(config))
         uid, now = user["id"], utcnow().isoformat()
         # Single document per user, unique by Mongo _id. Conditional transition
         # prevents duplicate requests and requests replacing a live subscription.
@@ -537,7 +569,10 @@ def create_ai_router(
     @router.get("/admin/ai/plans")
     async def admin_plans(_admin=Depends(require_super_admin)):
         plans = (
-            await db.ai_plans.find({}).sort("requested_at", -1).limit(200).to_list(200)
+            await db.ai_plans.find({"_id": {"$ne": _admin["id"]}})
+            .sort("requested_at", -1)
+            .limit(200)
+            .to_list(200)
         )
         users = await db.users.find(
             {"id": {"$in": [p["_id"] for p in plans]}}, {"id": 1, "name": 1, "email": 1}
@@ -694,8 +729,33 @@ def create_ai_router(
         if not locked:
             raise HTTPException(429, "AI_BUSY")
         reserved = None
+        master = source == "aura" and is_super_admin_user(user)
         try:
-            if source == "aura":
+            if master:
+                period = now.strftime("%Y-%m")
+                await db.ai_connections.update_one(
+                    {"_id": uid, "master_period": {"$ne": period}},
+                    {
+                        "$set": {
+                            "master_period": period,
+                            "master_used": 0,
+                            "master_attempts": 0,
+                        }
+                    },
+                )
+                reserved = await db.ai_connections.find_one_and_update(
+                    {
+                        "_id": uid,
+                        "master_period": period,
+                        "master_used": {"$lt": LIMIT},
+                        "master_attempts": {"$lt": MAX_ATTEMPTS},
+                    },
+                    {"$inc": {"master_used": 1, "master_attempts": 1}},
+                    return_document=ReturnDocument.AFTER,
+                )
+                if not reserved:
+                    raise HTTPException(403, "AI_MASTER_LIMIT")
+            elif source == "aura":
                 plan = await db.ai_plans.find_one({"_id": uid})
                 if not plan:
                     raise HTTPException(403, "AI_PLAN_LIMIT")
@@ -792,10 +852,16 @@ def create_ai_router(
             }
         except BaseException:
             if reserved:
-                await db.ai_plans.update_one(
-                    {"_id": uid, "request_id": reserved["request_id"]},
-                    {"$inc": {"used": -1}},
-                )
+                if master:
+                    await db.ai_connections.update_one(
+                        {"_id": uid, "master_period": reserved["master_period"]},
+                        {"$inc": {"master_used": -1}},
+                    )
+                else:
+                    await db.ai_plans.update_one(
+                        {"_id": uid, "request_id": reserved["request_id"]},
+                        {"$inc": {"used": -1}},
+                    )
             raise
         finally:
             await db.ai_connections.update_one(

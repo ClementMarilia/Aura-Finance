@@ -64,3 +64,9 @@ Collections `ai_connections` and `ai_plans` use the UUID user ID as unique Mongo
 ## Verification
 
 Isolated API tests cover expiry boundaries, free and paid grants, manual payment, notifications, own-key independence, legacy paid records, quotas, stale/duplicate decisions, and automatic model fallback without paid-source changes. UI tests cover trial defaults, explicit confirmation and payment gating. Real credentials and production account data are not used in tests.
+
+## Master administrator
+
+The backend uses the existing persisted `is_super_admin_user` role resolver to recognize the master administrator. `SUPER_ADMIN` can select Aura directly with consent; there is no access request, payment confirmation or self-approval. Ordinary admins and client flags receive no exemption.
+
+Master consumption is tracked separately in `ai_connections` (`master_period`, `master_used`, `master_attempts`), with 300 completed commands and 360 attempts per UTC calendar month. Counters reserve atomically, failed calls refund only the command, and rollover happens only when the month changes. Disconnecting, saving the connection, or the legacy request button cannot reset consumption. Existing common-user grants are untouched. All provider credentials, microphone consent, draft review and source selection requirements still apply.
