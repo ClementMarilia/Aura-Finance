@@ -1143,3 +1143,35 @@ def test_missing_status_defaults_pending():
 def test_clarification_history_bounded():
     with pytest.raises(ValueError):
         ai.Command(today='2026-11-11', clarifications=[{'question': 'Conta?', 'answer': 'Revolut'}] * 9)
+
+
+@pytest.mark.parametrize("model", ["gpt-4.1-mini", "gpt-4o-mini"])
+def test_openai_requests_constrained_transaction_schema(monkeypatch, model):
+    calls = []
+    def post(url, **kwargs):
+        calls.append(kwargs["json"])
+        return {"choices": [{"message": {"content": '{"type":"expense","status":"pending","amount":269.99,"description":"Amazon","date":"2026-12-15"}'}}]}
+    monkeypatch.setattr(ai, "post_provider", post)
+    result = ai.call_provider("openai", "secret", "context", "Still owe Nathalia", model=model)
+    assert result["status"] == "pending"
+    fmt = calls[0]["response_format"]
+    assert fmt["type"] == "json_schema"
+    assert fmt["json_schema"]["strict"] is True
+    schema = fmt["json_schema"]["schema"]
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == set(ai.Draft.model_fields)
+    assert schema["properties"]["status"]["enum"] == ["paid", "pending"]
+    assert len(calls) == 1
+
+
+def test_invalid_provider_output_logs_only_schema_fields(setup, monkeypatch, caplog):
+    s = setup
+    subscribe(s)
+    monkeypatch.setattr(ai, "call_provider", lambda *args: {"type": "expense", "description": "PRIVATE PURCHASE", "status": "PRIVATE INVALID VALUE"})
+    result = command(s)
+    assert result.status_code == 502
+    assert result.json()["detail"] == "AI_INVALID_RESPONSE"
+    assert "status" in caplog.text
+    assert "PRIVATE" not in caplog.text
+    assert s.raw.transactions.count_documents({}) == 0
+    assert s.raw.ai_plans.find_one({"_id": "alice"})["used"] == 0
