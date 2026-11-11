@@ -19,6 +19,7 @@ const ERRORS = {
   AI_INVALID_RESPONSE: "A IA não retornou um lançamento válido. Revise o texto e tente novamente.",
   AI_INPUT_REQUIRED: "Envie um texto ou uma gravação.",
   AI_AUDIO_INVALID: "Grave um áudio de até 30 segundos.",
+  AI_MASTER_LIMIT: "Seu limite mensal de IA do Aura foi atingido. Você pode continuar com sua própria IA.",
   AI_PLAN_LIMIT: "Plano inativo, vencido ou limite de uso atingido. Confira suas configurações.",
   AI_BUSY: "Aguarde alguns segundos antes de enviar outro comando.",
   AI_CONTEXT_TOO_LARGE: "Há muitas categorias ou contas para esta consulta. Use o formulário manual.",

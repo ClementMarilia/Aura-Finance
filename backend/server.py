@@ -10094,6 +10094,7 @@ app.include_router(create_ai_router(
     require_super_admin=require_super_admin,
     push_notification=push_notification,
     admin_email=configured_super_admin_email,
+    is_super_admin_user=is_super_admin_user,
 ))
 
 app.add_middleware(

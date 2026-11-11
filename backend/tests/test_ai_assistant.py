@@ -86,6 +86,8 @@ def setup(monkeypatch):
             require_super_admin=admin,
             push_notification=notifications,
             admin_email=lambda: "admin@example.com",
+            is_super_admin_user=lambda candidate: candidate.get("role")
+            == "SUPER_ADMIN",
         )
     )
     raw.users.insert_one({"id": "admin", "email": "admin@example.com"})
@@ -826,3 +828,107 @@ def test_new_connection_defaults_to_auto_and_requests_can_precede_provider_setup
         == 503
     )
     assert s.raw.ai_plans.find_one()["status"] == "pending"
+
+
+def master_connection(s):
+    s.user["role"] = "SUPER_ADMIN"
+    assert (
+        s.client.put(
+            "/api/ai/settings", json={"source": "aura", "consent": True}
+        ).status_code
+        == 200
+    )
+
+
+def test_master_uses_aura_without_request_payment_or_grant(setup):
+    s = setup
+    master_connection(s)
+    assert command(s).status_code == 200
+    config = s.client.get("/api/ai/settings").json()
+    assert config["master_access"] is True
+    assert config["plan"]["access_type"] == "master" and config["plan"]["used"] == 1
+    assert s.raw.ai_plans.count_documents({}) == 0
+    assert s.raw.ai_plan_events.count_documents({}) == 0
+    s.notifications.assert_not_awaited()
+
+
+def test_old_master_request_button_does_not_create_self_approval_request(setup):
+    s = setup
+    master_connection(s)
+    result = s.client.post("/api/ai/plan/request")
+    assert result.status_code == 200 and result.json()["access_type"] == "master"
+    assert s.raw.ai_plans.count_documents({}) == 0
+    s.notifications.assert_not_awaited()
+
+
+def test_reconnect_does_not_reset_master_monthly_usage(setup):
+    s = setup
+    master_connection(s)
+    assert command(s).status_code == 200
+    s.client.delete("/api/ai/settings")
+    master_connection(s)
+    config = s.client.get("/api/ai/settings").json()
+    assert config["plan"]["used"] == 1
+    s.raw.ai_connections.update_one({}, {"$unset": {"busy_until": ""}})
+    assert command(s).status_code == 200
+    assert s.client.get("/api/ai/settings").json()["plan"]["used"] == 2
+
+
+def test_master_quota_renews_only_at_new_calendar_month(setup, monkeypatch):
+    s = setup
+    master_connection(s)
+    start = datetime(2026, 11, 20, tzinfo=timezone.utc)
+    monkeypatch.setattr(ai, "utcnow", lambda: start)
+    assert command(s).status_code == 200
+    s.raw.ai_connections.update_one(
+        {}, {"$set": {"master_used": 300}, "$unset": {"busy_until": ""}}
+    )
+    assert command(s).json()["detail"] == "AI_MASTER_LIMIT"
+    s.client.post("/api/ai/plan/request")
+    assert s.raw.ai_connections.find_one()["master_used"] == 300
+    monkeypatch.setattr(
+        ai, "utcnow", lambda: datetime(2026, 12, 1, tzinfo=timezone.utc)
+    )
+    assert command(s).status_code == 200
+    assert s.raw.ai_connections.find_one()["master_used"] == 1
+    assert s.raw.ai_connections.find_one()["master_period"] == "2026-12"
+
+
+def test_master_failure_refunds_command_without_subscription_mutation(
+    setup, monkeypatch
+):
+    s = setup
+    master_connection(s)
+
+    def fail(*args):
+        raise HTTPException(503, "AI_PROVIDER_UNAVAILABLE")
+
+    monkeypatch.setattr(ai, "call_provider", fail)
+    assert command(s).status_code == 503
+    config = s.raw.ai_connections.find_one()
+    assert config["master_used"] == 0 and config["master_attempts"] == 1
+    assert s.raw.ai_plans.count_documents({}) == 0
+
+
+def test_regular_admin_and_client_flags_cannot_bypass_access_approval(setup):
+    s = setup
+    s.user.update(role="ADMIN", is_super_admin=True)
+    s.client.put("/api/ai/settings", json={"source": "aura", "consent": True})
+    assert command(s).status_code == 403
+    assert s.client.get("/api/ai/settings").json()["master_access"] is False
+    assert (
+        s.client.put(
+            "/api/ai/settings",
+            json={"source": "aura", "consent": True, "master_access": True},
+        ).status_code
+        == 422
+    )
+
+
+def test_revoked_master_role_stops_direct_access(setup):
+    s = setup
+    master_connection(s)
+    assert command(s).status_code == 200
+    s.user["role"] = "MEMBER"
+    s.raw.ai_connections.update_one({}, {"$unset": {"busy_until": ""}})
+    assert command(s).status_code == 403
