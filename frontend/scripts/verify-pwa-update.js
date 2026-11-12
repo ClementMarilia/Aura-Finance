@@ -116,3 +116,9 @@ Promise.resolve(installPromise)
     console.error(error);
     process.exitCode = 1;
   });
+
+const quickManifest = JSON.parse(fs.readFileSync(path.join(root, "public", "quick-manifest.json"), "utf8"));
+const mainManifest = JSON.parse(fs.readFileSync(path.join(root, "public", "manifest.json"), "utf8"));
+assert.strictEqual(quickManifest.start_url, "/adicionar");
+assert.strictEqual(quickManifest.id, "/adicionar");
+assert.strictEqual(mainManifest.shortcuts[0].url, "/adicionar");

@@ -1200,3 +1200,47 @@ def test_ai_notes_are_validated_returned_and_preserved_in_followup(setup, monkey
     assert s.raw.transactions.count_documents({}) == 0
     with pytest.raises(ValueError):
         ai.Draft(type="expense", description="Compra", notes="x" * 1001)
+
+
+def test_installment_interpretation_uses_existing_quota_and_returns_purchase_draft(setup, monkeypatch):
+    s = setup
+    subscribe(s)
+    contexts = []
+    def provider(*args):
+        contexts.append(args[2])
+        return {"type": "expense", "status": "pending", "amount": 100, "amount_mode": "per_parcel", "installments": 6, "start_number": 3, "date": "2026-12-15", "description": "Notebook", "account_id": "foreign"}
+    monkeypatch.setattr(ai, "call_provider", provider)
+    result = command(s, kind="installment", text="Notebook 6 parcelas de 100, próxima é 3, dia 15 dezembro")
+    assert result.status_code == 200
+    draft = result.json()["draft"]
+    assert draft["amount"] == 100
+    assert draft["amount_mode"] == "per_parcel"
+    assert draft["installments"] == 6
+    assert draft["start_number"] == 3
+    assert draft["account_id"] is None
+    assert "do NOT multiply" in contexts[-1]
+    assert s.raw.ai_plans.find_one({"_id": "alice"})["used"] == 1
+    assert s.raw.transactions.count_documents({}) == 0
+    assert s.raw.installment_purchases.count_documents({}) == 0
+
+
+@pytest.mark.parametrize("fields", [{"installments": 121}, {"installments": True}, {"installments": 6, "start_number": 7}, {"amount_mode": "guess"}])
+def test_invalid_installment_draft_is_rejected(fields):
+    with pytest.raises(ValueError):
+        ai.Draft(type="expense", description="Compra", **fields)
+
+
+def test_installment_missing_values_remain_unknown():
+    draft = ai.Draft(type="expense", description="Compra")
+    assert draft.installments is None
+    assert draft.amount_mode is None
+    assert draft.date is None
+
+
+def test_incomplete_installment_asks_for_missing_schedule(setup):
+    s = setup
+    subscribe(s)
+    result = command(s, kind="installment")
+    assert result.status_code == 200
+    assert result.json()["draft"]["installments"] is None
+    assert result.json()["draft"]["question"]

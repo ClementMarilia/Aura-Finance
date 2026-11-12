@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import InstallPrompt from "@/components/InstallPrompt";
@@ -13,6 +13,7 @@ const Register = lazy(() => import("@/pages/Register"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 const Layout = lazy(() => import("@/components/Layout"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const QuickEntry = lazy(() => import("@/pages/QuickEntry"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
 const Installments = lazy(() => import("@/pages/Installments"));
 const Receivables = lazy(() => import("@/pages/Receivables"));
@@ -50,9 +51,10 @@ function AuthLoading() {
 }
 
 function Protected({ children }) {
+  const location = useLocation();
   const { user, loading } = useAuth();
   if (loading) return <AuthLoading />;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login" state={{ quick: location.pathname === "/adicionar" ? location.pathname + location.search : null }} replace />;
   return children;
 }
 
@@ -83,6 +85,7 @@ function App() {
             <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
             <Route path="/cadastro" element={<PublicOnly><Register /></PublicOnly>} />
             <Route path="/redefinir-senha" element={<ResetPassword />} />
+            <Route path="/adicionar" element={<Protected><QuickEntry /></Protected>} />
             <Route path="/" element={<Protected><Layout /></Protected>}>
               <Route index element={<Dashboard />} />
               <Route path="lancamentos" element={<Transactions />} />

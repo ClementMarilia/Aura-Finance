@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,9 @@ function Field({
 export default function Login() {
   const { login, formatApiError } = useAuth();
   const nav = useNavigate();
+  const location = useLocation();
+  const requested = location.state?.quick;
+  const destination = typeof requested === "string" && /^\/adicionar(?:\?|$)/.test(requested) ? requested : "/";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -98,9 +101,9 @@ export default function Login() {
       const previousLanguage = getLanguage();
       const signedInUser = await login(email, password);
       if (signedInUser?.language && signedInUser.language !== previousLanguage) {
-        window.location.assign("/");
+        window.location.assign(destination);
       } else {
-        nav("/");
+        nav(destination);
       }
     } catch (err) {
       toast.error(formatApiError(err));

@@ -45,3 +45,20 @@ export function installmentPayload(form) {
     account_id: fields.account_id || null,
   };
 }
+
+
+export function applyInstallmentDraft(current, draft, currency) {
+  return {
+    ...current,
+    description: draft.description || "",
+    total_amount: draft.amount == null ? "" : String(draft.amount),
+    installments: draft.installments ?? "",
+    amount_mode: draft.amount_mode || "",
+    start_number: draft.start_number || 1,
+    first_date: draft.date || "",
+    category_id: draft.category_id || "",
+    account_id: draft.account_id || "",
+    currency: draft.currency || currency,
+    payment_method: draft.payment_method || "",
+  };
+}
