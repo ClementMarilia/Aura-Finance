@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api, { CURRENCIES, fmtMoney, fmtDate, formatApiError, postCreate } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import AIEntry from "@/components/AIEntry";
 import AmountInput from "@/components/AmountInput";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +12,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { Plus, Check, Trash2, Pencil, ChevronDown, ChevronRight, Minus, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import { defaultAccountFor } from "@/lib/accounts";
-import { installmentAmounts, installmentPayload, purchaseProgress, purchaseTotal } from "@/lib/installments";
+import { applyInstallmentDraft, installmentAmounts, installmentPayload, purchaseProgress, purchaseTotal } from "@/lib/installments";
 
 import { translate as tr } from "@/i18n";
 
@@ -70,6 +71,9 @@ export default function Installments() {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!form.amount_mode || !form.installments || !form.first_date || !form.account_id || !Number(form.total_amount)) {
+      toast.error(tr("Revise os dados antes de salvar.")); return;
+    }
     try {
       await postCreate("/installments/purchases", installmentPayload(form));
       toast.success(tr("Parcelamento criado"));
@@ -161,6 +165,10 @@ export default function Installments() {
           <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden">
             <DialogHeader><DialogTitle>{tr("Nova compra parcelada")}</DialogTitle></DialogHeader>
             <form onSubmit={submit} className="min-w-0 space-y-3">
+              <AIEntry kind="installment" expandInitially onResult={draft => {
+                setForm(current => applyInstallmentDraft(current, draft, curr));
+                setShowStart(Boolean(draft.start_number > 1));
+              }} />
               <div><Label>{tr("Descrição")}</Label>
                 <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required
                   placeholder={tr("Ex: Notebook, geladeira")} data-testid="inst-description-input" /></div>

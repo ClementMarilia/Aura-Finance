@@ -47,3 +47,10 @@ test("payload drops UI-only fields the API would reject", () => {
   expect(payload).not.toHaveProperty("amount_mode");
   expect(payload).toMatchObject({ total_amount: 2100, installments: 6, start_number: 1, category_id: null });
 });
+
+test("AI installment draft keeps per-parcel values and current position", () => {
+  const { applyInstallmentDraft } = require("./installments");
+  const form = applyInstallmentDraft({}, { description: "Notebook", amount: 100, amount_mode: "per_parcel", installments: 6, start_number: 3, date: "2026-12-15", currency: "EUR", account_id: "revolut" }, "EUR");
+  expect(installmentPayload(form)).toMatchObject({ total_amount: 600, installments: 6, start_number: 3, first_date: "2026-12-15", account_id: "revolut" });
+  expect(applyInstallmentDraft({ installments: 2, amount_mode: "total", first_date: "2026-11-12" }, { description: "Unknown", amount: 100 }, "EUR")).toMatchObject({ installments: "", amount_mode: "", first_date: "" });
+});

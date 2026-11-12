@@ -10,7 +10,7 @@ import { parseVoiceEntry } from "@/lib/voiceEntry";
 import { startRecording } from "@/lib/aiRecorder";
 import { getLanguage, translate as tr } from "@/i18n";
 
-export default function AIEntry({ onResult, onBasicResult, expandInitially = false }) {
+export default function AIEntry({ onResult, onBasicResult, expandInitially = false, kind = "transaction" }) {
   const [expanded, setExpanded] = useState(expandInitially);
   const [text, setText] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -43,7 +43,7 @@ export default function AIEntry({ onResult, onBasicResult, expandInitially = fal
     setErrorMessage("");
     try {
       const turns = followUp ? [...conversation, { question, answer: answer.trim() }] : [];
-      const { data } = await api.post("/ai/interpret", { ...input, ...(followUp ? { previous_draft: previousDraft, clarifications: turns } : {}), today: localToday(), language: getLanguage() }, { timeout: 150000 });
+      const { data } = await api.post("/ai/interpret", { ...input, ...(kind === "installment" ? { kind } : {}), ...(followUp ? { previous_draft: previousDraft, clarifications: turns } : {}), today: localToday(), language: getLanguage() }, { timeout: 150000 });
       if (!alive.current) return;
       onResult(data.draft);
       setPreviousDraft(data.draft);

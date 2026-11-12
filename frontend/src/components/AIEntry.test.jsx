@@ -113,3 +113,15 @@ test("answers a question with the previous draft and updates without saving", as
   expect(container.querySelector("#ai-answer")).toBeNull();
   expect(api.post).toHaveBeenCalledTimes(2);
 });
+
+test("installment assistant uses the same interpretation API with explicit purchase mode", async () => {
+  api.get.mockResolvedValue({ data: { source: "aura" } });
+  const draft = { type: "expense", amount: 100, installments: 6, amount_mode: "per_parcel", question: "Primeiro vencimento?" };
+  api.post.mockResolvedValue({ data: { draft } });
+  const onResult = jest.fn();
+  await act(async () => root.render(<AIEntry kind="installment" expandInitially onResult={onResult} />));
+  await send("Notebook em seis parcelas de 100 euros");
+  expect(api.post).toHaveBeenCalledWith("/ai/interpret", expect.objectContaining({ kind: "installment" }), expect.any(Object));
+  expect(onResult).toHaveBeenCalledWith(draft);
+  expect(container.querySelector("#ai-answer")).not.toBeNull();
+});

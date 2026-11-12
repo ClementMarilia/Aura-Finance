@@ -2,6 +2,11 @@ import { registerMessages } from "@/i18n";
 
 registerMessages({
   "en": {
+    "Lançamento salvo": "Entry saved",
+    "Adicionar rápido": "Quick add",
+    "Como criar atalho": "Create a shortcut",
+    "Abra esta página no navegador do celular. No iPhone, use Compartilhar e Adicionar à Tela de Início. No Android, use o menu do navegador e Adicionar à tela inicial ou Instalar.": "Open this page in your phone browser. On iPhone, use Share and Add to Home Screen. On Android, use the browser menu and Add to home screen or Install.",
+    "Revise os dados antes de salvar.": "Review the details before saving.",
     "Sua resposta": "Your answer",
     "Responder e atualizar": "Reply and update",
     "Atualize a descrição e use Preencher com IA para iniciar novamente.": "Update the description and use Fill with AI to start again.",
@@ -128,6 +133,11 @@ registerMessages({
     "O limite mensal é renovado automaticamente, sem reiniciar ao reconectar.": "The monthly allowance renews automatically and does not reset when reconnecting."
   },
   "it": {
+    "Lançamento salvo": "Movimento salvato",
+    "Adicionar rápido": "Aggiunta rapida",
+    "Como criar atalho": "Crea un collegamento",
+    "Abra esta página no navegador do celular. No iPhone, use Compartilhar e Adicionar à Tela de Início. No Android, use o menu do navegador e Adicionar à tela inicial ou Instalar.": "Apri questa pagina nel browser del telefono. Su iPhone, usa Condividi e Aggiungi alla schermata Home. Su Android, usa il menu del browser e Aggiungi a schermata Home o Installa.",
+    "Revise os dados antes de salvar.": "Controlla i dati prima di salvare.",
     "Sua resposta": "La tua risposta",
     "Responder e atualizar": "Rispondi e aggiorna",
     "Atualize a descrição e use Preencher com IA para iniciar novamente.": "Aggiorna la descrizione e usa Compila con IA per ricominciare.",
@@ -254,6 +264,11 @@ registerMessages({
     "O limite mensal é renovado automaticamente, sem reiniciar ao reconectar.": "Il limite mensile si rinnova automaticamente e non viene azzerato riconnettendosi."
   },
   "es": {
+    "Lançamento salvo": "Movimiento guardado",
+    "Adicionar rápido": "Añadir rápido",
+    "Como criar atalho": "Crear un acceso directo",
+    "Abra esta página no navegador do celular. No iPhone, use Compartilhar e Adicionar à Tela de Início. No Android, use o menu do navegador e Adicionar à tela inicial ou Instalar.": "Abre esta página en el navegador del móvil. En iPhone, usa Compartir y Añadir a pantalla de inicio. En Android, usa el menú del navegador y Añadir a pantalla de inicio o Instalar.",
+    "Revise os dados antes de salvar.": "Revisa los datos antes de guardar.",
     "Sua resposta": "Tu respuesta",
     "Responder e atualizar": "Responder y actualizar",
     "Atualize a descrição e use Preencher com IA para iniciar novamente.": "Actualiza la descripción y usa Completar con IA para empezar de nuevo.",

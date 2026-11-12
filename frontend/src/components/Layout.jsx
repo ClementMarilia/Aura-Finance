@@ -190,7 +190,7 @@ export default function Layout() {
 
         <QuickAddMenu open={quickOpen} onClose={() => setQuickOpen(false)} onPick={(mode) => {
           setQuickOpen(false);
-          navigate(mode === "digitar" ? "/lancamentos?novo=1" : `/lancamentos?novo=1&modo=${mode}`);
+          navigate(`/adicionar?modo=${mode}`);
         }} />
         <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t grid grid-cols-5 items-end z-30 backdrop-blur-xl"
           style={{
