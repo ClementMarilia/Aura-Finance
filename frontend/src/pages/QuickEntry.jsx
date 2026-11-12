@@ -20,6 +20,7 @@ export default function QuickEntry() {
   const { user } = useAuth();
   const currency = user?.currency || "EUR";
   const [params] = useSearchParams();
+  const [installPrompt, setInstallPrompt] = useState(null);
   const [form, setForm] = useState(() => empty(currency));
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -50,6 +51,23 @@ export default function QuickEntry() {
     })();
     return () => { active = false; };
   }, [currency]);
+  useEffect(() => {
+    const capture = event => { event.preventDefault(); setInstallPrompt(event); };
+    const installed = () => setInstallPrompt(null);
+    window.addEventListener("beforeinstallprompt", capture);
+    window.addEventListener("appinstalled", installed);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", capture);
+      window.removeEventListener("appinstalled", installed);
+    };
+  }, []);
+  const install = async () => {
+    if (!installPrompt) return;
+    const prompt = installPrompt;
+    setInstallPrompt(null);
+    try { await prompt.prompt(); await prompt.userChoice; }
+    catch { toast.error(tr("Use o menu do navegador para criar o atalho.")); }
+  };
   const change = (key, value) => { setSaved(false); setForm(current => ({ ...current, [key]: value })); };
   const interpret = draft => { setSaved(false); setForm(current => applyAIDraftToForm(current, draft, currency)); };
   const save = async event => {
@@ -70,7 +88,7 @@ export default function QuickEntry() {
   };
   return <main className="mx-auto min-h-screen max-w-lg space-y-4 p-4 pb-8" style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom))" }}>
     <header className="flex items-center justify-between gap-3"><h1 className="text-2xl font-semibold">{tr("Adicionar rápido")}</h1><Link className="underline" to="/lancamentos">{tr("Lançamentos")}</Link></header>
-    <details className="rounded-xl border p-3 text-sm"><summary>{tr("Como criar atalho")}</summary><p className="mt-2">{tr("Abra esta página no navegador do celular. No iPhone, use Compartilhar e Adicionar à Tela de Início. No Android, use o menu do navegador e Adicionar à tela inicial ou Instalar.")}</p></details>
+    <details open={params.get("instalar") === "1" || undefined} className="rounded-xl border p-3 text-sm"><summary>{tr("Como criar atalho")}</summary><p className="mt-2">{tr("Abra esta página no navegador do celular. No iPhone, use Compartilhar e Adicionar à Tela de Início. No Android, use o menu do navegador e Adicionar à tela inicial ou Instalar.")}</p>{installPrompt && <Button type="button" className="mt-3" onClick={install}>{tr("Instalar atalho")}</Button>}</details>
     {loadError && <div role="alert">{loadError}<Button type="button" variant="outline" onClick={() => window.location.reload()}>{tr("Tentar novamente")}</Button></div>}
     {!ready ? <p role="status">{tr("Carregando...")}</p> : <>
       {saved && <p role="status" className="rounded-lg border p-3">{tr("Lançamento salvo")}</p>}

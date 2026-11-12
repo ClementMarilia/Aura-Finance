@@ -10,6 +10,7 @@ import NotificationsBell from "@/components/NotificationsBell";
 import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
 import Logo from "@/components/Logo";
+import QuickEntryAccess from "@/components/QuickEntryAccess";
 import QuickAddMenu from "@/components/QuickAddMenu";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/lib/api";
@@ -185,6 +186,7 @@ export default function Layout() {
         </header>
 
         <div className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-x-hidden">
+          <QuickEntryAccess />
           <Outlet />
         </div>
 

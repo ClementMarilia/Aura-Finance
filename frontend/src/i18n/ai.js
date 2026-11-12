@@ -2,6 +2,9 @@ import { registerMessages } from "@/i18n";
 
 registerMessages({
   "en": {
+    "Criar atalho no celular": "Create phone shortcut",
+    "Instalar atalho": "Install shortcut",
+    "Use o menu do navegador para criar o atalho.": "Use the browser menu to create the shortcut.",
     "Lançamento salvo": "Entry saved",
     "Adicionar rápido": "Quick add",
     "Como criar atalho": "Create a shortcut",
@@ -133,6 +136,9 @@ registerMessages({
     "O limite mensal é renovado automaticamente, sem reiniciar ao reconectar.": "The monthly allowance renews automatically and does not reset when reconnecting."
   },
   "it": {
+    "Criar atalho no celular": "Crea collegamento sul telefono",
+    "Instalar atalho": "Installa collegamento",
+    "Use o menu do navegador para criar o atalho.": "Usa il menu del browser per creare il collegamento.",
     "Lançamento salvo": "Movimento salvato",
     "Adicionar rápido": "Aggiunta rapida",
     "Como criar atalho": "Crea un collegamento",
@@ -264,6 +270,9 @@ registerMessages({
     "O limite mensal é renovado automaticamente, sem reiniciar ao reconectar.": "Il limite mensile si rinnova automaticamente e non viene azzerato riconnettendosi."
   },
   "es": {
+    "Criar atalho no celular": "Crear acceso directo en el móvil",
+    "Instalar atalho": "Instalar acceso directo",
+    "Use o menu do navegador para criar o atalho.": "Usa el menú del navegador para crear el acceso directo.",
     "Lançamento salvo": "Movimiento guardado",
     "Adicionar rápido": "Añadir rápido",
     "Como criar atalho": "Crear un acceso directo",
