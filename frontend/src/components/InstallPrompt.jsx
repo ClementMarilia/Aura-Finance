@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Download, X, Share } from "lucide-react";
 
 import { translate as tr } from "@/i18n";
@@ -39,6 +40,7 @@ function isDismissed() {
 }
 
 export default function InstallPrompt() {
+  const { pathname } = useLocation();
   const [deferred, setDeferred] = useState(null);
   const [show, setShow] = useState(false);
   const [iosHint, setIosHint] = useState(false);
@@ -47,6 +49,7 @@ export default function InstallPrompt() {
     if (isStandalone() || isDismissed()) return;
 
     const handler = (e) => {
+      if (window.location.pathname === "/adicionar") return;
       e.preventDefault();
       setDeferred(e);
       setShow(true);
@@ -77,7 +80,7 @@ export default function InstallPrompt() {
     setShow(false);
   };
 
-  if (!show) return null;
+  if (!show || pathname === "/adicionar") return null;
 
   return (
     <div
