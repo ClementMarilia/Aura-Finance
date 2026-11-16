@@ -4519,18 +4519,79 @@ class InstallmentPurchaseUpdateIn(BaseModel):
     category_id: Optional[str] = None
     payment_method: Optional[str] = None
     account_id: Optional[str] = None
+    total_amount: Optional[float] = Field(default=None, gt=0)
+    installments: Optional[int] = Field(default=None, ge=1, le=120)
+    first_date: Optional[str] = None
+
+
+def plan_installment_edit(purchase: dict, existing: List[dict],
+                          total_amount: float, count: int, first_date: str) -> List[dict]:
+    """Rebuild pending installments without rewriting confirmed payments.
+
+    Purchases created from a later start_number have an implicit historical
+    balance that was already paid outside this app. Preserve that balance too.
+    """
+    if not math.isfinite(total_amount) or round(total_amount * 100) < 1:
+        raise HTTPException(400, "O valor total deve ser maior que zero")
+    if count < 1 or count > 120:
+        raise HTTPException(400, "Informe entre 1 e 120 parcelas")
+    try:
+        first = date.fromisoformat(first_date)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Data da parcela inválida")
+    start = int(purchase.get("start_number") or 1)
+    if count < start:
+        raise HTTPException(409, "A quantidade não pode ser menor que a parcela inicial")
+
+    by_number = {int(i["number"]): i for i in existing}
+    paid = {n: i for n, i in by_number.items() if i["status"] == "paid"}
+    if any(n > count for n in paid):
+        raise HTTPException(409, "Não é possível remover parcelas já pagas")
+
+    old_cents = round(float(purchase["total_amount"]) * 100)
+    created_cents = sum(round(float(i["amount"]) * 100) for i in existing)
+    historical_cents = max(0, old_cents - created_cents)
+    paid_cents = sum(round(float(i["amount"]) * 100) for i in paid.values())
+    remaining_cents = round(total_amount * 100) - historical_cents - paid_cents
+
+    if remaining_cents < 0:
+        raise HTTPException(
+            409, "O novo total é menor que os valores já pagos. "
+            "As parcelas pagas não podem ser modificadas.",
+        )
+    pending_numbers = [n for n in range(start, count + 1) if n not in paid]
+    if not pending_numbers and remaining_cents:
+        raise HTTPException(409, "Todas as parcelas estão pagas. Não há parcelas pendentes para ajustar.")
+    amounts = installment_amounts(remaining_cents / 100, len(pending_numbers)) if pending_numbers else []
+    pending_amounts = dict(zip(pending_numbers, amounts))
+
+    result = []
+    for number in range(start, count + 1):
+        old = by_number.get(number)
+        if number in paid:
+            # Keep the original debit and due date (historical financial record).
+            result.append({**old, "total": count})
+        else:
+            result.append({
+                **(old or {}),
+                "number": number, "total": count,
+                "amount": pending_amounts[number],
+                "due_date": installment_due_date(first, number - start).isoformat(),
+                "status": "pending", "paid_at": None,
+            })
+    return result
 
 
 @api.put("/installments/purchases/{pid}")
 async def update_purchase(pid: str, payload: InstallmentPurchaseUpdateIn, user=Depends(get_current_user)):
-    upd = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
-    if not upd:
-        return {"ok": True}
+    upd = payload.model_dump(exclude_none=True)
     current = await db.installment_purchases.find_one(
         {"id": pid, "user_id": user["id"]}, {"_id": 0}
     )
     if not current:
         raise HTTPException(404, "Não encontrado")
+    if not upd:
+        return {"ok": True}
     if payload.account_id:
         currencies = await account_currency_map(user)
         purchase_currency = normalize_currency(
@@ -4544,9 +4605,46 @@ async def update_purchase(pid: str, payload: InstallmentPurchaseUpdateIn, user=D
                 400,
                 "A carteira deve usar a mesma moeda do parcelamento",
             )
+
+    financial_fields = ("total_amount", "installments", "first_date")
+    financial_changed = any(
+        k in upd and upd[k] != current.get(k) for k in financial_fields
+    )
+    if financial_changed:
+        existing = await db.installments.find(
+            {"purchase_id": pid, "user_id": user["id"]}, {"_id": 0}
+        ).sort("number", 1).to_list(200)
+        target_total = float(upd.get("total_amount", current["total_amount"]))
+        target_count = int(upd.get("installments", current["installments"]))
+        target_date = upd.get("first_date", current["first_date"])
+        planned = plan_installment_edit(
+            current, existing, target_total, target_count, target_date
+        )
+        existing_ids = {i["id"] for i in existing}
+        planned_ids = {i["id"] for i in planned if i.get("id")}
+        obsolete_ids = existing_ids - planned_ids
+        for item in planned:
+            if item.get("id") in existing_ids:
+                await db.installments.update_one(
+                    {"id": item["id"], "purchase_id": pid, "user_id": user["id"]},
+                    {"$set": {k: item[k] for k in ("total", "amount", "due_date")}},
+                )
+            else:
+                await db.installments.insert_one({
+                    "id": new_id(), "purchase_id": pid, "user_id": user["id"],
+                    "number": item["number"], "total": item["total"],
+                    "amount": item["amount"], "due_date": item["due_date"],
+                    "status": "pending", "paid_at": None,
+                })
+        if obsolete_ids:
+            await db.installments.delete_many({
+                "id": {"$in": list(obsolete_ids)}, "purchase_id": pid,
+                "user_id": user["id"], "status": "pending",
+            })
+        upd.update(total_amount=target_total, installments=target_count, first_date=target_date)
+
     res = await db.installment_purchases.update_one(
-        {"id": pid, "user_id": user["id"]},
-        {"$set": upd},
+        {"id": pid, "user_id": user["id"]}, {"$set": upd},
     )
     if not res.matched_count:
         raise HTTPException(404, "Não encontrado")

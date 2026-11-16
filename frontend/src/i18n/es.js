@@ -364,7 +364,7 @@ export default {
   "Os membros do grupo foram adicionados automaticamente como participantes.": "Los miembros del grupo se añadieron automáticamente como participantes.",
   "Pagamento recorrente criado": "Pago recurrente creado",
   "para abrir como um app.": "para abrirla como aplicación.",
-  "Para alterar valor total ou número de parcelas, exclua e crie um novo parcelamento.": "Para cambiar el importe total o el número de cuotas, elimínalo y crea un nuevo plan.",
+  "Pagas preservadas; pendentes recalculadas.": "Pagadas intactas; pendientes recalculadas.",
   "Parcelas": "Cuotas",
   "Participação de cada categoria nas saídas.": "Participación de cada categoría en los gastos.",
   "Previous": "Anterior",

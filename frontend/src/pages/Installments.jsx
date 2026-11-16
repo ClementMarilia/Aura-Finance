@@ -36,11 +36,15 @@ export default function Installments() {
   const [accs, setAccs] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
   const [confirmPay, setConfirmPay] = useState(null); // { parcel, purchase }
   const [expanded, setExpanded] = useState({});
   const [currencyFilter, setCurrencyFilter] = useState("");
-  const [editForm, setEditForm] = useState({ description: "", category_id: "", payment_method: "", account_id: "", currency: curr });
+  const [editForm, setEditForm] = useState({
+    description: "", category_id: "", payment_method: "", account_id: "",
+    currency: curr, total_amount: "", installments: 2, first_date: today(),
+  });
   const emptyForm = () => {
     // Same rule as Lançamentos: parcels leave a wallet when confirmed, so a
     // purchase must start on one.
@@ -89,21 +93,36 @@ export default function Installments() {
       payment_method: p.payment_method || "",
       account_id: p.account_id || "",
       currency: p.currency || curr,
+      total_amount: String(p.total_amount),
+      installments: p.installments,
+      first_date: p.first_date || p.installments_list?.[0]?.due_date || today(),
     });
   };
 
   const submitEdit = async (e) => {
     e.preventDefault();
+    if (savingEdit) return;
+    const count = Number(editForm.installments);
+    const amount = Number(editForm.total_amount);
+    if (!Number.isInteger(count) || count < 1 || count > 120 ||
+        !Number.isFinite(amount) || amount <= 0 || !editForm.first_date) {
+      toast.error(tr("Revise os dados antes de salvar.")); return;
+    }
+    setSavingEdit(true);
     try {
       await api.put(`/installments/purchases/${editing.id}`, {
         description: editForm.description,
         category_id: editForm.category_id || null,
         payment_method: editForm.payment_method,
         account_id: editForm.account_id || null,
+        total_amount: amount,
+        installments: count,
+        first_date: editForm.first_date,
       });
       toast.success(tr("Atualizado"));
       setEditing(null); load();
     } catch (err) { toast.error(formatApiError(err)); }
+    finally { setSavingEdit(false); }
   };
 
   // Paying moves money out of a wallet, so it always goes through a
@@ -407,13 +426,25 @@ export default function Installments() {
         })}
       </div>
 
-      <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
-        <DialogContent>
+      <Dialog open={!!editing} onOpenChange={(v) => !v && !savingEdit && setEditing(null)}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto overflow-x-hidden">
           <DialogHeader><DialogTitle>{tr("Editar parcelamento")}</DialogTitle></DialogHeader>
-          <form onSubmit={submitEdit} className="space-y-3">
+          <form onSubmit={submitEdit} className="min-w-0 space-y-3">
             <div><Label>{tr("Descrição")}</Label>
               <Input value={editForm.description} required data-testid="purchase-edit-description"
                 onChange={e => setEditForm({ ...editForm, description: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="min-w-0"><Label>{tr("Valor total")}</Label>
+                <AmountInput value={editForm.total_amount} currency={editForm.currency} required
+                  data-testid="purchase-edit-total" onValueChange={total_amount => setEditForm({ ...editForm, total_amount })} /></div>
+              <div className="min-w-0"><Label>{tr("Nº parcelas")}</Label>
+                <Input type="number" inputMode="numeric" min="1" max="120" required
+                  value={editForm.installments} data-testid="purchase-edit-count"
+                  onChange={e => setEditForm({ ...editForm, installments: e.target.value })} /></div>
+            </div>
+            <div><Label>{tr("Data da parcela {n}", { n: editing?.start_number || 1 })}</Label>
+              <Input type="date" required value={editForm.first_date} data-testid="purchase-edit-date"
+                onChange={e => setEditForm({ ...editForm, first_date: e.target.value })} /></div>
             <div><Label>{tr("Forma de pagamento")}</Label>
               <Input value={editForm.payment_method} data-testid="purchase-edit-payment"
                 onChange={e => setEditForm({ ...editForm, payment_method: e.target.value })} /></div>
@@ -433,8 +464,12 @@ export default function Installments() {
                   ))}
                 </SelectContent>
               </Select></div>
-            <p className="text-xs text-[#6B7068]">{tr("Para alterar valor total ou número de parcelas, exclua e crie um novo parcelamento.")}</p>
-            <Button type="submit" className="min-h-[44px] w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl" data-testid="purchase-edit-submit">{tr("Salvar alterações")}</Button>
+            <p className="rounded-lg bg-[#F1EFE7] px-3 py-2 text-xs text-[#6B7068]">
+              {tr("Pagas preservadas; pendentes recalculadas.")}
+            </p>
+            <Button type="submit" disabled={savingEdit}
+              className="min-h-[44px] w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl"
+              data-testid="purchase-edit-submit">{savingEdit ? tr("Salvando...") : tr("Salvar alterações")}</Button>
           </form>
         </DialogContent>
       </Dialog>
