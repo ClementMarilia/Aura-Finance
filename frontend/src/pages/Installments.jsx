@@ -465,7 +465,7 @@ export default function Installments() {
                 </SelectContent>
               </Select></div>
             <p className="rounded-lg bg-[#F1EFE7] px-3 py-2 text-xs text-[#6B7068]">
-              {tr("As parcelas pagas serão preservadas. As parcelas pendentes serão recalculadas.")}
+              {tr("Pagas preservadas; pendentes recalculadas.")}
             </p>
             <Button type="submit" disabled={savingEdit}
               className="min-h-[44px] w-full bg-[#061B4A] hover:bg-[#1268F4] rounded-xl"
