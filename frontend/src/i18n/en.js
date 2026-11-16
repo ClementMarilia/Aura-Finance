@@ -365,7 +365,6 @@ export default {
   "Pagamento recorrente criado": "Recurring payment created",
   "para abrir como um app.": "to open it as an app.",
   "As parcelas pagas serão preservadas. As parcelas pendentes serão recalculadas.": "Paid installments will be preserved. Pending installments will be recalculated.",
-  "Para alterar valor total ou número de parcelas, exclua e crie um novo parcelamento.": "To change the total amount or number of installments, delete it and create a new plan.",
   "Parcelas": "Installments",
   "Participação de cada categoria nas saídas.": "Share of each category in expenses.",
   "Previous": "Previous",
