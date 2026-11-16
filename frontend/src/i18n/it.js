@@ -364,7 +364,6 @@ export default {
   "Pagamento recorrente criado": "Pagamento ricorrente creato",
   "para abrir como um app.": "per aprirla come app.",
   "As parcelas pagas serão preservadas. As parcelas pendentes serão recalculadas.": "Le rate già pagate saranno conservate. Le rate in sospeso saranno ricalcolate.",
-  "Para alterar valor total ou número de parcelas, exclua e crie um novo parcelamento.": "Per cambiare l'importo totale o il numero di rate, elimina e crea un nuovo piano.",
   "Parcelas": "Rate",
   "Participação de cada categoria nas saídas.": "Quota di ogni categoria nelle uscite.",
   "Previous": "Precedente",
