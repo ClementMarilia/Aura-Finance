@@ -300,6 +300,27 @@ class EmailService:
             user.get("id"),
         )
 
+    async def send_couple_invite_email(self, recipient: dict, inviter_name: str) -> bool:
+        """Convite de casal: não inclui nenhum dado financeiro, só quem convidou."""
+        from html import escape
+
+        name = escape(str(inviter_name or "Alguém")[:120])
+        subject = "Convite para conectar finanças como casal"
+        html = (
+            '<div style="font-family:Arial,sans-serif;color:#1F2421;line-height:1.5">'
+            f"<p>{name} convidou você para compartilhar finanças como casal no Crelith Finance.</p>"
+            "<p>Entre na sua conta e abra <strong>Casal</strong> para aceitar ou recusar o convite. "
+            "Nenhum dado seu é compartilhado sem a sua aceitação.</p>"
+            "</div>"
+        )
+        return await self._send(
+            "couple_invite",
+            recipient["email"],
+            subject,
+            html,
+            recipient.get("id"),
+        )
+
     async def send_test_email(self, recipient: str, language: str = "pt") -> bool:
         settings = await self._settings()
         fields = await self.template_fields("welcome", language)

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ArrowLeftRight, CreditCard, HandCoins, PiggyBank,
   Users, FolderOpen, Scale, FileBarChart, Wallet, Bell, Target, Repeat, Settings,
   Menu, UserCircle, LogOut, ShieldCheck,
-  ReceiptText, CalendarDays, HeartPulse, TrendingUp, Plus, FileUp,
+  ReceiptText, CalendarDays, HeartPulse, TrendingUp, Plus, FileUp, Heart,
 } from "lucide-react";
 import NotificationsBell from "@/components/NotificationsBell";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -51,6 +51,7 @@ const navGroups = [
       { to: "/despesas-compartilhadas", icon: Users, label: tr("Despesas Compartilhadas") },
       { to: "/acertos", icon: Scale, label: tr("Acertos") },
       { to: "/pessoas", icon: UserCircle, label: tr("Pessoas") },
+      { to: "/casal", icon: Heart, label: tr("Casal") },
       { to: "/grupos", icon: FolderOpen, label: tr("Grupos") },
     ],
   },

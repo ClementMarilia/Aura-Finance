@@ -1274,4 +1274,5 @@ export default {
   "Restaurando categorias...": "Ripristino categorie...",
   "Categorias padrão recuperadas. Você já pode criar lançamentos.": "Categorie predefinite ripristinate. Ora puoi aggiungere movimenti.",
   "Nenhuma categoria de despesa foi recuperada. Tente novamente.": "Nessuna categoria di spesa ripristinata. Riprova.",
+  "Casal": "Coppia",
 };

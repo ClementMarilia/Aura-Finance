@@ -4933,6 +4933,8 @@ async def create_group(
 async def add_group_member(gid: str, body: dict, user=Depends(get_current_user)):
     email = body.get("email", "").lower()
     group = await find_group_for_admin(gid, user["id"])
+    if group.get("kind") == "couple":
+        raise HTTPException(400, "O grupo de casal não aceita novos membros")
     u = await db.users.find_one({
         "email": email,
         "$or": [
@@ -4973,6 +4975,8 @@ async def update_group(gid: str, payload: GroupUpdateIn, user=Depends(get_curren
 @api.delete("/groups/{gid}/members/{uid}")
 async def remove_group_member(gid: str, uid: str, user=Depends(get_current_user)):
     g = await find_group_for_admin(gid, user["id"])
+    if g.get("kind") == "couple":
+        raise HTTPException(400, "O grupo de casal não permite alterar membros")
     if uid == g["creator_id"]:
         raise HTTPException(400, "Não é possível remover o proprietário do grupo")
     if uid not in g.get("member_ids", []):
@@ -5035,6 +5039,8 @@ async def update_group_member_role(
 
 @api.delete("/groups/{gid}")
 async def delete_group(gid: str, user=Depends(get_current_user)):
+    if await db.groups.find_one({"id": gid, "kind": "couple", "creator_id": user["id"]}):
+        raise HTTPException(400, "O grupo de casal é encerrado pelo vínculo de casal")
     deleted = await db.groups.delete_one({"id": gid, "creator_id": user["id"]})
     if deleted.deleted_count != 1:
         raise HTTPException(404, "Grupo não encontrado")
@@ -10153,6 +10159,7 @@ app.include_router(api)
 from projection_api import create_projection_router  # noqa: E402
 from timeline_api import create_timeline_router  # noqa: E402
 from dashboard_preferences_api import create_dashboard_preferences_router  # noqa: E402
+from couple_api import create_couple_router  # noqa: E402
 from statement_import_api import create_statement_import_router  # noqa: E402
 
 app.include_router(create_projection_router(
@@ -10173,6 +10180,17 @@ app.include_router(create_timeline_router(
 app.include_router(create_dashboard_preferences_router(
     db=db,
     get_current_user=get_current_user,
+))
+
+app.include_router(create_couple_router(
+    db=db,
+    get_current_user=get_current_user,
+    push_notification=push_notification,
+    send_invite_email=lambda recipient, inviter_name: email_service.send_couple_invite_email(
+        recipient, inviter_name,
+    ),
+    new_id=new_id,
+    now_iso=now_iso,
 ))
 
 app.include_router(create_statement_import_router(

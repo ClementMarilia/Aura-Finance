@@ -32,6 +32,7 @@ const AISettings = lazy(() => import("@/pages/AISettings"));
 const AdminAI = lazy(() => import("@/pages/AdminAI"));
 const AdminUsers = lazy(() => import("@/pages/AdminUsers"));
 const People = lazy(() => import("@/pages/People"));
+const Couple = lazy(() => import("@/pages/Couple"));
 const FinancialStatement = lazy(() => import("@/pages/FinancialStatement"));
 const ProjectedCashFlow = lazy(() => import("@/pages/ProjectedCashFlow"));
 const FinancialCalendar = lazy(() => import("@/pages/FinancialCalendar"));
@@ -98,6 +99,7 @@ function App() {
               <Route path="saude-financeira" element={<FinancialHealth />} />
               <Route path="despesas-compartilhadas" element={<SharedExpenses />} />
               <Route path="pessoas" element={<People />} />
+              <Route path="casal" element={<Couple />} />
               <Route path="grupos" element={<Groups />} />
               <Route path="acertos" element={<Settlements />} />
               <Route path="relatorios" element={<Reports />} />
