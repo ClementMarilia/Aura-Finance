@@ -4,6 +4,10 @@ Crelith Finance é um **PWA (Progressive Web App)** em pt-BR de finanças pessoa
 
 > Stack: **React 19 + FastAPI + MongoDB**, autenticação JWT, moeda padrão **EUR (€)**. UI **com modo claro/escuro/automático**.
 
+### Origem do nome
+
+O projeto começou como **Aura**, uma ferramenta pessoal para ajudar a juntar dinheiro. Conforme cresceu e passou a cobrir finanças compartilhadas, ganhou o nome **Crelith**, uma mistura de *crescimento* com os sobrenomes das duas pessoas por trás do projeto.
+
 ---
 
 ## Índice
