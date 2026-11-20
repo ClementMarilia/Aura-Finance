@@ -1274,4 +1274,5 @@ export default {
   "Restaurando categorias...": "Restoring categories...",
   "Categorias padrão recuperadas. Você já pode criar lançamentos.": "Default categories restored. You can now add transactions.",
   "Nenhuma categoria de despesa foi recuperada. Tente novamente.": "No expense categories were restored. Try again.",
+  "Casal": "Couple",
 };

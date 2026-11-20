@@ -1274,4 +1274,5 @@ export default {
   "Restaurando categorias...": "Restaurando categorías...",
   "Categorias padrão recuperadas. Você já pode criar lançamentos.": "Categorías predeterminadas restauradas. Ya puedes añadir movimientos.",
   "Nenhuma categoria de despesa foi recuperada. Tente novamente.": "No se ha restaurado ninguna categoría de gastos. Inténtalo de nuevo.",
+  "Casal": "Pareja",
 };
