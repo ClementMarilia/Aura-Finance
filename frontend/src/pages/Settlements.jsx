@@ -102,9 +102,24 @@ export default function Settlements() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
+  // Preseleciona a carteira: a última usada neste aparelho ou a única compatível.
+  const LAST_ACCOUNT_KEY = "crelith.settlement.lastAccount";
+  const suggestAccountId = (row) => {
+    const matching = accounts.filter(account => (
+      (account.currency || curr) === row?.settlement_currency
+    ));
+    let lastId = null;
+    try { lastId = window.localStorage.getItem(LAST_ACCOUNT_KEY); } catch { lastId = null; }
+    if (lastId && matching.some(account => String(account.id) === lastId)) return lastId;
+    return matching.length === 1 ? String(matching[0].id) : "";
+  };
+  const rememberAccountId = (accountId) => {
+    try { window.localStorage.setItem(LAST_ACCOUNT_KEY, String(accountId)); } catch { /* armazenamento indisponível */ }
+  };
+
   const openWalletDialog = (mode, row) => {
     setPaymentDialog({ mode, row });
-    setSelectedAccountId("");
+    setSelectedAccountId(suggestAccountId(row));
     setPaymentAmount(
       mode === "send" ? String(row.settlement_amount || "") : "",
     );
@@ -140,6 +155,7 @@ export default function Settlements() {
         );
         toast.success(tr("Recebimento confirmado"));
       }
+      if (selectedAccountId) rememberAccountId(selectedAccountId);
       setPaymentDialog(null);
       setSelectedAccountId("");
       setPaymentAmount("");
