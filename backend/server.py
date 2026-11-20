@@ -9884,6 +9884,9 @@ async def delete_goal(gid: str, user=Depends(get_current_user)):
 # ---------- Seed Demo ----------
 @app.on_event("startup")
 async def startup():
+    asyncio.get_running_loop().create_task(
+        run_overdue_loop(db, push_notification, fmt_eur)
+    )
     if os.environ.get("ENVIRONMENT", "production").lower() == "production":
         if len(JWT_SECRET.encode()) < 32:
             raise RuntimeError("JWT_SECRET must contain at least 32 bytes in production")
@@ -10160,6 +10163,7 @@ from projection_api import create_projection_router  # noqa: E402
 from timeline_api import create_timeline_router  # noqa: E402
 from dashboard_preferences_api import create_dashboard_preferences_router  # noqa: E402
 from couple_api import create_couple_router  # noqa: E402
+from couple_shared_api import create_couple_shared_router, run_overdue_loop  # noqa: E402
 from statement_import_api import create_statement_import_router  # noqa: E402
 
 app.include_router(create_projection_router(
@@ -10180,6 +10184,16 @@ app.include_router(create_timeline_router(
 app.include_router(create_dashboard_preferences_router(
     db=db,
     get_current_user=get_current_user,
+))
+
+app.include_router(create_couple_shared_router(
+    db=db,
+    get_current_user=get_current_user,
+    push_notification=push_notification,
+    fmt_money=fmt_eur,
+    normalize_currency=normalize_currency,
+    new_id=new_id,
+    now_iso=now_iso,
 ))
 
 app.include_router(create_couple_router(

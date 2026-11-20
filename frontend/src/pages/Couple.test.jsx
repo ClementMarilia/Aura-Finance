@@ -36,6 +36,7 @@ test("shows the invite form when there is no couple link", async () => {
 });
 
 test("incoming invite can be accepted", async () => {
+  api.get.mockResolvedValue({ data: { items: [] } });
   api.get
     .mockResolvedValueOnce({ data: { link: { id: "l1", status: "pending" }, direction: "incoming", partner: { id: "p", name: "Bruno" } } })
     .mockResolvedValueOnce({ data: { link: { id: "l1", status: "active" }, direction: "incoming", partner: { id: "p", name: "Bruno" } } });
